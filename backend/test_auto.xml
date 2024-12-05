@@ -1,0 +1,45 @@
+<?xml version="1.0" ?>
+<dataset>
+   <name/>
+   <comment/>
+   <images>
+      <image file="C:\Users\ayuso\Documents\0-Georgia-Tech\8903\Lizard-CV-App\backend\test_auto\processed_June 1st 1_06-01-2024 10_22_51_1-3.jpg">
+         <box top="1" left="1" width="2350" height="2942">
+            <part name="0" x="295" y="1279"/>
+            <part name="1" x="295" y="1970"/>
+            <part name="2" x="1307" y="2843"/>
+            <part name="3" x="1356" y="2607"/>
+            <part name="4" x="1393" y="2511"/>
+            <part name="5" x="1448" y="2338"/>
+            <part name="6" x="1255" y="2607"/>
+            <part name="7" x="1215" y="2507"/>
+            <part name="8" x="1169" y="2340"/>
+            <part name="9" x="1307" y="2537"/>
+            <part name="10" x="1308" y="2414"/>
+            <part name="11" x="1307" y="2314"/>
+            <part name="12" x="1307" y="2198"/>
+            <part name="13" x="1382" y="2092"/>
+            <part name="14" x="1675" y="2041"/>
+            <part name="15" x="1651" y="2261"/>
+            <part name="16" x="1629" y="2437"/>
+            <part name="17" x="1225" y="2096"/>
+            <part name="18" x="942" y="2064"/>
+            <part name="19" x="964" y="2285"/>
+            <part name="20" x="995" y="2459"/>
+            <part name="21" x="1320" y="1426"/>
+            <part name="22" x="1320" y="1324"/>
+            <part name="23" x="1318" y="1247"/>
+            <part name="24" x="1374" y="1291"/>
+            <part name="25" x="1721" y="1236"/>
+            <part name="26" x="1681" y="932"/>
+            <part name="27" x="1839" y="851"/>
+            <part name="28" x="2004" y="681"/>
+            <part name="29" x="1261" y="1296"/>
+            <part name="30" x="908" y="1277"/>
+            <part name="31" x="907" y="972"/>
+            <part name="32" x="742" y="920"/>
+            <part name="33" x="589" y="742"/>
+         </box>
+      </image>
+   </images>
+</dataset>
