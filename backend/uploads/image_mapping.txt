@@ -1,0 +1,290 @@
+processed_June 1st 1_06-01-2024 10_18_37_1-1.jpg,0837_dorsal.jpg
+processed_June 1st 1_06-01-2024 10_22_51_1-3.jpg,0533_dorsal.jpg
+processed_June 1st 1_06-01-2024 10_26_59_1-5.jpg,0511_dorsal.jpg
+processed_June 1st 1_06-01-2024 10_32_38_1-7.jpg,0395_dorsal.jpg
+processed_June 1st 1_06-01-2024 10_36_18_1-9.jpg,0527_dorsal.jpg
+processed_June 1st 1_06-01-2024 10_39_22_1-11.jpg,0838_dorsal.jpg
+processed_June 1st 1_06-01-2024 10_43_17_1-14.jpg,0937_dorsal.jpg
+processed_June 1st 1_06-01-2024 10_47_13_1-18.jpg,0938_dorsal.jpg
+processed_June 1st 1_06-01-2024 10_50_35_1-21.jpg,0752_dorsal.jpg
+processed_June 1st 1_06-01-2024 10_56_40_1-23.jpg,0826_dorsal.jpg
+processed_June 1st 1_06-01-2024 11_01_31_1-27.jpg,0728_dorsal.jpg
+processed_June 1st 1_06-01-2024 11_05_59_1-30.jpg,0535_dorsal.jpg
+processed_June 1st 1_06-01-2024 11_09_40_1-33.jpg,0910_dorsal.jpg
+processed_June 1st 1_06-01-2024 11_16_36_1-35.jpg,0729_dorsal.jpg
+processed_June 1st 1_06-01-2024 11_24_08_1-38.jpg,0691_dorsal.jpg
+processed_June 1st 1_06-01-2024 11_27_26_1-41.jpg,0808_dorsal.jpg
+processed_June 1st 1_06-01-2024 11_31_01_1-44.jpg,0539_dorsal.jpg
+processed_June 1st 1_06-01-2024 11_35_42_1-50.jpg,0730_dorsal.jpg
+processed_June 1st 1_06-01-2024 11_39_02_1-52.jpg,0911_dorsal.jpg
+processed_June 2nd 1_06-02-2024 11_04_38_1-5.jpg,0544_dorsal.jpg
+processed_June 2nd 1_06-02-2024 11_08_48_1-10.jpg,0690_dorsal.jpg
+processed_June 2nd 1_06-02-2024 11_12_59_1-16.jpg,0734_dorsal.jpg
+processed_June 2nd 1_06-02-2024 11_16_39_1-18.jpg,0735_dorsal.jpg
+processed_June 4th 1_06-04-2024 12_47_56_1-9.jpg,0807_dorsal.jpg
+processed_June 4th 1_06-04-2024 12_51_00_1-11.jpg,0723_dorsal.jpg
+processed_June 4th 1_06-04-2024 12_54_33_1-13.jpg,0756_dorsal.jpg
+processed_June 4th 1_06-04-2024 12_59_07_1-15.jpg,0737_dorsal.jpg
+processed_June 4th 1_06-04-2024 13_01_54_1-17.jpg,0736_dorsal.jpg
+processed_June 4th 1_06-04-2024 13_05_40_1-19.jpg,0742_dorsal.jpg
+processed_June 4th 1_06-04-2024 13_15_11_1-22.jpg,0802_dorsal.jpg
+processed_June 4th 1_06-04-2024 13_18_55_1-24.jpg,0805_dorsal.jpg
+processed_June 4th 1_06-04-2024 13_24_14_1-31.jpg,0884_dorsal.jpg
+processed_June 4th 1_06-04-2024 13_27_44_1-33.jpg,0806_dorsal.jpg
+processed_June 4th 1_06-04-2024 13_32_48_1-37.jpg,0803_dorsal.jpg
+processed_June 4th 1_06-04-2024 13_36_26_1-40.jpg,0893_dorsal.jpg
+processed_June 4th 1_06-04-2024 13_39_32_1-43.jpg,0894_dorsal.jpg
+processed_June 4th 1_06-04-2024 13_52_07_1-45.jpg,0885_dorsal.jpg
+processed_June 4th 1_06-04-2024 13_55_14_1-47.jpg,0892_dorsal.jpg
+processed_June 4th 1_06-04-2024 13_58_46_1-49.jpg,0804_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 11_15_14_1-6.jpg,0174_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 11_25_40_1-8.jpg,0081_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 11_30_18_1-12.jpg,0029_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 11_37_22_1-14.jpg,0102_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 11_44_30_1-18.jpg,0082_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 11_49_02_1-21.jpg,0160_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 11_54_56_1-23.jpg,0113_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 11_59_55_1-26.jpg,0173_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 12_10_01_1-28.jpg,0170_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 13_13_34_1-31.jpg,0157_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 13_19_42_1-35.jpg,0158_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 13_25_13_1-37.jpg,0084_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 13_31_55_1-39.jpg,0156_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 13_40_34_1-41.jpg,0028_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 13_49_30_1-43.jpg,0031_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 14_04_50_1-46.jpg,0060_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 14_09_20_1-50.jpg,0155_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 14_14_33_1-54.jpg,0073_dorsal.jpg
+processed_May 16th Miami 1_05-16-2024 14_18_34_1-56.jpg,0047_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 14_26_06_1-3.jpg,0152_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 14_33_30_1-7.jpg,0077_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 14_39_35_1-9.jpg,0169_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 14_45_36_1-14.jpg,0167_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 14_54_30_1-17.jpg,0117_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 15_02_08_1-19.jpg,0165_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 15_06_16_1-21.jpg,0078_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 15_12_59_1-23.jpg,0149_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 15_18_42_1-25.jpg,0040_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 15_30_11_1-33.jpg,0123_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 15_38_30_1-35.jpg,0146_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 15_42_59_1-37.jpg,0145_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 15_51_31_1-39.jpg,0150_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 16_02_01_1-41.jpg,0039_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 16_07_15_1-43.jpg,0162_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 16_13_36_1-48.jpg,0125_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 16_18_18_1-50.jpg,0128_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 16_26_48_1-52.jpg,0114_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 16_34_15_1-57.jpg,0115_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 16_37_52_1-59.jpg,0122_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 16_42_54_1-62.jpg,0166_dorsal.jpg
+processed_May 16th Miami 2_05-16-2024 16_49_09_1-65.jpg,0083_dorsal.jpg
+processed_May 16th Miami 3_05-16-2024 16_57_54_1-1.jpg,0118_dorsal.jpg
+processed_May 16th Miami 3_05-16-2024 17_03_35_1-5.jpg,0079_dorsal.jpg
+processed_May 16th Miami 3_05-16-2024 17_09_22_1-10.jpg,0104_dorsal.jpg
+processed_May 16th Miami 3_05-16-2024 17_13_53_1-12.jpg,0046_dorsal.jpg
+processed_May 16th Miami 3_05-16-2024 17_19_55_1-16.jpg,0126_dorsal.jpg
+processed_May 16th Miami 3_05-16-2024 17_25_04_1-18.jpg,0036_dorsal.jpg
+processed_May 16th Miami 3_05-16-2024 17_29_57_1-22.jpg,0116_dorsal.jpg
+processed_May 16th Miami 3_05-16-2024 17_36_19_1-24.jpg,0172_dorsal.jpg
+processed_May 16th Miami 3_05-16-2024 17_44_46_1-27.jpg,0171_dorsal.jpg
+processed_May 16th Miami 3_05-16-2024 17_49_29_1-31.jpg,0159_dorsal.jpg
+processed_May 16th Miami 3_05-16-2024 18_03_42_1-38.jpg,0119_dorsal.jpg
+processed_May 16th Miami 3_05-16-2024 18_08_29_1-40.jpg,0153_dorsal.jpg
+processed_May 17th 3_05-17-2024 16_58_24_1-1.jpg,0111_dorsal.jpg
+processed_May 17th 3_05-17-2024 17_06_29_1-3.jpg,0232_dorsal.jpg
+processed_May 17th 3_05-17-2024 17_18_34_1-5.jpg,0164_dorsal.jpg
+processed_May 17th 3_05-17-2024 17_24_03_1-8.jpg,0110_dorsal.jpg
+processed_May 17th 3_05-17-2024 17_31_10_1-11.jpg,0498_dorsal.jpg
+processed_May 17th 3_05-17-2024 17_36_00_1-14.jpg,0233_dorsal.jpg
+processed_May 17th 3_05-17-2024 17_42_35_1-18.jpg,0050_dorsal.jpg
+processed_May 17th 3_05-17-2024 17_47_51_1-20.jpg,0154_dorsal.jpg
+processed_May 17th 3_05-17-2024 17_52_55_1-23.jpg,0005_dorsal.jpg
+processed_May 17th 3_05-17-2024 17_57_41_1-25.jpg,0091_dorsal.jpg
+processed_May 17th 3_05-17-2024 18_02_18_1-27.jpg,0499_dorsal.jpg
+processed_May 17th 3_05-17-2024 18_07_23_1-30.jpg,0229_dorsal.jpg
+processed_May 17th 3_05-17-2024 18_11_53_1-32.jpg,0093_dorsal.jpg
+processed_May 17th 3_05-17-2024 18_16_04_1-35.jpg,0292_dorsal.jpg
+processed_May 18th 1_05-18-2024 10_38_30_1-5.jpg,0176_dorsal.jpg
+processed_May 18th 1_05-18-2024 10_43_32_1-7.jpg,0147_dorsal.jpg
+processed_May 18th 1_05-18-2024 10_51_25_1-11.jpg,0108_dorsal.jpg
+processed_May 18th 1_05-18-2024 10_56_46_1-14.jpg,0281_dorsal.jpg
+processed_May 18th 1_05-18-2024 11_07_12_1-17.jpg,0087_dorsal.jpg
+processed_May 18th 1_05-18-2024 11_13_22_1-20.jpg,0141_dorsal.jpg
+processed_May 18th 1_05-18-2024 11_21_11_1-25.jpg,0090_dorsal.jpg
+processed_May 18th 1_05-18-2024 11_26_29_1-28.jpg,0058_dorsal.jpg
+processed_May 18th 1_05-18-2024 11_33_10_1-31.jpg,0289_dorsal.jpg
+processed_May 18th 1_05-18-2024 11_38_21_1-33.jpg,0080_dorsal.jpg
+processed_May 18th 1_05-18-2024 11_47_04_1-37.jpg,0180_dorsal.jpg
+processed_May 18th 1_05-18-2024 11_58_29_1-41.jpg,0130_dorsal.jpg
+processed_May 18th 2_05-18-2024 12_35_37_1-1.jpg,0076_dorsal.jpg
+processed_May 18th 2_05-18-2024 12_39_58_1-3.jpg,0161_dorsal.jpg
+processed_May 18th 2_05-18-2024 12_47_44_1-8.jpg,0291_dorsal.jpg
+processed_May 18th 2_05-18-2024 12_51_31_1-11.jpg,0228_dorsal.jpg
+processed_May 18th 2_05-18-2024 13_01_04_1-14.jpg,0188_dorsal.jpg
+processed_May 18th 2_05-18-2024 13_04_41_1-16.jpg,0290_dorsal.jpg
+processed_May 18th 2_05-18-2024 13_08_14_1-18.jpg,0132_dorsal.jpg
+processed_May 18th 2_05-18-2024 13_11_57_1-20.jpg,0295_dorsal.jpg
+processed_May 18th 2_05-18-2024 13_19_39_1-24.jpg,0086_dorsal.jpg
+processed_May 18th 2_05-18-2024 13_25_23_1-26.jpg,0497_dorsal.jpg
+processed_May 18th 2_05-18-2024 13_28_39_1-28.jpg,0221_dorsal.jpg
+processed_May 18th 2_05-18-2024 13_34_46_1-30.jpg,0294_dorsal.jpg
+processed_May 18th 2_05-18-2024 13_37_52_1-32.jpg,0038_dorsal.jpg
+processed_May 18th 2_05-18-2024 13_43_09_1-35.jpg,0183_dorsal.jpg
+processed_May 18th 2_05-18-2024 13_47_48_1-38.jpg,0163_dorsal.jpg
+processed_May 18th 2_05-18-2024 13_51_17_1-40.jpg,0099_dorsal.jpg
+processed_May 18th 2_05-18-2024 13_55_54_1-42.jpg,0098_dorsal.jpg
+processed_May 18th 2_05-18-2024 14_00_33_1-44.jpg,0230_dorsal.jpg
+processed_May 18th 2_05-18-2024 14_04_57_1-47.jpg,0131_dorsal.jpg
+processed_May 18th 2_05-18-2024 14_09_09_1-49.jpg,0282_dorsal.jpg
+processed_May 18th 2_05-18-2024 14_14_40_1-51.jpg,0142_dorsal.jpg
+processed_May 18th 2_05-18-2024 14_19_25_1-56.jpg,0177_dorsal.jpg
+processed_May 18th 2_05-18-2024 14_29_39_1-60.jpg,0225_dorsal.jpg
+processed_May 18th 3_05-18-2024 15_40_19_1-2.jpg,0223_dorsal.jpg
+processed_May 18th 3_05-18-2024 15_44_27_1-5.jpg,0135_dorsal.jpg
+processed_May 18th 3_05-18-2024 15_49_42_1-8.jpg,0224_dorsal.jpg
+processed_May 18th 3_05-18-2024 15_53_23_1-10.jpg,0139_dorsal.jpg
+processed_May 18th 3_05-18-2024 15_58_03_1-12.jpg,0293_dorsal.jpg
+processed_May 18th 3_05-18-2024 16_02_18_1-14.jpg,0181_dorsal.jpg
+processed_May 18th 3_05-18-2024 16_06_34_1-16.jpg,0178_dorsal.jpg
+processed_May 18th 3_05-18-2024 16_10_40_1-18.jpg,0287_dorsal.jpg
+processed_May 18th 3_05-18-2024 16_15_16_1-20.jpg,0134_dorsal.jpg
+processed_May 18th 3_05-18-2024 16_19_31_1-22.jpg,0175_dorsal.jpg
+processed_May 18th 3_05-18-2024 16_23_36_1-26.jpg,0284_dorsal.jpg
+processed_May 18th 3_05-18-2024 16_28_18_1-29.jpg,0340_dorsal.jpg
+processed_May 18th 3_05-18-2024 16_32_45_1-33.jpg,0279_dorsal.jpg
+processed_May 18th 3_05-18-2024 17_24_32_1-59.jpg,0003_dorsal.jpg
+processed_May 18th 3_05-18-2024 17_27_57_1-61.jpg,0335_dorsal.jpg
+processed_May 18th 3_05-18-2024 17_32_56_1-64.jpg,0336_dorsal.jpg
+processed_May 18th 3_05-18-2024 17_37_25_1-66.jpg,0322_dorsal.jpg
+processed_May 18th 4_05-18-2024 17_43_56_1-2.jpg,0277_dorsal.jpg
+processed_May 18th 4_05-18-2024 17_47_59_1-5.jpg,0242_dorsal.jpg
+processed_May 18th 4_05-18-2024 17_52_55_1-7.jpg,0298_dorsal.jpg
+processed_May 18th 4_05-18-2024 17_56_40_1-9.jpg,0187_dorsal.jpg
+processed_May 18th 4_05-18-2024 18_02_00_1-12.jpg,0299_dorsal.jpg
+processed_May 19th 1_05-19-2024 10_24_24_1-1.jpg,0280_dorsal.jpg
+processed_May 19th 1_05-19-2024 10_30_36_1-3.jpg,0354_dorsal.jpg
+processed_May 19th 1_05-19-2024 10_33_51_1-5.jpg,0179_dorsal.jpg
+processed_May 19th 1_05-19-2024 10_37_45_1-8.jpg,0388_dorsal.jpg
+processed_May 19th 1_05-19-2024 10_45_31_1-10.jpg,0092_dorsal.jpg
+processed_May 19th 1_05-19-2024 10_51_46_1-13.jpg,0285_dorsal.jpg
+processed_May 19th 1_05-19-2024 10_59_15_1-15.jpg,0182_dorsal.jpg
+processed_May 19th 1_05-19-2024 11_03_55_1-17.jpg,0389_dorsal.jpg
+processed_May 19th 1_05-19-2024 11_08_26_1-19.jpg,0185_dorsal.jpg
+processed_May 19th 1_05-19-2024 11_12_47_1-22.jpg,0245_dorsal.jpg
+processed_May 19th 1_05-19-2024 11_16_49_1-24.jpg,0248_dorsal.jpg
+processed_May 19th 1_05-19-2024 11_23_05_1-26.jpg,0320_dorsal.jpg
+processed_May 19th 1_05-19-2024 11_27_28_1-28.jpg,0240_dorsal.jpg
+processed_May 19th 1_05-19-2024 11_32_39_1-31.jpg,0241_dorsal.jpg
+processed_May 19th 1_05-19-2024 11_37_38_1-34.jpg,0381_dorsal.jpg
+processed_May 19th 1_05-19-2024 11_46_46_1-37.jpg,0237_dorsal.jpg
+processed_May 19th 1_05-19-2024 11_52_10_1-39.jpg,0339_dorsal.jpg
+processed_May 19th 1_05-19-2024 11_56_27_1-42.jpg,0329_dorsal.jpg
+processed_May 19th 1_05-19-2024 12_00_02_1-44.jpg,0094_dorsal.jpg
+processed_May 19th 1_05-19-2024 12_04_10_1-46.jpg,0260_dorsal.jpg
+processed_May 19th 1_05-19-2024 12_07_53_1-48.jpg,0342_dorsal.jpg
+processed_May 19th 1_05-19-2024 12_11_53_1-50.jpg,0349_dorsal.jpg
+processed_May 19th 1_05-19-2024 12_19_39_1-53.jpg,0218_dorsal.jpg
+processed_May 19th 1_05-19-2024 12_27_05_1-55.jpg,0219_dorsal.jpg
+processed_May 19th 1_05-19-2024 12_32_18_1-59.jpg,0286_dorsal.jpg
+processed_May 19th 2_05-19-2024 12_37_21_1-2.jpg,0387_dorsal.jpg
+processed_May 19th 2_05-19-2024 12_41_42_1-5.jpg,0222_dorsal.jpg
+processed_May 19th 2_05-19-2024 12_46_17_1-8.jpg,0238_dorsal.jpg
+processed_May 19th 2_05-19-2024 12_50_39_1-12.jpg,0344_dorsal.jpg
+processed_May 19th 2_05-19-2024 12_54_32_1-14.jpg,0236_dorsal.jpg
+processed_May 19th 2_05-19-2024 12_59_23_1-18.jpg,0343_dorsal.jpg
+processed_May 19th 2_05-19-2024 13_04_18_1-21.jpg,0184_dorsal.jpg
+processed_May 19th 2_05-19-2024 13_09_03_1-26.jpg,0337_dorsal.jpg
+processed_May 19th 2_05-19-2024 13_14_02_1-29.jpg,0186_dorsal.jpg
+processed_May 19th 2_05-19-2024 13_19_32_1-32.jpg,0235_dorsal.jpg
+processed_May 19th 2_05-19-2024 13_24_04_1-34.jpg,0244_dorsal.jpg
+processed_May 19th 2_05-19-2024 13_28_19_1-36.jpg,0321_dorsal.jpg
+processed_May 19th 2_05-19-2024 13_32_19_1-38.jpg,0296_dorsal.jpg
+processed_May 19th 2_05-19-2024 13_37_05_1-42.jpg,0264_dorsal.jpg
+processed_May 19th 2_05-19-2024 13_42_48_1-46.jpg,0297_dorsal.jpg
+processed_May 19th 2_05-19-2024 13_46_46_1-48.jpg,0239_dorsal.jpg
+processed_May 19th 2_05-19-2024 13_53_20_1-50.jpg,0246_dorsal.jpg
+processed_May 19th 2_05-19-2024 13_57_41_1-53.jpg,0283_dorsal.jpg
+processed_May 19th 2_05-19-2024 14_02_06_1-56.jpg,0338_dorsal.jpg
+processed_May 19th 2_05-19-2024 14_08_49_1-62.jpg,0066_dorsal.jpg
+processed_May 19th 2_05-19-2024 14_12_04_1-64.jpg,0243_dorsal.jpg
+processed_May 19th 2_05-19-2024 14_16_17_1-66.jpg,0288_dorsal.jpg
+processed_May 19th 2_05-19-2024 14_21_41_1-68.jpg,0247_dorsal.jpg
+processed_May 19th 2_05-19-2024 14_29_06_1-73.jpg,0258_dorsal.jpg
+processed_May 19th 2_05-19-2024 14_33_27_1-76.jpg,0256_dorsal.jpg
+processed_May 19th 3_05-19-2024 14_38_20_1-1.jpg,0348_dorsal.jpg
+processed_May 19th 3_05-19-2024 14_54_21_1-6.jpg,0334_dorsal.jpg
+processed_May 19th 3_05-19-2024 14_58_20_1-8.jpg,0333_dorsal.jpg
+processed_May 19th 3_05-19-2024 15_06_24_1-12.jpg,0269_dorsal.jpg
+processed_May 19th 3_05-19-2024 15_09_48_1-14.jpg,0325_dorsal.jpg
+processed_May 19th 3_05-19-2024 15_13_39_1-16.jpg,0332_dorsal.jpg
+processed_May 19th 3_05-19-2024 15_18_20_1-18.jpg,0330_dorsal.jpg
+processed_May 19th 3_05-19-2024 15_22_28_1-21.jpg,0253_dorsal.jpg
+processed_May 19th 3_05-19-2024 15_29_06_1-23.jpg,0306_dorsal.jpg
+processed_May 19th 3_05-19-2024 15_33_08_1-26.jpg,0252_dorsal.jpg
+processed_May 19th 3_05-19-2024 15_36_28_1-28.jpg,0304_dorsal.jpg
+processed_May 19th 3_05-19-2024 15_41_02_1-30.jpg,0328_dorsal.jpg
+processed_May 19th 3_05-19-2024 15_45_59_1-32.jpg,0303_dorsal.jpg
+processed_May 19th 3_05-19-2024 15_52_48_1-36.jpg,0257_dorsal.jpg
+processed_May 19th 3_05-19-2024 15_57_16_1-38.jpg,0323_dorsal.jpg
+processed_May 19th 3_05-19-2024 16_02_02_1-42.jpg,0301_dorsal.jpg
+processed_May 19th 3_05-19-2024 16_07_22_1-44.jpg,0254_dorsal.jpg
+processed_May 19th 3_05-19-2024 16_11_22_1-46.jpg,0249_dorsal.jpg
+processed_May 19th 3_05-19-2024 16_16_27_1-49.jpg,0324_dorsal.jpg
+processed_May 19th 3_05-19-2024 16_21_53_1-52.jpg,0307_dorsal.jpg
+processed_May 19th 3_05-19-2024 16_26_01_1-54.jpg,0250_dorsal.jpg
+processed_May 19th 3_05-19-2024 16_30_04_1-56.jpg,0265_dorsal.jpg
+processed_May 19th 3_05-19-2024 16_35_17_1-60.jpg,0259_dorsal.jpg
+processed_May 19th 3_05-19-2024 16_38_42_1-62.jpg,0305_dorsal.jpg
+processed_May 19th 4_05-19-2024 16_49_35_1-6.jpg,0255_dorsal.jpg
+processed_May 19th 4_05-19-2024 16_57_00_1-8.jpg,0302_dorsal.jpg
+processed_May 19th 4_05-19-2024 17_00_41_1-10.jpg,0251_dorsal.jpg
+processed_May 20th 1_05-20-2024 12_41_23_1-2.jpg,0326_dorsal.jpg
+processed_May 20th 1_05-20-2024 12_45_06_1-5.jpg,0359_dorsal.jpg
+processed_May 20th 1_05-20-2024 12_48_33_1-7.jpg,0358_dorsal.jpg
+processed_May 20th 1_05-20-2024 12_52_37_1-9.jpg,0357_dorsal.jpg
+processed_May 20th 1_05-20-2024 12_57_41_1-11.jpg,0347_dorsal.jpg
+processed_May 20th 1_05-20-2024 13_02_19_1-15.jpg,0345_dorsal.jpg
+processed_May 20th 1_05-20-2024 13_06_17_1-17.jpg,0355_dorsal.jpg
+processed_May 20th 1_05-20-2024 13_10_44_1-20.jpg,0346_dorsal.jpg
+processed_May 20th 1_05-20-2024 13_15_16_1-23.jpg,0356_dorsal.jpg
+processed_May 20th 1_05-20-2024 13_19_20_1-25.jpg,0393_dorsal.jpg
+processed_May 20th 1_05-20-2024 13_31_48_1-30.jpg,0436_dorsal.jpg
+processed_May 20th 1_05-20-2024 13_36_06_1-32.jpg,0276_dorsal.jpg
+processed_May 20th 1_05-20-2024 13_40_36_1-34.jpg,0410_dorsal.jpg
+processed_May 20th 1_05-20-2024 13_44_32_1-36.jpg,0441_dorsal.jpg
+processed_May 20th 1_05-20-2024 13_48_31_1-38.jpg,0440_dorsal.jpg
+processed_May 20th 1_05-20-2024 13_52_55_1-40.jpg,0386_dorsal.jpg
+processed_May 20th 1_05-20-2024 13_57_19_1-42.jpg,0275_dorsal.jpg
+processed_May 20th 1_05-20-2024 14_01_24_1-44.jpg,0310_dorsal.jpg
+processed_May 20th 1_05-20-2024 14_07_02_1-46.jpg,0271_dorsal.jpg
+processed_May 20th 1_05-20-2024 14_12_00_1-48.jpg,0421_dorsal.jpg
+processed_May 20th 1_05-20-2024 14_17_25_1-50.jpg,0263_dorsal.jpg
+processed_May 20th 1_05-20-2024 14_23_00_1-52.jpg,0470_dorsal.jpg
+processed_May 20th 1_05-20-2024 14_27_45_1-55.jpg,0369_dorsal.jpg
+processed_May 20th 1_05-20-2024 14_32_09_1-59.jpg,0463_dorsal.jpg
+processed_May 20th 1_05-20-2024 14_37_26_1-63.jpg,0398_dorsal.jpg
+processed_May 20th 2_05-20-2024 14_42_02_1-1.jpg,0315_dorsal.jpg
+processed_May 20th 2_05-20-2024 14_46_31_1-3.jpg,0313_dorsal.jpg
+processed_May 20th 2_05-20-2024 14_51_28_1-5.jpg,0378_dorsal.jpg
+processed_May 20th 2_05-20-2024 14_56_03_1-7.jpg,0411_dorsal.jpg
+processed_May 20th 2_05-20-2024 15_00_29_1-10.jpg,0429_dorsal.jpg
+processed_May 20th 2_05-20-2024 15_04_48_1-13.jpg,0270_dorsal.jpg
+processed_May 20th 2_05-20-2024 15_09_08_1-16.jpg,0442_dorsal.jpg
+processed_May 20th 2_05-20-2024 15_13_30_1-18.jpg,0432_dorsal.jpg
+processed_May 20th 2_05-20-2024 15_20_29_1-20.jpg,0431_dorsal.jpg
+processed_May 20th 2_05-20-2024 15_24_29_1-23.jpg,0434_dorsal.jpg
+processed_May 20th 2_05-20-2024 15_30_12_1-27.jpg,0454_dorsal.jpg
+processed_May 20th 2_05-20-2024 15_33_57_1-29.jpg,0424_dorsal.jpg
+processed_May 20th 2_05-20-2024 15_40_30_1-33.jpg,0445_dorsal.jpg
+processed_May 20th 2_05-20-2024 15_48_00_1-35.jpg,0444_dorsal.jpg
+processed_May 20th 2_05-20-2024 15_51_53_1-39.jpg,0450_dorsal.jpg
+processed_May 20th 2_05-20-2024 15_55_45_1-41.jpg,0406_dorsal.jpg
+processed_May 20th 2_05-20-2024 16_00_24_1-45.jpg,0401_dorsal.jpg
+processed_May 20th 2_05-20-2024 16_06_15_1-47.jpg,0400_dorsal.jpg
+processed_May 20th 2_05-20-2024 16_10_15_1-50.jpg,0366_dorsal.jpg
+processed_May 20th 2_05-20-2024 16_20_51_1-52.jpg,0404_dorsal.jpg
+processed_May 20th 2_05-20-2024 16_25_08_1-55.jpg,0261_dorsal.jpg
+processed_May 20th 2_05-20-2024 16_29_00_1-57.jpg,0274_dorsal.jpg
+processed_May 20th 2_05-20-2024 16_38_01_1-59.jpg,0451_dorsal.jpg
+processed_May 20th 2_05-20-2024 16_48_34_1-61.jpg,0272_dorsal.jpg
+processed_May 20th 2_05-20-2024 16_53_35_1-64.jpg,0412_dorsal.jpg
