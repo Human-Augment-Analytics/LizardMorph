@@ -7,6 +7,9 @@ import matplotlib.pyplot as plt
 import cv2
 import os
 
+# Use a non-GUI backend
+plt.switch_backend('Agg')
+
 def parse_xml(file_path):
     '''
     Parses an XML file to extract image filenames and their corresponding landmark coordinates.
@@ -56,11 +59,11 @@ def create_image(output_xml, output_folder):
     for i in range(len(data)):
         image = plt.imread(os.path.join(directory,data[i]['name']))
         height_pixels, width_pixels = image.shape[0], image.shape[1]
-        print(image.shape)
+        #print(image.shape)
         dpi = 500
         width_inches = width_pixels / dpi
         height_inches = height_pixels / dpi
-        print(image.shape)
+        #print(image.shape)
         fig, ax = plt.subplots(figsize=(width_inches, height_inches))
         ax.imshow(image)
         ax.axis('off')
