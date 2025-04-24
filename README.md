@@ -45,6 +45,8 @@ Porto, A. and Voje, K.L., 2020. ML‐morph: A fast, accurate and general approac
 6. Image should appear in the web browser:
    
 ![annotated_processed_June 1st 1_06-01-2024 10_18_37_1-1](https://github.com/user-attachments/assets/ad89d5f6-cfbf-4d17-acfe-1c1c1f2647cc)
+
+
 7. Landmarks on image can be moved to fix predictions
 8. Image can be viewed in three ways: original upload, color contrasted or inverted color
 9. Image can be downloaded for records
