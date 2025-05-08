@@ -188,6 +188,45 @@ def predictions_to_xml(
 
     pretty_xml(root, output)
 
+def predictions_to_xml_single(predictor_name: str, image_path: str, output: str):
+    """Generates dlib format xml file for a single image."""
+    predictor = dlib.shape_predictor(predictor_name)
+    root, images_e = initialize_xml()
+    kernel = np.ones((7, 7), np.float32) / 49
+
+    image_e = ET.Element('image')
+    image_e.set('file', str(image_path))
+    
+    img = cv2.imread(image_path)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = cv2.filter2D(img, -1, kernel)
+    img = cv2.bilateralFilter(img, 9, 41, 21)
+    
+    scales = [0.25, 0.5, 1]
+    w = img.shape[1]
+    h = img.shape[0]
+    landmarks = []
+    
+    for scale in scales:
+        image = cv2.resize(img, (0, 0), fx=scale, fy=scale)
+        rect = dlib.rectangle(1, 1, int(w * scale) - 1, int(h * scale) - 1)
+        shape = predictor(image, rect)
+        landmarks.append(shape_to_np(shape) / scale)
+
+    box = create_box(img.shape)
+    part_length = range(0, shape.num_parts)
+    
+    for item, i in enumerate(sorted(part_length, key=str)):
+        x = np.median([landmark[item][0] for landmark in landmarks])
+        y = np.median([landmark[item][1] for landmark in landmarks])
+        part = create_part(x, y, i)
+        box.append(part)
+
+    box[:] = sorted(box, key=lambda child: (child.tag, float(child.get("name"))))
+    image_e.append(box)
+    images_e.append(image_e)
+    pretty_xml(root, output)
+
 
 def shape_to_np(shape):
     """
