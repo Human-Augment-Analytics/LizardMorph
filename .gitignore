@@ -1,34 +1,43 @@
-# Ignore Python bytecode files and virtual environment
+# Git
+.git
+
+backend/better_predictor_auto.dat
+
+# Node.js
+frontend/node_modules
+frontend/build
+frontend/.env
+frontend/.env.*
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# Python
 __pycache__/
 *.py[cod]
-*.pyo
-venv/
-env/
+*$py.class
+backend/.env
+backend/*.pyc
+backend/.venv
+backend/venv
+backend/env
+backend/.pytest_cache
 
-# Ignore Flask-specific files
-instance/
-*.log
 
-# Ignore model files and outputs
-*.dat
-outputs/*
-output*
+# Output directories
+backend/upload
+backend/color_constrasted
+backend/tps_download
+backend/image_download
+backend/invert_image
+backend/outputs
 
-# Ignore Node modules and build folders for React
-frontend/node_modules/
-frontend/build/
-frontend/package-lock.json
-frontend/.env.local
-frontend/.env.development.local
-frontend/.env.test.local
-frontend/.env.production.local
-
-# Ignore OS generated files
-.DS_Store
-Thumbs.db
-
-# Ignore general editor or system files
-.vscode/
-.idea/
+# Editor directories
+.idea
+.vscode
 *.swp
 *.swo
+
+# OS specific
+.DS_Store
+Thumbs.db

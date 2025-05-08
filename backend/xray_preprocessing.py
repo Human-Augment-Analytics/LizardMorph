@@ -112,3 +112,16 @@ def process_images(input_folder, output_folder, sharpness=4, contrast=1.3, blur=
             file_name = os.path.basename(jpg_file)
             output_path = os.path.join(output_folder, "processed_" + file_name)
             cv2.imwrite(output_path, image)
+
+
+
+def process_single_image(input_path, output_path, sharpness=4, contrast=1.3, blur=3, clip_limit=2.0, 
+                        tile_grid_size=(8, 8), gamma=1.0):
+    """Process a single image with all enhancements"""
+    image = cv2.imread(input_path)
+    if image is None:
+        raise ValueError(f"Failed to load image: {input_path}")
+    image = enhance_image(image)
+    image = clahe(image, clip_limit, tile_grid_size)
+    image = gamma_correction(image, gamma)
+    cv2.imwrite(output_path, image)

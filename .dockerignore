@@ -1,0 +1,16 @@
+
+.git*
+**/*.pyc
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.DS_Store
+.pytest_cache/
+outputs/
+upload/
+color_constrasted/
+tps_download/
+image_download/
+invert_image/
