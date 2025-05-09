@@ -51,5 +51,128 @@ Porto, A. and Voje, K.L., 2020. ML‐morph: A fast, accurate and general approac
 8. Image can be viewed in three ways: original upload, color contrasted or inverted color
 9. Image can be downloaded for records
 
+## Docker Setup and Local Testing
+
+To test the complete application locally using Docker:
+
+1. Ensure Docker Desktop is installed and running
+2. Make sure the predictor file (`better_predictor_auto.dat`) is in the `backend/` directory
+3. Build and run the Docker container:
+
+   ```bash
+   # Build the Docker image
+   docker build -t lizardcv:latest .
+
+   # Run the container
+   docker run -d -p 5000:5000 --name lizard-app-test lizardcv:latest
+   ```
+
+4. Access the application at http://localhost:5000
+5. To stop and remove the container when done:
+   ```bash
+   docker stop lizard-app-test
+   docker rm lizard-app-test
+   ```
+
+## Deployment Options
+
+### Option 1: Running Locally (Non-Docker)
+
+For development, you can run the frontend and backend separately:
+
+1. Start the backend server:
+   ```
+   cd backend
+   python app.py
+   ```
+
+2. In a separate terminal, start the frontend:
+   ```
+   cd frontend
+   npm start
+   ```
+
+3. Access the frontend at http://localhost:3000
+
+### Option 2: Automated Deployment with PowerShell Script
+
+The project includes a PowerShell script (`deploy.ps1`) for simplified deployment:
+
+1. Open PowerShell in the project root
+2. Run the script:
+   ```powershell
+   .\deploy.ps1
+   ```
+3. Choose from the menu:
+   - Option 1: Build & Test Docker Locally
+   - Option 2: Deploy to Azure
+   - Option 3: Clean Up Azure Resources
+
+### Option 3: Manual Deployment to Azure
+
+To deploy manually to Azure:
+
+1. Login to Azure:
+   ```
+   az login
+   ```
+
+2. Create a resource group:
+   ```
+   az group create --name lizard-app-rg --location eastus
+   ```
+
+3. Create Azure Container Registry:
+   ```
+   az acr create --resource-group lizard-app-rg --name [your-registry-name] --sku Basic
+   ```
+
+4. Build and push the Docker image:
+   ```
+   az acr build --resource-group lizard-app-rg --registry [your-registry-name] --image lizardcv:latest .
+   ```
+
+5. Create App Service plan:
+   ```
+   az appservice plan create --name lizard-app-plan --resource-group lizard-app-rg --sku B1 --is-linux
+   ```
+
+6. Create and configure the web app:
+   ```
+   az webapp create --resource-group lizard-app-rg --plan lizard-app-plan --name [your-app-name] --deployment-container-image-name [your-registry-name].azurecr.io/lizardcv:latest
+   ```
+
+## ⚠️ Known Issues and Limitations
+
+### Local Development and Deployment
+
+1. **Predictor File**: The machine learning model file (`better_predictor_auto.dat`) is required but not included in the repository due to its size. You must download it separately and place it in the backend directory.
+
+2. **Docker Memory Requirements**: The Docker container may require significant memory. If you encounter container crashes during build or runtime, try increasing Docker's allocated memory in settings.
+
+### Azure Deployment Cautions
+
+1. **Container Registry Authentication**: The current deployment script sets up managed identity for ACR Pull role, but this configuration may require additional permissions adjustments in some Azure environments.
+
+2. **Processing Large Files**: The B1 App Service tier may be insufficient for processing multiple or large X-ray images. Consider upgrading to at least a B2 or P1v2 tier for production workloads.
+
+3. **Gunicorn Configuration**: The current Gunicorn configuration in `gunicorn.conf.py` is set to bind to port 50505, but the Dockerfile and App Service expect port 5000. This discrepancy may cause connectivity issues when deployed to Azure. Modify the `gunicorn.conf.py` file to use port 5000 before deployment:
+
+   ```python
+   # In gunicorn.conf.py
+   bind = "0.0.0.0:5000"  # Change from 50505 to 5000
+   ```
+
+4. **Cold Start Issues**: Azure App Service containers may experience cold start delays. The initial load of the application might take up to a minute due to the size of the ML models being loaded.
+
+## Troubleshooting
+
+- **Missing predictor file error**: Download the predictor file from the link above and place it in the backend directory.
+- **Docker build failure**: Ensure Docker has enough allocated memory (at least 4GB recommended).
+- **Frontend not loading**: Check browser console for CORS errors; ensure the backend API URL is correctly set.
+- **Image processing errors**: Verify the uploaded image format is supported (JPG, PNG, TIF, BMP).
+- **Azure deployment issues**: Check Azure logs with `az webapp log tail --resource-group lizard-app-rg --name [your-app-name]`
+
+
 
 

@@ -1,0 +1,45 @@
+<?xml version="1.0" ?>
+<dataset>
+   <name/>
+   <comment/>
+   <images>
+      <image file="C:\Users\trevi\OneDrive\Desktop\GT\8903 - Research Research\Lizard-Xray\Lizard-CV-Web-App\backend\upload\processed_June 1st 1_06-01-2024 10_22_51_1-3_1746740057_2332.jpg">
+         <box top="1" left="1" width="2350" height="2942">
+            <part name="0" x="296" y="1280"/>
+            <part name="1" x="296" y="1968"/>
+            <part name="2" x="1306" y="2844"/>
+            <part name="3" x="1356" y="2606"/>
+            <part name="4" x="1393" y="2512"/>
+            <part name="5" x="1448" y="2336"/>
+            <part name="6" x="1254" y="2606"/>
+            <part name="7" x="1213" y="2508"/>
+            <part name="8" x="1168" y="2338"/>
+            <part name="9" x="1308" y="2539"/>
+            <part name="10" x="1308" y="2413"/>
+            <part name="11" x="1307" y="2313"/>
+            <part name="12" x="1307" y="2198"/>
+            <part name="13" x="1382" y="2092"/>
+            <part name="14" x="1675" y="2040"/>
+            <part name="15" x="1650" y="2260"/>
+            <part name="16" x="1628" y="2436"/>
+            <part name="17" x="1224" y="2096"/>
+            <part name="18" x="940" y="2062"/>
+            <part name="19" x="964" y="2284"/>
+            <part name="20" x="994" y="2458"/>
+            <part name="21" x="1320" y="1426"/>
+            <part name="22" x="1320" y="1324"/>
+            <part name="23" x="1318" y="1248"/>
+            <part name="24" x="1372" y="1290"/>
+            <part name="25" x="1720" y="1234"/>
+            <part name="26" x="1680" y="930"/>
+            <part name="27" x="1838" y="851"/>
+            <part name="28" x="2001" y="680"/>
+            <part name="29" x="1260" y="1295"/>
+            <part name="30" x="908" y="1276"/>
+            <part name="31" x="906" y="972"/>
+            <part name="32" x="742" y="920"/>
+            <part name="33" x="588" y="741"/>
+         </box>
+      </image>
+   </images>
+</dataset>
