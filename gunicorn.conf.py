@@ -6,7 +6,7 @@ max_requests_jitter = 50
 
 log_file = "-"
 
-bind = "0.0.0.0:50505"
+bind = "0.0.0.0:5000"
 
 workers = (multiprocessing.cpu_count() * 2) + 1
 threads = workers

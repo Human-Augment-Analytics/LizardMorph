@@ -78,6 +78,14 @@
     # Copy the backend code
     COPY backend/ .
     
+    COPY --from=frontend-build /frontend-build/build ./static/
+
+    # Explicitly copy favicon to both locations (root and static)
+    COPY --from=frontend-build /frontend-build/build/favicon.ico ./static/favicon.ico
+    COPY --from=frontend-build /frontend-build/build/favicon.ico ./favicon.ico
+
+
+
     # Copy built frontend assets from the frontend build stage
     COPY --from=frontend-build /frontend-build/build ./static/
 

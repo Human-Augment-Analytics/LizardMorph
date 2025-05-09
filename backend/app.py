@@ -17,7 +17,11 @@ import json
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, static_url_path='/static')
+app = Flask(__name__, 
+    static_folder='static',  # Specify the static folder explicitly
+    static_url_path=''  # This makes static files available at root URL
+)
+
 
 CORS(app, resources={
     r"/*": {
@@ -456,6 +460,14 @@ def download_all_exports():
     except Exception as e:
         logger.error(f"Error creating zip file: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
+
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(
+        os.path.join(app.root_path, 'static'),
+        'favicon.ico',
+        mimetype='image/vnd.microsoft.icon'
+    )
 
 # Add these routes to serve the React frontend
 @app.route('/', defaults={'path': ''})
