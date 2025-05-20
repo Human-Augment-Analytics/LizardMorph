@@ -6,8 +6,6 @@ export class ScatterViewModelStyles {
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    height: "100vh",
-    width: "100vw",
     padding: "20px",
     fontFamily: "Arial, sans-serif",
   };
