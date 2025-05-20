@@ -34,7 +34,7 @@ Porto, A. and Voje, K.L., 2020. ML‐morph: A fast, accurate and general approac
    ```
 4. Start the React app:
    ```
-   npm start
+   npm run dev
    ```
 ## Vignette
 1. Open a terminal and activate the backend with the instructions from above
