@@ -12,6 +12,9 @@ import random
 import logging
 import shutil
 import json
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -201,7 +204,7 @@ def process_scatter_data():
         image_urls = []
         if output_paths:
             for path in output_paths:
-                image_urls.append(f'http://localhost:5000/images/{os.path.basename(path)}')
+                image_urls.append(f'/api/images/{os.path.basename(path)}')
         
         logger.info(f"Annotated images created: {output_paths}")
         
@@ -480,4 +483,5 @@ def serve(path):
 
 # Make sure your app runs on the correct host and port if started directly
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    port = int(os.getenv('API_PORT', 5000))
+    app.run(host='0.0.0.0', port=port)

@@ -13,6 +13,14 @@ Porto, A. and Voje, K.L., 2020. ML‐morph: A fast, accurate and general approac
 ### Setup Instructions
 
 #### Backend
+
+##### Environment
+Port availability may vary depending on your device. To specify a custom port for the backend, create a .env file in the root directory with the following content:
+```
+API_PORT=3000 # your desire port number
+```
+If no port is specified, the default is 5000.
+
 1. Navigate to the `backend` folder.
 2. Since the predictor is too big for this platform, download here: https://gatech.box.com/s/qky0pu7hd3y0b8okvl3r7zgfiaj961vb
 3. Paste the predictor into the backend folder
