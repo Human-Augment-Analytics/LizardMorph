@@ -1,8 +1,8 @@
 import "./App.css";
-import { ScatterView } from "./views/ScatterView";
+import { MainView } from "./views/MainView";
 
 function App() {
-  return <ScatterView />;
+    return <MainView />;
 }
 
 export default App;
