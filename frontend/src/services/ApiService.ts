@@ -2,7 +2,7 @@ import type { ImageSetResponse } from "../models/ImageSetResponse";
 import type { Point } from "../models/Point";
 import type { UploadResponse } from "../models/UploadResponse";
 
-const BASE_URL = 'http://localhost:5000';
+const BASE_URL = '/api';
 
 export class ApiService {
   static async uploadImage(file: File): Promise<UploadResponse> {
