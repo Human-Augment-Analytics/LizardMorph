@@ -226,9 +226,6 @@ def process_scatter_data():
                 y = float(point["y"])
                 # Flip y to make origin bottom-left
                 y_flipped = height - y
-                # logger.info(
-                #     f"Flipped y-coordinate For Image Height {height}: {y} -> {y_flipped}"
-                # )
                 tps_file.write(f"{x} {y_flipped}\n")
             else:
                 logger.warning(f"Invalid point data: {point}")
