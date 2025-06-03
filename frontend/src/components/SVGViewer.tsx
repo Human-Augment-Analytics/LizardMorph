@@ -43,7 +43,9 @@ export class SVGViewer extends Component<SVGViewerProps> {
         prevProps.originalScatterData !== this.props.originalScatterData ||
         this.props.needsScaling)
     ) {
-      this.renderSVG();
+      setTimeout(() => {
+        this.renderSVG();
+      }, 0);
     }
 
     if (prevProps.selectedPoint !== this.props.selectedPoint) {

@@ -1,11 +1,6 @@
 import React from "react";
 import { PointsPanelStyles } from "./PointsPanel.style";
-
-interface Point {
-  id: number;
-  x: number;
-  y: number;
-}
+import type { Point } from "../models/Point";
 
 interface PointsPanelProps {
   dataFetched: boolean;
