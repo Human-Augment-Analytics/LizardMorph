@@ -6,17 +6,6 @@ import type { ImageSet } from "../models/ImageSet";
 import type { ProcessedImage } from "../models/ProcessedImage";
 import type { UploadHistoryItem } from "../models/UploadHistoryItem";
 
-// API response types
-interface CoordResponse {
-  x: number;
-  y: number;
-}
-
-interface ImageProcessingResult {
-  name: string;
-  coords: CoordResponse[];
-}
-
 import { Header } from "../components/Header";
 import { NavigationControls } from "../components/NavigationControls";
 import { ImageVersionControls } from "../components/ImageVersionControls";
@@ -24,6 +13,8 @@ import { HistoryPanel } from "../components/HistoryPanel";
 import PointsPanel from "../components/PointsPanel";
 import { MainViewStyles } from "./MainView.style";
 import { SVGViewer } from "../components/SVGViewer";
+import { ApiService } from "../services/ApiService";
+import type { AnnotationsData } from "../models/AnnotationsData";
 
 interface MainState {
   currentImageIndex: number;
@@ -50,11 +41,6 @@ interface MainState {
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface MainProps {}
-
-// Configuration object for API endpoints
-const config = {
-  apiBaseUrl: "/api",
-};
 
 export class MainView extends Component<MainProps, MainState> {
   readonly svgRef = createRef<SVGSVGElement>();
@@ -141,7 +127,6 @@ export class MainView extends Component<MainProps, MainState> {
   private readonly setupInterval = (): void => {
     this.intervalId = setInterval(this.fetchUploadedFiles, 30000);
   };
-
   private readonly handleUpload = async (
     e: React.ChangeEvent<HTMLInputElement>
   ): Promise<void> => {
@@ -150,78 +135,62 @@ export class MainView extends Component<MainProps, MainState> {
 
     this.setState({ loading: true, dataLoading: true, dataError: null });
 
-    const formData = new FormData();
-    Array.from(files).forEach((file) => {
-      formData.append("image", file);
-    });
-
     try {
-      const response = await fetch(`${config.apiBaseUrl}/data`, {
-        method: "POST",
-        body: formData,
-      });
+      const results = await ApiService.uploadMultipleImages(Array.from(files));
 
-      if (response.ok) {
-        const results = await response.json();
-        const processedImages = await Promise.all(
-          results.map(async (result: ImageProcessingResult) => {
-            const imageSets = await this.fetchImageSet(result.name);
-            const coords = result.coords.map(
-              (coord: CoordResponse, index: number) => ({
-                ...coord,
-                id: index + 1,
-              })
-            );
+      const processedImages = await Promise.all(
+        results.map(async (result) => {
+          const imageSets = await ApiService.fetchImageSet(result.name);
+          const coords = result.coords.map((coord, index: number) => ({
+            ...coord,
+            id: index + 1,
+          }));
 
-            return {
-              name: result.name,
-              coords: coords,
-              originalCoords: JSON.parse(JSON.stringify(coords)), // Deep copy
-              imageSets,
-              timestamp: new Date().toLocaleString(), // Add timestamp for history
-            };
-          })
-        );
-        if (processedImages.length > 0) {
-          const firstImage = processedImages[0];
+          return {
+            name: result.name,
+            coords: coords,
+            originalCoords: JSON.parse(JSON.stringify(coords)), // Deep copy
+            imageSets,
+            timestamp: new Date().toLocaleString(), // Add timestamp for history
+          };
+        })
+      );
+      if (processedImages.length > 0) {
+        const firstImage = processedImages[0];
 
-          this.setState((prevState) => {
-            // Update images with new uploads
-            const updatedImages = [...prevState.images, ...processedImages];
+        this.setState((prevState) => {
+          // Update images with new uploads
+          const updatedImages = [...prevState.images, ...processedImages];
 
-            // Update upload history
-            const newHistory = [...prevState.uploadHistory];
-            processedImages.forEach((img) => {
-              newHistory.push({
-                name: img.name,
-                timestamp: img.timestamp,
-                index: updatedImages.findIndex(
-                  (i) => i.name === img.name && i.timestamp === img.timestamp
-                ),
-              });
+          // Update upload history
+          const newHistory = [...prevState.uploadHistory];
+          processedImages.forEach((img) => {
+            newHistory.push({
+              name: img.name,
+              timestamp: img.timestamp,
+              index: updatedImages.findIndex(
+                (i) => i.name === img.name && i.timestamp === img.timestamp
+              ),
             });
-
-            // Set current image to the first of the new uploads
-            const newImageIndex = prevState.images.length; // Index of the first new image
-
-            return {
-              images: updatedImages,
-              uploadHistory: newHistory,
-              currentImageIndex: newImageIndex,
-              imageFilename: firstImage.name,
-              originalScatterData: firstImage.originalCoords,
-              scatterData: firstImage.coords,
-              imageSet: firstImage.imageSets,
-              currentImageURL: firstImage.imageSets.original,
-              needsScaling: true,
-              dataFetched: true,
-              selectedPoint: null,
-            };
           });
-        }
-      } else {
-        const errorResult = await response.json();
-        throw new Error(errorResult.error ?? "Failed to process images");
+
+          // Set current image to the first of the new uploads
+          const newImageIndex = prevState.images.length; // Index of the first new image
+
+          return {
+            images: updatedImages,
+            uploadHistory: newHistory,
+            currentImageIndex: newImageIndex,
+            imageFilename: firstImage.name,
+            originalScatterData: firstImage.originalCoords,
+            scatterData: firstImage.coords,
+            imageSet: firstImage.imageSets,
+            currentImageURL: firstImage.imageSets.original,
+            needsScaling: true,
+            dataFetched: true,
+            selectedPoint: null,
+          };
+        });
       }
     } catch (err) {
       console.error("Upload error:", err);
@@ -233,49 +202,6 @@ export class MainView extends Component<MainProps, MainState> {
       // dataLoading will be set to false by the image onload handler
     }
   };
-
-  private readonly fetchImageSet = async (
-    filename: string
-  ): Promise<ImageSet> => {
-    try {
-      const response = await fetch(
-        `${config.apiBaseUrl}/image?image_filename=${encodeURIComponent(
-          filename
-        )}`,
-        {
-          method: "POST",
-          headers: {
-            "Access-Control-Allow-Origin": "*",
-          },
-        }
-      );
-
-      const result = await response.json();
-      if (result.error) {
-        throw new Error(result.error);
-      }
-
-      const fileExtension = filename.split(".").pop()?.toLowerCase() ?? "";
-      let mimeType: string;
-      if (fileExtension === "png") {
-        mimeType = "image/png";
-      } else if (fileExtension === "gif") {
-        mimeType = "image/gif";
-      } else {
-        mimeType = "image/jpeg";
-      }
-
-      return {
-        original: `data:${mimeType};base64,${result.image3}`,
-        inverted: `data:${mimeType};base64,${result.image2}`,
-        color_contrasted: `data:${mimeType};base64,${result.image1}`,
-      };
-    } catch (err) {
-      console.error("Error fetching image set:", err);
-      throw err;
-    }
-  };
-
   // This loads the image when the currentImageURL changes
   private readonly loadImage = (): void => {
     if (this.state.currentImageURL) {
@@ -623,27 +549,11 @@ export class MainView extends Component<MainProps, MainState> {
       const payload = {
         coords: originalCoords.map((coord) => ({ x: coord.x, y: coord.y })), // Remove the id field before sending
         name: this.state.images[i].name,
-      };
-
-      // Create a promise for each image's data processing
+      }; // Create a promise for each image's data processing
       const processPromise = (async (): Promise<string> => {
         try {
-          // Send data to backend
-          const response = await fetch(`${config.apiBaseUrl}/endpoint`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(payload),
-          });
-
-          if (!response.ok) {
-            throw new Error(
-              `HTTP error for ${payload.name}! Status: ${response.status}`
-            );
-          }
-
-          const result = await response.json();
+          // Send data to backend using ApiService
+          const result = await ApiService.exportScatterData(payload);
           console.log(`Downloaded data for ${payload.name}:`, result);
 
           // Download the TPS file to user's downloads folder
@@ -657,7 +567,7 @@ export class MainView extends Component<MainProps, MainState> {
               imageUrl = result.image_urls[0];
             } else {
               const prefix = result.image_urls[0].startsWith("/") ? "" : "/";
-              imageUrl = `${config.apiBaseUrl}${prefix}${result.image_urls[0]}`;
+              imageUrl = `/api${prefix}${result.image_urls[0]}`;
             }
 
             await this.downloadAnnotatedImage(imageUrl, payload.name);
@@ -749,19 +659,13 @@ export class MainView extends Component<MainProps, MainState> {
       throw error;
     }
   };
-
   // Function to download the annotated image from the backend
   private readonly downloadAnnotatedImage = async (
     imageUrl: string,
     imageName: string
   ): Promise<void> => {
     try {
-      const response = await fetch(imageUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch annotated image: ${response.status}`);
-      }
-
-      const blob = await response.blob();
+      const blob = await ApiService.downloadAnnotatedImage(imageUrl);
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -948,47 +852,39 @@ export class MainView extends Component<MainProps, MainState> {
       };
     });
   };
-
   private readonly fetchUploadedFiles = async (): Promise<void> => {
     try {
-      const response = await fetch(`${config.apiBaseUrl}/list_uploads`, {
-        method: "GET",
+      const files = await ApiService.fetchUploadedFiles();
+      console.log("Files in upload folder:", files);
+
+      // Create history entries for files that aren't in current upload history
+      const currentFileNames = new Set(
+        this.state.uploadHistory.map((item) => item.name)
+      );
+      const newHistory = [...this.state.uploadHistory];
+
+      files.forEach((file: string) => {
+        if (!currentFileNames.has(file)) {
+          newHistory.push({
+            name: file,
+            timestamp: "From uploads folder",
+            index: -1, // Will be set when loaded
+          });
+        }
       });
 
-      if (response.ok) {
-        const files = await response.json();
-        console.log("Files in upload folder:", files);
-
-        // Create history entries for files that aren't in current upload history
-        const currentFileNames = new Set(
-          this.state.uploadHistory.map((item) => item.name)
-        );
-        const newHistory = [...this.state.uploadHistory];
-
-        files.forEach((file: string) => {
-          if (!currentFileNames.has(file)) {
-            newHistory.push({
-              name: file,
-              timestamp: "From uploads folder",
-              index: -1, // Will be set when loaded
-            });
-          }
-        });
-
-        if (newHistory.length !== this.state.uploadHistory.length) {
-          this.setState({ uploadHistory: newHistory });
-        }
-
-        // Update lizard count to include ALL files in the upload folder
-        this.setState({ lizardCount: files.length });
+      if (newHistory.length !== this.state.uploadHistory.length) {
+        this.setState({ uploadHistory: newHistory });
       }
+
+      // Update lizard count to include ALL files in the upload folder
+      this.setState({ lizardCount: files.length });
     } catch (error) {
       console.log("Error fetching upload directory files:", error);
       // Even if fetch fails, count unique images in the current session
       this.countUniqueImages();
     }
   };
-
   private readonly loadImageFromUploads = async (
     filename: string
   ): Promise<void> => {
@@ -1009,63 +905,50 @@ export class MainView extends Component<MainProps, MainState> {
       }
 
       // If not loaded, process it
-      const response = await fetch(
-        `${config.apiBaseUrl}/process_existing?filename=${encodeURIComponent(
-          filename
-        )}`,
-        {
-          method: "POST",
-        }
-      );
-      if (response.ok) {
-        const result: ImageProcessingResult = await response.json();
-        const imageSets = await this.fetchImageSet(filename);
+      const result = await ApiService.processExistingImage(filename);
+      const imageSets = await ApiService.fetchImageSet(filename);
 
-        const coords = result.coords.map(
-          (coord: CoordResponse, index: number) => ({
-            ...coord,
-            id: index + 1,
-          })
+      const coords = result.coords.map((coord: Point, index: number) => ({
+        ...coord,
+        id: index + 1,
+      }));
+
+      const newImage: ProcessedImage = {
+        name: filename,
+        coords: coords,
+        originalCoords: JSON.parse(JSON.stringify(coords)),
+        imageSets,
+        timestamp: "From uploads folder",
+      };
+
+      this.setState((prevState) => {
+        // Add to images array
+        const updatedImages = [...prevState.images, newImage];
+
+        // Update history entry with correct index
+        const newHistoryItem: UploadHistoryItem = {
+          name: filename,
+          timestamp: "From uploads folder",
+          index: updatedImages.length - 1,
+        };
+
+        const updatedHistory = prevState.uploadHistory.map((item) =>
+          item.name === filename ? newHistoryItem : item
         );
 
-        const newImage: ProcessedImage = {
-          name: filename,
-          coords: coords,
-          originalCoords: JSON.parse(JSON.stringify(coords)),
-          imageSets,
-          timestamp: "From uploads folder",
+        return {
+          images: updatedImages,
+          uploadHistory: updatedHistory,
+          currentImageIndex: updatedImages.length - 1,
+          imageFilename: filename,
+          scatterData: coords,
+          originalScatterData: JSON.parse(JSON.stringify(coords)),
+          imageSet: imageSets,
+          currentImageURL: imageSets.original,
+          needsScaling: true,
+          selectedPoint: null,
         };
-        this.setState((prevState) => {
-          // Add to images array
-          const updatedImages = [...prevState.images, newImage];
-
-          // Update history entry with correct index
-          const newHistoryItem: UploadHistoryItem = {
-            name: filename,
-            timestamp: "From uploads folder",
-            index: updatedImages.length - 1,
-          };
-
-          const updatedHistory = prevState.uploadHistory.map((item) =>
-            item.name === filename ? newHistoryItem : item
-          );
-
-          return {
-            images: updatedImages,
-            uploadHistory: updatedHistory,
-            currentImageIndex: updatedImages.length - 1,
-            imageFilename: filename,
-            scatterData: coords,
-            originalScatterData: JSON.parse(JSON.stringify(coords)),
-            imageSet: imageSets,
-            currentImageURL: imageSets.original,
-            needsScaling: true,
-            selectedPoint: null,
-          };
-        });
-      } else {
-        throw new Error("Failed to process existing image");
-      }
+      });
     } catch (error) {
       console.error("Error loading image from uploads:", error);
       this.setState({
@@ -1101,30 +984,19 @@ export class MainView extends Component<MainProps, MainState> {
         .domain([0, window.innerHeight - window.innerHeight * 0.2])
         .range([0, this.state.imageHeight]);
 
-      const originalCoords = this.state.scatterData.map((point) => ({
+      const originalCoords: Point[] = this.state.scatterData.map((point) => ({
         x: scaleX.invert(point.x),
         y: scaleY.invert(point.y),
+        id: point.id,
       }));
 
-      const payload = {
+      const payload: AnnotationsData = {
         coords: originalCoords,
         name: this.state.imageFilename,
       };
 
-      // Send data to backend
-      const response = await fetch(`${config.apiBaseUrl}/save_annotations`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-
-      const result = await response.json();
+      // Send data to backend using ApiService
+      const result = await ApiService.saveAnnotations(payload);
 
       // Update originalScatterData with the saved coordinates
       const updatedOriginalCoords = originalCoords.map((coord, index) => ({
