@@ -685,12 +685,12 @@ export class MainView extends Component<MainProps, MainState> {
         // Determine which image and coordinates to use
         const imageData = imageIndex === this.state.currentImageIndex ? {
           imageUrl: this.state.currentImageURL!,
-          coords: this.state.scatterData,
+          coords: this.state.originalScatterData, // Use original coordinates instead of scaled ones
           width: this.state.imageWidth,
           height: this.state.imageHeight
         } : {
           imageUrl: this.state.images[imageIndex].imageSets.original,
-          coords: this.state.images[imageIndex].coords,
+          coords: this.state.images[imageIndex].originalCoords || this.state.images[imageIndex].coords,
           width: 0, // Will be set when image loads
           height: 0 // Will be set when image loads
         };
@@ -698,7 +698,7 @@ export class MainView extends Component<MainProps, MainState> {
         const img = new Image();
 
         img.onload = () => {
-          // Set canvas dimensions
+          // Set canvas dimensions to match original image
           canvas.width = imageIndex === this.state.currentImageIndex ? imageData.width : img.width;
           canvas.height = imageIndex === this.state.currentImageIndex ? imageData.height : img.height;
 
@@ -711,10 +711,9 @@ export class MainView extends Component<MainProps, MainState> {
           ctx.lineWidth = 1;
 
           imageData.coords.forEach((point) => {
-            // For current image, coordinates are already scaled
-            // For other images, use original coordinates
-            const x = imageIndex === this.state.currentImageIndex ? point.x : point.x;
-            const y = imageIndex === this.state.currentImageIndex ? point.y : point.y;
+            // Use original coordinates directly since we're working with original image dimensions
+            const x = point.x;
+            const y = point.y;
 
             ctx.beginPath();
             ctx.arc(x, y, 5, 0, 2 * Math.PI);
