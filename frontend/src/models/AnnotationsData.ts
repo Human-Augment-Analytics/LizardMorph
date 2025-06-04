@@ -1,6 +1,6 @@
 import type { Point } from "./Point";
 
-export interface UploadResponse {
+export interface AnnotationsData {
   name: string;
   coords: Point[];
 }
