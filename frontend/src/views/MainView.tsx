@@ -1,5 +1,6 @@
 import React, { Component, createRef } from "react";
 import * as d3 from "d3";
+import JSZip from "jszip";
 
 import type { Point } from "../models/Point";
 import type { ImageSet } from "../models/ImageSet";
@@ -536,54 +537,79 @@ export class MainView extends Component<MainProps, MainState> {
   };
 
   private readonly handleScatterData = async (): Promise<void> => {
-    // If we have multiple images, we'll download data for all of them
-    const downloadPromises: Promise<string>[] = [];
+    const downloadPromises: Promise<{ name: string; tpsContent: string; imageBlob?: Blob }>[] = [];
+    const zip = new JSZip();
 
     for (let i = 0; i < this.state.images.length; i++) {
-      // Get the original coordinates for this image
       const originalCoords =
         i === this.state.currentImageIndex
           ? this.state.originalScatterData
           : this.state.images[i].originalCoords || this.state.images[i].coords;
 
       const payload = {
-        coords: originalCoords.map((coord) => ({ x: coord.x, y: coord.y })), // Remove the id field before sending
-        name: this.state.images[i].name,
-      }; // Create a promise for each image's data processing
-      const processPromise = (async (): Promise<string> => {
+        coords: originalCoords.map(({ id, ...rest }) => rest), // Remove the id field before sending
+        name: this.state.images[i].name
+      };
+
+      // Create a promise for each image's data processing
+      const processPromise = (async (): Promise<{ name: string; tpsContent: string; imageBlob?: Blob }> => {
         try {
-          // Send data to backend using ApiService
+          // Create TPS file content
+          let tpsContent = `LM=${payload.coords.length}\n`;
+          payload.coords.forEach(point => {
+            tpsContent += `${point.x} ${point.y}\n`;
+          });
+          tpsContent += `IMAGE=${payload.name.split('.')[0]}`;
+
+          // Send data to backend to get annotated image
           const result = await ApiService.exportScatterData(payload);
-          console.log(`Downloaded data for ${payload.name}:`, result);
+          console.log(`Processed data for ${payload.name}:`, result);
 
-          // Download the TPS file to user's downloads folder
-          await this.downloadTpsFile(payload);
+          let imageBlob: Blob | undefined;
 
-          // Also download the annotated image if it exists
+          // Try to get the annotated image if it exists
           if (result.image_urls && result.image_urls.length > 0) {
             // Convert relative URL to absolute URL using the API base
-            let imageUrl: string;
-            if (result.image_urls[0].startsWith("http")) {
-              imageUrl = result.image_urls[0];
-            } else {
-              const prefix = result.image_urls[0].startsWith("/") ? "" : "/";
-              imageUrl = `/api${prefix}${result.image_urls[0]}`;
-            }
+            const imageUrl = result.image_urls[0].startsWith('http')
+              ? result.image_urls[0]
+              : `/api${result.image_urls[0].startsWith('/') ? '' : '/'}${result.image_urls[0]}`;
 
-            await this.downloadAnnotatedImage(imageUrl, payload.name);
+            try {
+              imageBlob = await ApiService.downloadAnnotatedImage(imageUrl);
+            } catch (imageError) {
+              console.warn(`Failed to fetch annotated image for ${payload.name}:`, imageError);
+            }
           } else {
-            // If no image URL is provided, we generate a simple visualization
-            // using the current image and points data
-            await this.downloadCurrentImageWithPoints(i, payload.name);
+            console.warn(`Backend processing failed for ${payload.name}, but continuing with TPS file`);
           }
 
-          return payload.name;
+          // If no annotated image from backend, create one from current visualization
+          if (!imageBlob) {
+            try {
+              imageBlob = await this.createImageWithPointsBlob(i, payload.name);
+            } catch (overlayError) {
+              console.warn(`Failed to create overlay image for ${payload.name}:`, overlayError);
+            }
+          }
+
+          return {
+            name: payload.name,
+            tpsContent,
+            imageBlob
+          };
         } catch (error) {
-          console.error(
-            `Error during the fetch request for ${payload.name}:`,
-            error
-          );
-          throw error;
+          console.error(`Error processing ${payload.name}:`, error);
+          // Still return TPS content even if other processing fails
+          let tpsContent = `LM=${payload.coords.length}\n`;
+          payload.coords.forEach(point => {
+            tpsContent += `${point.x} ${point.y}\n`;
+          });
+          tpsContent += `IMAGE=${payload.name.split('.')[0]}`;
+
+          return {
+            name: payload.name,
+            tpsContent
+          };
         }
       })();
 
@@ -595,25 +621,134 @@ export class MainView extends Component<MainProps, MainState> {
       this.setState({ loading: true });
       const results = await Promise.allSettled(downloadPromises);
 
-      // Check for failures
-      const failures = results.filter((r) => r.status === "rejected");
+      // Process successful results
+      const successfulResults = results
+        .filter((result): result is PromiseFulfilledResult<{ name: string; tpsContent: string; imageBlob?: Blob }> =>
+          result.status === 'fulfilled')
+        .map(result => result.value);
 
+      if (successfulResults.length === 0) {
+        throw new Error('No files were processed successfully');
+      }
+
+      // Add files to zip
+      successfulResults.forEach(result => {
+        const baseName = result.name.split('.')[0];
+        
+        // Add TPS file
+        zip.file(`${baseName}.tps`, result.tpsContent);
+
+        // Add annotated image if available
+        if (result.imageBlob) {
+          const imageExt = result.name.split('.').pop()?.toLowerCase() || 'png';
+          zip.file(`annotated_${baseName}.${imageExt}`, result.imageBlob);
+        }
+      });
+
+      // Generate and download zip file
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `lizard_analysis_${new Date().toISOString().split('T')[0]}.zip`;
+
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+
+      // Clean up
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      // Check for failures
+      const failures = results.filter(r => r.status === 'rejected');
       if (failures.length > 0) {
-        alert(
-          `Some files failed to download: ${failures.length} of ${this.state.images.length}`
-        );
+        alert(`Some files failed to download: ${failures.length} of ${this.state.images.length}`);
       } else {
-        alert(
-          `Successfully downloaded ${this.state.images.length} TPS file(s) and annotated image(s)`
-        );
+        alert(`Successfully downloaded ${this.state.images.length} TPS file(s) and annotated image(s)`);
       }
     } catch (error) {
-      alert("An error occurred during download");
-      console.error("Download error:", error);
+      alert('An error occurred during download');
+      console.error('Download error:', error);
     } finally {
       this.setState({ loading: false });
     }
   };
+
+  // Helper method to create image with points overlay as blob
+  private createImageWithPointsBlob = async (imageIndex: number, imageName: string): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d')!;
+
+        // Determine which image and coordinates to use
+        const imageData = imageIndex === this.state.currentImageIndex ? {
+          imageUrl: this.state.currentImageURL!,
+          coords: this.state.scatterData,
+          width: this.state.imageWidth,
+          height: this.state.imageHeight
+        } : {
+          imageUrl: this.state.images[imageIndex].imageSets.original,
+          coords: this.state.images[imageIndex].coords,
+          width: 0, // Will be set when image loads
+          height: 0 // Will be set when image loads
+        };
+
+        const img = new Image();
+
+        img.onload = () => {
+          // Set canvas dimensions
+          canvas.width = imageIndex === this.state.currentImageIndex ? imageData.width : img.width;
+          canvas.height = imageIndex === this.state.currentImageIndex ? imageData.height : img.height;
+
+          // Draw the background image
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+          // Draw each point
+          ctx.fillStyle = 'red';
+          ctx.strokeStyle = 'black';
+          ctx.lineWidth = 1;
+
+          imageData.coords.forEach((point) => {
+            // For current image, coordinates are already scaled
+            // For other images, use original coordinates
+            const x = imageIndex === this.state.currentImageIndex ? point.x : point.x;
+            const y = imageIndex === this.state.currentImageIndex ? point.y : point.y;
+
+            ctx.beginPath();
+            ctx.arc(x, y, 5, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.stroke();
+
+            // Reset styles for next point
+            ctx.fillStyle = 'red';
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 1;
+          });
+
+          // Convert canvas to blob
+          canvas.toBlob((blob) => {
+            if (blob) {
+              resolve(blob);
+            } else {
+              reject(new Error('Failed to create blob from canvas'));
+            }
+          }, 'image/png');
+        };
+
+        img.onerror = () => {
+          reject(new Error(`Failed to load image: ${imageName}`));
+        };
+
+        // Set image source
+        img.src = imageData.imageUrl;
+
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
 
   // Format for displaying coordinates in the table
   private readonly formatCoord = (value: number): string => {
