@@ -10,7 +10,6 @@ import { Header } from "../components/Header";
 import { NavigationControls } from "../components/NavigationControls";
 import { ImageVersionControls } from "../components/ImageVersionControls";
 import { HistoryPanel } from "../components/HistoryPanel";
-import PointsPanel from "../components/PointsPanel";
 import { MainViewStyles } from "./MainView.style";
 import { SVGViewer } from "../components/SVGViewer";
 import { ApiService } from "../services/ApiService";
@@ -1133,18 +1132,6 @@ export class MainView extends Component<MainProps, MainState> {
               onZoomChange={this.handleZoomChange}
             />
           </div>
-          <PointsPanel
-            dataFetched={this.state.dataFetched}
-            selectedPoint={this.state.selectedPoint}
-            scatterData={this.state.scatterData}
-            imageFilename={this.state.imageFilename ?? ""}
-            currentImageIndex={this.state.currentImageIndex}
-            totalImages={this.state.images.length}
-            loading={this.state.loading}
-            onPointSelect={this.handlePointSelect}
-            onSaveAnnotations={this.handleSaveAnnotations}
-            formatCoord={this.formatCoord}
-          />
         </div>
       </div>
     );
