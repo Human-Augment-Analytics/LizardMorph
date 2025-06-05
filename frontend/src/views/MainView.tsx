@@ -1,6 +1,5 @@
 import React, { Component, createRef } from "react";
 import * as d3 from "d3";
-import JSZip from "jszip";
 
 import type { Point } from "../models/Point";
 import type { ImageSet } from "../models/ImageSet";
@@ -15,6 +14,7 @@ import PointsPanel from "../components/PointsPanel";
 import { MainViewStyles } from "./MainView.style";
 import { SVGViewer } from "../components/SVGViewer";
 import { ApiService } from "../services/ApiService";
+import { ExportService } from "../services/ExportService";
 import type { AnnotationsData } from "../models/AnnotationsData";
 
 interface MainState {
@@ -537,135 +537,21 @@ export class MainView extends Component<MainProps, MainState> {
   };
 
   private readonly handleScatterData = async (): Promise<void> => {
-    const downloadPromises: Promise<{ name: string; tpsContent: string; imageBlob?: Blob }>[] = [];
-    const zip = new JSZip();
-
-    for (let i = 0; i < this.state.images.length; i++) {
-      const originalCoords =
-        i === this.state.currentImageIndex
-          ? this.state.originalScatterData
-          : this.state.images[i].originalCoords || this.state.images[i].coords;
-
-      const payload = {
-        coords: originalCoords.map(({ id, ...rest }) => rest), // Remove the id field before sending
-        name: this.state.images[i].name
-      };
-
-      // Create a promise for each image's data processing
-      const processPromise = (async (): Promise<{ name: string; tpsContent: string; imageBlob?: Blob }> => {
-        try {
-          // Create TPS file content
-          let tpsContent = `LM=${payload.coords.length}\n`;
-          payload.coords.forEach(point => {
-            tpsContent += `${point.x} ${point.y}\n`;
-          });
-          tpsContent += `IMAGE=${payload.name.split('.')[0]}`;
-
-          // Send data to backend to get annotated image
-          const result = await ApiService.exportScatterData(payload);
-          console.log(`Processed data for ${payload.name}:`, result);
-
-          let imageBlob: Blob | undefined;
-
-          // Try to get the annotated image if it exists
-          if (result.image_urls && result.image_urls.length > 0) {
-            // Convert relative URL to absolute URL using the API base
-            const imageUrl = result.image_urls[0].startsWith('http')
-              ? result.image_urls[0]
-              : `/api${result.image_urls[0].startsWith('/') ? '' : '/'}${result.image_urls[0]}`;
-
-            try {
-              imageBlob = await ApiService.downloadAnnotatedImage(imageUrl);
-            } catch (imageError) {
-              console.warn(`Failed to fetch annotated image for ${payload.name}:`, imageError);
-            }
-          } else {
-            console.warn(`Backend processing failed for ${payload.name}, but continuing with TPS file`);
-          }
-
-          // If no annotated image from backend, create one from current visualization
-          if (!imageBlob) {
-            try {
-              imageBlob = await this.createImageWithPointsBlob(i, payload.name);
-            } catch (overlayError) {
-              console.warn(`Failed to create overlay image for ${payload.name}:`, overlayError);
-            }
-          }
-
-          return {
-            name: payload.name,
-            tpsContent,
-            imageBlob
-          };
-        } catch (error) {
-          console.error(`Error processing ${payload.name}:`, error);
-          // Still return TPS content even if other processing fails
-          let tpsContent = `LM=${payload.coords.length}\n`;
-          payload.coords.forEach(point => {
-            tpsContent += `${point.x} ${point.y}\n`;
-          });
-          tpsContent += `IMAGE=${payload.name.split('.')[0]}`;
-
-          return {
-            name: payload.name,
-            tpsContent
-          };
-        }
-      })();
-
-      downloadPromises.push(processPromise);
-    }
-
-    // Wait for all downloads to complete
     try {
       this.setState({ loading: true });
-      const results = await Promise.allSettled(downloadPromises);
+      
+      const result = await ExportService.exportAllData(
+        this.state.images,
+        this.state.currentImageIndex,
+        this.state.scatterData,
+        this.state.originalScatterData,
+        this.createImageWithPointsBlob
+      );
 
-      // Process successful results
-      const successfulResults = results
-        .filter((result): result is PromiseFulfilledResult<{ name: string; tpsContent: string; imageBlob?: Blob }> =>
-          result.status === 'fulfilled')
-        .map(result => result.value);
-
-      if (successfulResults.length === 0) {
-        throw new Error('No files were processed successfully');
-      }
-
-      // Add files to zip
-      successfulResults.forEach(result => {
-        const baseName = result.name.split('.')[0];
-        
-        // Add TPS file
-        zip.file(`${baseName}.tps`, result.tpsContent);
-
-        // Add annotated image if available
-        if (result.imageBlob) {
-          const imageExt = result.name.split('.').pop()?.toLowerCase() || 'png';
-          zip.file(`annotated_${baseName}.${imageExt}`, result.imageBlob);
-        }
-      });
-
-      // Generate and download zip file
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(zipBlob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `lizard_analysis_${new Date().toISOString().split('T')[0]}.zip`;
-
-      // Trigger download
-      document.body.appendChild(link);
-      link.click();
-
-      // Clean up
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      // Check for failures
-      const failures = results.filter(r => r.status === 'rejected');
-      if (failures.length > 0) {
-        alert(`Some files failed to download: ${failures.length} of ${this.state.images.length}`);
+      if (result.failedFiles > 0) {
+        alert(`Some files failed to download: ${result.failedFiles} of ${result.totalFiles}`);
       } else {
-        alert(`Successfully downloaded ${this.state.images.length} TPS file(s) and annotated image(s)`);
+        alert(`Successfully downloaded ${result.successfulFiles} TPS file(s) and annotated image(s)`);
       }
     } catch (error) {
       alert('An error occurred during download');
