@@ -9,7 +9,7 @@ export class HistoryPanelStyles {
   };
 
   static readonly historyTableContainer: CSSProperties = {
-    maxHeight: "calc(100vh - 250px)",
+    maxHeight: "calc(100vh - 350px)",
     overflowY: "auto",
     border: "1px solid #ddd",
     borderRadius: "4px",
@@ -45,7 +45,7 @@ export class HistoryPanelStyles {
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
-    color: "black",
+    color: "white",
   };
 
   static readonly historyTableCellSelected: CSSProperties = {

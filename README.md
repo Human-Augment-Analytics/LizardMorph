@@ -14,8 +14,7 @@ Porto, A. and Voje, K.L., 2020. ML‐morph: A fast, accurate and general approac
 
 #### Backend
 
-##### Environment
-Port availability may vary depending on your device. To specify a custom port for the backend, create a .env file in the root directory with the following content:
+Port availability may vary depending on your device. To specify a custom port for the backend, create a `.env` file in the root directory with the following content:
 ```
 API_PORT=3000 # your desire port number
 ```
@@ -44,6 +43,43 @@ If no port is specified, the default is 5000.
    ```
    npm run dev
    ```
+
+#### Setting up ngrok for External Access
+If you want to make your local development server accessible from the internet:
+https://ngrok.com/docs/getting-started/
+1. Install ngrok:
+   - Download from https://ngrok.com/download
+   - Or `brew install ngrok` (macOS)
+
+2. Configure ngrok:
+   - Register a free account with ngrok 
+   - Add your auth token
+   ```bash
+   ngrok config add-authtoken YOUR_AUTH_TOKEN
+   ```
+
+3. Create/Update `.env` file (mentioned above) with the following
+   ```
+   VITE_ALLOWED_HOSTS=your-subdomain.ngrok-free.app
+   ```
+   Replace `your-subdomain` with your actual ngrok subdomain (e.g., "8e41-123-45-67-89.ngrok-free.app")
+
+4. Start ngrok tunnel (after starting your frontend server):
+   ```bash
+   ngrok http 5173  # Use your frontend port number
+   ```
+
+5. Copy the generated ngrok URL (e.g., "https://8e41-123-45-67-89.ngrok-free.app")
+   and update your `.env` file with this domain.
+
+Note: The ngrok URL will change each time you restart ngrok unless you have a paid account with a fixed subdomain.
+
+#### Sample Environment file (.env)
+```
+API_PORT=3000 # your desire port number
+VITE_ALLOWED_HOSTS=your-subdomain.ngrok-free.app
+```
+
 ## Vignette
 1. Open a terminal and activate the backend with the instructions from above
 2. Open another terminal and activate the frontend with the instructions from above

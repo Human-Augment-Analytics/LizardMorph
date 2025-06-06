@@ -83,7 +83,7 @@ def upload():
 
         for image in images:
             if image:
-                unique_name = f"{os.path.splitext(image.filename)[0]}_{int(time.time())}_{random.randint(1000,9999)}.jpg"
+                unique_name = f"{os.path.splitext(image.filename)[0]}.jpg"
                 image_path = os.path.join(app.config["UPLOAD_FOLDER"], unique_name)
                 image.save(image_path)
 

@@ -10,11 +10,10 @@ import { Header } from "../components/Header";
 import { NavigationControls } from "../components/NavigationControls";
 import { ImageVersionControls } from "../components/ImageVersionControls";
 import { HistoryPanel } from "../components/HistoryPanel";
-import PointsPanel from "../components/PointsPanel";
 import { MainViewStyles } from "./MainView.style";
 import { SVGViewer } from "../components/SVGViewer";
 import { ApiService } from "../services/ApiService";
-import type { AnnotationsData } from "../models/AnnotationsData";
+import { ExportService } from "../services/ExportService";
 
 interface MainState {
   currentImageIndex: number;
@@ -536,290 +535,104 @@ export class MainView extends Component<MainProps, MainState> {
   };
 
   private readonly handleScatterData = async (): Promise<void> => {
-    // If we have multiple images, we'll download data for all of them
-    const downloadPromises: Promise<string>[] = [];
-
-    for (let i = 0; i < this.state.images.length; i++) {
-      // Get the original coordinates for this image
-      const originalCoords =
-        i === this.state.currentImageIndex
-          ? this.state.originalScatterData
-          : this.state.images[i].originalCoords || this.state.images[i].coords;
-
-      const payload = {
-        coords: originalCoords.map((coord) => ({ x: coord.x, y: coord.y })), // Remove the id field before sending
-        name: this.state.images[i].name,
-      }; // Create a promise for each image's data processing
-      const processPromise = (async (): Promise<string> => {
-        try {
-          // Send data to backend using ApiService
-          const result = await ApiService.exportScatterData(payload);
-          console.log(`Downloaded data for ${payload.name}:`, result);
-
-          // Download the TPS file to user's downloads folder
-          await this.downloadTpsFile(payload);
-
-          // Also download the annotated image if it exists
-          if (result.image_urls && result.image_urls.length > 0) {
-            // Convert relative URL to absolute URL using the API base
-            let imageUrl: string;
-            if (result.image_urls[0].startsWith("http")) {
-              imageUrl = result.image_urls[0];
-            } else {
-              const prefix = result.image_urls[0].startsWith("/") ? "" : "/";
-              imageUrl = `/api${prefix}${result.image_urls[0]}`;
-            }
-
-            await this.downloadAnnotatedImage(imageUrl, payload.name);
-          } else {
-            // If no image URL is provided, we generate a simple visualization
-            // using the current image and points data
-            await this.downloadCurrentImageWithPoints(i, payload.name);
-          }
-
-          return payload.name;
-        } catch (error) {
-          console.error(
-            `Error during the fetch request for ${payload.name}:`,
-            error
-          );
-          throw error;
-        }
-      })();
-
-      downloadPromises.push(processPromise);
-    }
-
-    // Wait for all downloads to complete
     try {
       this.setState({ loading: true });
-      const results = await Promise.allSettled(downloadPromises);
+      
+      const result = await ExportService.exportAllData(
+        this.state.images,
+        this.state.currentImageIndex,
+        this.state.scatterData,
+        this.state.originalScatterData,
+        this.createImageWithPointsBlob
+      );
 
-      // Check for failures
-      const failures = results.filter((r) => r.status === "rejected");
-
-      if (failures.length > 0) {
-        alert(
-          `Some files failed to download: ${failures.length} of ${this.state.images.length}`
-        );
+      if (result.failedFiles > 0) {
+        alert(`Some files failed to download: ${result.failedFiles} of ${result.totalFiles}`);
       } else {
-        alert(
-          `Successfully downloaded ${this.state.images.length} TPS file(s) and annotated image(s)`
-        );
+        alert(`Successfully downloaded ${result.successfulFiles} TPS file(s) and annotated image(s)`);
       }
     } catch (error) {
-      alert("An error occurred during download");
-      console.error("Download error:", error);
+      alert('An error occurred during download');
+      console.error('Download error:', error);
     } finally {
       this.setState({ loading: false });
     }
   };
 
-  // Format for displaying coordinates in the table
-  private readonly formatCoord = (value: number): string => {
-    return value ? (Math.round(value * 100) / 100).toString() : "N/A";
-  };
+  // Helper method to create image with points overlay as blob
+  private createImageWithPointsBlob = async (imageIndex: number, imageName: string): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d')!;
 
-  // Function to download TPS file directly to user's downloads
-  private readonly downloadTpsFile = async (payload: {
-    coords: { x: number; y: number }[];
-    name: string;
-  }): Promise<void> => {
-    try {
-      // Create TPS file content
-      let tpsContent = `LM=${payload.coords.length}\n`;
+        // Determine which image and coordinates to use
+        const imageData = imageIndex === this.state.currentImageIndex ? {
+          imageUrl: this.state.currentImageURL!,
+          coords: this.state.originalScatterData, // Use original coordinates instead of scaled ones
+          width: this.state.imageWidth,
+          height: this.state.imageHeight
+        } : {
+          imageUrl: this.state.images[imageIndex].imageSets.original,
+          coords: this.state.images[imageIndex].originalCoords || this.state.images[imageIndex].coords,
+          width: 0, // Will be set when image loads
+          height: 0 // Will be set when image loads
+        };
 
-      payload.coords.forEach((point) => {
-        tpsContent += `${point.x} ${point.y}\n`;
-      });
-
-      tpsContent += `IMAGE=${payload.name.split(".")[0]}`;
-
-      // Create a blob from the TPS content
-      const blob = new Blob([tpsContent], { type: "text/plain" });
-
-      // Create a download link for the blob
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      const filename = payload.name.split(".")[0] + ".tps";
-      link.download = filename;
-
-      // Trigger the download
-      document.body.appendChild(link);
-      link.click();
-
-      // Clean up
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      console.log("TPS file downloaded successfully:", filename);
-    } catch (error) {
-      console.error("Error downloading TPS file:", error);
-      throw error;
-    }
-  };
-  // Function to download the annotated image from the backend
-  private readonly downloadAnnotatedImage = async (
-    imageUrl: string,
-    imageName: string
-  ): Promise<void> => {
-    try {
-      const blob = await ApiService.downloadAnnotatedImage(imageUrl);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `annotated_${imageName}`;
-
-      // Trigger the download
-      document.body.appendChild(link);
-      link.click();
-
-      // Clean up
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      console.log("Annotated image downloaded successfully:", imageName);
-    } catch (error) {
-      console.error("Error downloading annotated image:", error);
-      throw error;
-    }
-  };
-
-  // Function to download the current image with points overlay as an alternative
-  private readonly downloadCurrentImageWithPoints = async (
-    imageIndex: number,
-    imageName: string
-  ): Promise<void> => {
-    try {
-      // If this is the current image, use the SVG element
-      if (imageIndex === this.state.currentImageIndex && this.svgRef.current) {
-        // Get the current SVG element
-        const svg = this.svgRef.current;
-
-        // Create a canvas to draw the image and points
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d")!;
-
-        // Set canvas dimensions to match the SVG
-        canvas.width = svg.width.baseVal.value;
-        canvas.height = svg.height.baseVal.value;
-
-        // Get the background image
         const img = new Image();
+
         img.onload = () => {
+          // Set canvas dimensions to match original image
+          canvas.width = imageIndex === this.state.currentImageIndex ? imageData.width : img.width;
+          canvas.height = imageIndex === this.state.currentImageIndex ? imageData.height : img.height;
+
           // Draw the background image
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-          // Draw each point from scatterData
-          ctx.fillStyle = "red";
-          ctx.strokeStyle = "black";
+          // Draw each point
+          ctx.fillStyle = 'red';
+          ctx.strokeStyle = 'black';
+          ctx.lineWidth = 1;
 
-          this.state.scatterData.forEach((point) => {
+          imageData.coords.forEach((point) => {
+            // Use original coordinates directly since we're working with original image dimensions
+            const x = point.x;
+            const y = point.y;
+
             ctx.beginPath();
-            ctx.arc(point.x, point.y, 3, 0, 2 * Math.PI);
+            ctx.arc(x, y, 5, 0, 2 * Math.PI);
             ctx.fill();
             ctx.stroke();
 
-            // Add point ID labels
-            ctx.fillStyle = "white";
-            ctx.font = "10px Arial";
-            ctx.fillText(point.id.toString(), point.x + 5, point.y - 5);
-            ctx.fillStyle = "red"; // Reset fill color for next point
+            // Reset styles for next point
+            ctx.fillStyle = 'red';
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 1;
           });
 
-          // Convert canvas to image and trigger download
-          const imageUrl = canvas.toDataURL("image/png");
-          const link = document.createElement("a");
-          link.href = imageUrl;
-          link.download = `points_overlay_${imageName}`;
-
-          // Trigger download
-          document.body.appendChild(link);
-          link.click();
-
-          // Clean up
-          document.body.removeChild(link);
-
-          console.log(
-            "Image with points overlay downloaded successfully:",
-            imageName
-          );
+          // Convert canvas to blob
+          canvas.toBlob((blob) => {
+            if (blob) {
+              resolve(blob);
+            } else {
+              reject(new Error('Failed to create blob from canvas'));
+            }
+          }, 'image/png');
         };
 
-        // Set the image source - current displayed image
-        img.src = this.state.currentImageURL!;
-      } else {
-        // For non-current images, create a new canvas and use the stored image data
-        const img = new Image();
+        img.onerror = () => {
+          reject(new Error(`Failed to load image: ${imageName}`));
+        };
 
-        // Create a promise so we can wait for the image to load
-        await new Promise<void>((resolve, reject) => {
-          img.onload = () => {
-            const canvas = document.createElement("canvas");
-            const ctx = canvas.getContext("2d")!;
+        // Set image source
+        img.src = imageData.imageUrl;
 
-            // Set canvas dimensions to match the image
-            canvas.width = img.width;
-            canvas.height = img.height;
-
-            // Draw the background image
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-            // Draw each point
-            ctx.fillStyle = "red";
-            ctx.strokeStyle = "black";
-
-            this.state.images[imageIndex].coords.forEach((point, idx) => {
-              ctx.beginPath();
-              ctx.arc(point.x, point.y, 3, 0, 2 * Math.PI);
-              ctx.fill();
-              ctx.stroke();
-
-              // Add point ID labels
-              ctx.fillStyle = "white";
-              ctx.font = "10px Arial";
-              ctx.fillText((idx + 1).toString(), point.x + 5, point.y - 5);
-              ctx.fillStyle = "red"; // Reset fill color for next point
-            });
-
-            // Convert canvas to image and trigger download
-            const imageUrl = canvas.toDataURL("image/png");
-            const link = document.createElement("a");
-            link.href = imageUrl;
-            link.download = `points_overlay_${imageName}`;
-
-            // Trigger download
-            document.body.appendChild(link);
-            link.click();
-
-            // Clean up
-            document.body.removeChild(link);
-
-            console.log(
-              "Image with points overlay downloaded successfully:",
-              imageName
-            );
-            resolve();
-          };
-
-          img.onerror = () => {
-            console.error("Failed to load image for overlay:", imageName);
-            reject(new Error(`Failed to load image for overlay: ${imageName}`));
-          };
-        });
-
-        // Set the image source
-        img.src = this.state.images[imageIndex].imageSets.original!;
+      } catch (error) {
+        reject(error);
       }
-    } catch (error) {
-      console.error(
-        "Error creating and downloading points overlay image:",
-        error
-      );
-      throw error;
-    }
-  };
+    });
+  }
+
   // Handle changing to a different image in the set
   private readonly changeCurrentImage = (index: number): void => {
     this.setState((prevState) => {
@@ -959,79 +772,6 @@ export class MainView extends Component<MainProps, MainState> {
     }
   };
 
-  private readonly handleSaveAnnotations = async (): Promise<void> => {
-    if (
-      !this.state.dataFetched ||
-      this.state.loading ||
-      !this.state.imageFilename
-    )
-      return;
-
-    try {
-      this.setState({ loading: true });
-
-      // Convert scaled coordinates back to original image coordinates
-      const scaleX = d3
-        .scaleLinear()
-        .domain([
-          0,
-          window.innerHeight * (this.state.imageWidth / this.state.imageHeight),
-        ])
-        .range([0, this.state.imageWidth]);
-
-      const scaleY = d3
-        .scaleLinear()
-        .domain([0, window.innerHeight - window.innerHeight * 0.2])
-        .range([0, this.state.imageHeight]);
-
-      const originalCoords: Point[] = this.state.scatterData.map((point) => ({
-        x: scaleX.invert(point.x),
-        y: scaleY.invert(point.y),
-        id: point.id,
-      }));
-
-      const payload: AnnotationsData = {
-        coords: originalCoords,
-        name: this.state.imageFilename,
-      };
-
-      // Send data to backend using ApiService
-      const result = await ApiService.saveAnnotations(payload);
-
-      // Update originalScatterData with the saved coordinates
-      const updatedOriginalCoords = originalCoords.map((coord, index) => ({
-        ...coord,
-        id: index + 1,
-      }));
-      this.setState((prevState) => {
-        // Update the current image's data in the images array
-        const updatedImages = [...prevState.images];
-        updatedImages[prevState.currentImageIndex].originalCoords =
-          updatedOriginalCoords;
-        updatedImages[prevState.currentImageIndex].coords =
-          prevState.scatterData;
-
-        return {
-          images: updatedImages,
-          originalScatterData: updatedOriginalCoords,
-        };
-      });
-
-      // Show success message
-      alert("Annotations saved successfully!");
-      console.log("Save result:", result);
-    } catch (error) {
-      console.error("Error saving annotations:", error);
-      alert(
-        `Error saving annotations: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
-    } finally {
-      this.setState({ loading: false });
-    }
-  };
-
   private readonly handleScatterDataUpdate = (
     scatterData: Point[],
     originalScatterData: Point[]
@@ -1113,18 +853,6 @@ export class MainView extends Component<MainProps, MainState> {
               onZoomChange={this.handleZoomChange}
             />
           </div>
-          <PointsPanel
-            dataFetched={this.state.dataFetched}
-            selectedPoint={this.state.selectedPoint}
-            scatterData={this.state.scatterData}
-            imageFilename={this.state.imageFilename ?? ""}
-            currentImageIndex={this.state.currentImageIndex}
-            totalImages={this.state.images.length}
-            loading={this.state.loading}
-            onPointSelect={this.handlePointSelect}
-            onSaveAnnotations={this.handleSaveAnnotations}
-            formatCoord={this.formatCoord}
-          />
         </div>
       </div>
     );
