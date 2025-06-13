@@ -53,7 +53,7 @@ export class ExportService {
   ): Promise<{ totalFiles: number; failedFiles: number; successfulFiles: number }> {
     const downloadPromises: Promise<{ name: string; tpsContent: string; imageBlob?: Blob }>[] = [];
     const zip = new JSZip();
-
+    console.log(currentScatterData);
     for (let i = 0; i < images.length; i++) {
       const originalCoords =
         i === currentIndex
