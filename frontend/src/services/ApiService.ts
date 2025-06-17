@@ -141,12 +141,6 @@ export class ApiService {
   }
 
   /**
-   * Start a new session
-   */
-  static async startNewSession(): Promise<void> {
-    await SessionService.startNewSession();
-  }
-  /**
    * Get current session information
    */
   static async getSessionInfo(): Promise<SessionInfo> {

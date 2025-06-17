@@ -37,6 +37,7 @@ interface MainState {
   imageSet: ImageSet;
   lizardCount: number;
   zoomTransform: d3.ZoomTransform;
+  sessionReady: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -45,7 +46,6 @@ interface MainProps {}
 export class MainView extends Component<MainProps, MainState> {
   readonly svgRef = createRef<SVGSVGElement>();
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
-
   state: MainState = {
     currentImageIndex: 0,
     images: [],
@@ -71,6 +71,7 @@ export class MainView extends Component<MainProps, MainState> {
     },
     lizardCount: 0,
     zoomTransform: d3.zoomIdentity,
+    sessionReady: false,
   };
   componentDidMount(): void {
     this.initializeApp();
@@ -85,11 +86,13 @@ export class MainView extends Component<MainProps, MainState> {
     // Remove beforeunload event listener
     window.removeEventListener("beforeunload", this.handleBeforeUnload);
   }
-
   private async initializeApp(): Promise<void> {
     try {
       // Initialize session management
       await ApiService.initialize();
+
+      // Mark session as ready
+      this.setState({ sessionReady: true });
 
       // Now proceed with normal initialization
       this.fetchUploadedFiles();
@@ -103,6 +106,7 @@ export class MainView extends Component<MainProps, MainState> {
           error instanceof Error
             ? error
             : new Error("Failed to initialize session"),
+        sessionReady: false,
       });
     }
   }
@@ -850,46 +854,29 @@ export class MainView extends Component<MainProps, MainState> {
   // Add cleanup functionality to clear history when the app closes, including beforeunload event handler
   private readonly setupBeforeUnloadHandler = (): void => {
     window.addEventListener("beforeunload", this.handleBeforeUnload);
+    window.addEventListener("unload", this.handleBeforeUnload);
   };
-  private readonly handleBeforeUnload = (): void => {
-    // Clear history when browser/tab is closed
-    this.clearHistory();
-
-    // Optional: Show confirmation dialog (commented out as it may not be needed)
-    // event.preventDefault();
-    // event.returnValue = 'Are you sure you want to leave? Your session data will be cleared.';
+  private readonly handleBeforeUnload = async (): Promise<void> => {
+    try {
+      // Clear session history before page closes
+      await this.clearHistory();
+    } catch (error) {
+      console.error("Failed to clear session on page close:", error);
+    }
   };
 
   private readonly clearHistory = async (): Promise<void> => {
     try {
-      // Clear frontend state
-      this.setState({
-        uploadHistory: [],
-        images: [],
-        currentImageIndex: 0,
-        currentImageURL: null,
-        scatterData: [],
-        originalScatterData: [],
-        imageFilename: null,
-        dataFetched: false,
-        selectedPoint: null,
-        lizardCount: 0,
-        needsScaling: true,
-        zoomTransform: d3.zoomIdentity,
-      });
-
-      // Clear backend session data
       await ApiService.clearHistory();
-
-      console.log("History cleared successfully");
+      console.log("Session history cleared");
     } catch (error) {
-      console.error("Error clearing history:", error);
+      console.error("Failed to clear history:", error);
     }
   };
   render() {
     return (
       <div style={MainViewStyles.container}>
-        <SessionInfo />
+        {this.state.sessionReady && <SessionInfo />}
         <Header
           lizardCount={this.state.lizardCount}
           loading={this.state.loading}
