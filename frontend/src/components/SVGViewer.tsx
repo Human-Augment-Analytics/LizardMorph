@@ -27,11 +27,22 @@ interface SVGViewerProps {
   onZoomChange: (transform: d3.ZoomTransform) => void;
 }
 
-export class SVGViewer extends Component<SVGViewerProps> {
+interface SVGViewerState {
+  isEditMode: boolean;
+}
+
+export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   readonly svgRef = createRef<SVGSVGElement>();
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
 
-  componentDidUpdate(prevProps: SVGViewerProps) {
+  constructor(props: SVGViewerProps) {
+    super(props);
+    this.state = {
+      isEditMode: false
+    };
+  }
+
+  componentDidUpdate(prevProps: SVGViewerProps, prevState: SVGViewerState) {
     if (
       this.props.currentImageURL &&
       this.props.imageWidth &&
@@ -41,7 +52,8 @@ export class SVGViewer extends Component<SVGViewerProps> {
         prevProps.imageWidth !== this.props.imageWidth ||
         prevProps.imageHeight !== this.props.imageHeight ||
         prevProps.originalScatterData !== this.props.originalScatterData ||
-        this.props.needsScaling)
+        this.props.needsScaling ||
+        prevState.isEditMode !== this.state.isEditMode)
     ) {
       setTimeout(() => {
         this.renderSVG();
@@ -189,14 +201,16 @@ export class SVGViewer extends Component<SVGViewerProps> {
           .attr("stroke-width", "0.5px");
       });
 
-      // Add drag behavior
-      pointGroups.call(
-        d3
-          .drag<SVGGElement, Point>()
-          .on("start", this.dragstarted)
-          .on("drag", this.dragged)
-          .on("end", this.dragended)
-      );
+      // Add drag behavior only if in edit mode
+      if (this.state.isEditMode) {
+        pointGroups.call(
+          d3
+            .drag<SVGGElement, Point>()
+            .on("start", this.dragstarted)
+            .on("drag", this.dragged)
+            .on("end", this.dragended)
+        );
+      }
 
       // Add zoom behavior, preserving the current zoom state
       const zoom = d3
@@ -212,19 +226,26 @@ export class SVGViewer extends Component<SVGViewerProps> {
             event.preventDefault();
             return false;
           }
+          // Disable zoom/pan when in edit mode
+          if (this.state.isEditMode) {
+            return false;
+          }
           return !mouseEvent.button && event.type !== "dblclick";
         });
 
       // Store the zoom reference for external control
       this.zoomRef.current = zoom;
 
-      // Apply zoom behavior to the SVG
-      svg.call(zoom);
+      // Apply zoom behavior to the SVG only if not in edit mode
+      if (!this.state.isEditMode) {
+        svg.call(zoom);
+      }
 
       // Always apply the stored transform to preserve zoom state
       if (
         this.props.zoomTransform &&
-        this.props.zoomTransform !== d3.zoomIdentity
+        this.props.zoomTransform !== d3.zoomIdentity &&
+        !this.state.isEditMode
       ) {
         svg.call(zoom.transform, this.props.zoomTransform);
       }
@@ -324,6 +345,13 @@ export class SVGViewer extends Component<SVGViewerProps> {
     event.sourceEvent.stopPropagation();
     d3.select(event.sourceEvent.target.parentNode).attr("stroke", "black");
   };
+
+  private readonly toggleEditMode = (): void => {
+    this.setState(prevState => ({
+      isEditMode: !prevState.isEditMode
+    }));
+  };
+
   render() {
     const { dataFetched, loading, dataLoading, dataError } = this.props;
 
@@ -336,6 +364,28 @@ export class SVGViewer extends Component<SVGViewerProps> {
               The images will appear here
             </p>
           </div>
+        )}
+
+        {dataFetched && (
+          <button
+            onClick={this.toggleEditMode}
+            style={{
+              position: 'absolute',
+              top: '10px',
+              right: '10px',
+              zIndex: 1000,
+              padding: '8px 16px',
+              backgroundColor: this.state.isEditMode ? '#ff4444' : '#4CAF50',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: 'bold'
+            }}
+          >
+            {this.state.isEditMode ? 'Exit Edit Mode' : 'Edit Points'}
+          </button>
         )}
 
         <svg
