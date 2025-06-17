@@ -10,6 +10,7 @@ import { Header } from "../components/Header";
 import { NavigationControls } from "../components/NavigationControls";
 import { ImageVersionControls } from "../components/ImageVersionControls";
 import { HistoryPanel } from "../components/HistoryPanel";
+import { SessionInfo } from "../components/SessionInfo";
 import { MainViewStyles } from "./MainView.style";
 import { SVGViewer } from "../components/SVGViewer";
 import { ApiService } from "../services/ApiService";
@@ -71,12 +72,8 @@ export class MainView extends Component<MainProps, MainState> {
     lizardCount: 0,
     zoomTransform: d3.zoomIdentity,
   };
-
   componentDidMount(): void {
-    this.fetchUploadedFiles();
-    this.setupInterval();
-    // Add cleanup on app close
-    this.setupBeforeUnloadHandler();
+    this.initializeApp();
   }
 
   componentWillUnmount(): void {
@@ -87,6 +84,27 @@ export class MainView extends Component<MainProps, MainState> {
     this.clearHistory();
     // Remove beforeunload event listener
     window.removeEventListener("beforeunload", this.handleBeforeUnload);
+  }
+
+  private async initializeApp(): Promise<void> {
+    try {
+      // Initialize session management
+      await ApiService.initialize();
+
+      // Now proceed with normal initialization
+      this.fetchUploadedFiles();
+      this.setupInterval();
+      this.setupBeforeUnloadHandler();
+    } catch (error) {
+      console.error("Failed to initialize app:", error);
+      // Show error to user or handle gracefully
+      this.setState({
+        dataError:
+          error instanceof Error
+            ? error
+            : new Error("Failed to initialize session"),
+      });
+    }
   }
 
   private intervalId: NodeJS.Timeout | null = null;
@@ -868,11 +886,10 @@ export class MainView extends Component<MainProps, MainState> {
       console.error("Error clearing history:", error);
     }
   };
-
   render() {
     return (
       <div style={MainViewStyles.container}>
-        {" "}
+        <SessionInfo />
         <Header
           lizardCount={this.state.lizardCount}
           loading={this.state.loading}
