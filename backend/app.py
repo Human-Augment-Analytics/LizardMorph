@@ -30,8 +30,8 @@ app = Flask(
 )
 
 # Configure Flask session
-app.secret_key = os.getenv('SECRET_KEY', 'your-secret-key-change-in-production')
-app.config['SESSION_TYPE'] = 'filesystem'
+app.secret_key = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+app.config["SESSION_TYPE"] = "filesystem"
 
 
 CORS(
@@ -83,16 +83,16 @@ session_manager = SessionManager(SESSIONS_FOLDER)
 
 def get_session_id():
     """Get or create session ID for the current request."""
-    session_id = request.headers.get('X-Session-ID')
+    session_id = request.headers.get("X-Session-ID")
     if not session_id:
         # Try to get from session cookie as fallback
-        session_id = session.get('session_id')
-    
+        session_id = session.get("session_id")
+
     if not session_id:
         # Create new session
         session_id = session_manager.create_session()
-        session['session_id'] = session_id
-    
+        session["session_id"] = session_id
+
     return session_id
 
 
@@ -103,7 +103,7 @@ def get_session_folders(session_id):
         # Create session if it doesn't exist
         session_id = session_manager.create_session()
         session_data = session_manager.get_session(session_id)
-    
+
     return session_data
 
 
@@ -149,22 +149,27 @@ def start_session():
     """Start a new session and return the session ID."""
     try:
         session_id = session_manager.create_session()
-        session['session_id'] = session_id
-        
+        session["session_id"] = session_id
+
         logger.info(f"Started new session: {session_id}")
-        
-        return jsonify({
-            'success': True,
-            'session_id': session_id,
-            'message': 'New session started successfully'
-        }), 200
-        
+
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "session_id": session_id,
+                    "message": "New session started successfully",
+                }
+            ),
+            200,
+        )
+
     except Exception as e:
         logger.error(f"Error starting session: {str(e)}", exc_info=True)
-        return jsonify({
-            'success': False,
-            'error': f'Failed to start session: {str(e)}'
-        }), 500
+        return (
+            jsonify({"success": False, "error": f"Failed to start session: {str(e)}"}),
+            500,
+        )
 
 
 @app.route("/session/info", methods=["GET"])
@@ -174,35 +179,39 @@ def get_session_info():
     try:
         session_id = get_session_id()
         session_data = session_manager.get_session(session_id)
-        
+
         if not session_data:
-            return jsonify({
-                'success': False,
-                'error': 'Session not found'
-            }), 404
-        
+            return jsonify({"success": False, "error": "Session not found"}), 404
+
         # Count files in session
         file_count = 0
-        session_folder = session_data['session_folder']
+        session_folder = session_data["session_folder"]
         if os.path.exists(session_folder):
             for root, dirs, files in os.walk(session_folder):
                 file_count += len(files)
-        
-        return jsonify({
-            'success': True,
-            'session_id': session_id,
-            'session_id_short': session_id[:8],
-            'created_at': session_data['created_at'],
-            'session_folder': session_data['session_folder'],
-            'file_count': file_count
-        }), 200
-        
+
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "session_id": session_id,
+                    "session_id_short": session_id[:8],
+                    "created_at": session_data["created_at"],
+                    "session_folder": session_data["session_folder"],
+                    "file_count": file_count,
+                }
+            ),
+            200,
+        )
+
     except Exception as e:
         logger.error(f"Error getting session info: {str(e)}", exc_info=True)
-        return jsonify({
-            'success': False,
-            'error': f'Failed to get session info: {str(e)}'
-        }), 500
+        return (
+            jsonify(
+                {"success": False, "error": f"Failed to get session info: {str(e)}"}
+            ),
+            500,
+        )
 
 
 @app.route("/session/list", methods=["GET"])
@@ -211,18 +220,15 @@ def list_sessions():
     """List all available sessions."""
     try:
         sessions = session_manager.list_sessions()
-        
-        return jsonify({
-            'success': True,
-            'sessions': sessions
-        }), 200
-        
+
+        return jsonify({"success": True, "sessions": sessions}), 200
+
     except Exception as e:
         logger.error(f"Error listing sessions: {str(e)}", exc_info=True)
-        return jsonify({
-            'success': False,
-            'error': f'Failed to list sessions: {str(e)}'
-        }), 500
+        return (
+            jsonify({"success": False, "error": f"Failed to list sessions: {str(e)}"}),
+            500,
+        )
 
 
 @app.route("/data", methods=["POST", "OPTIONS"])
@@ -234,31 +240,45 @@ def upload():
         # Get session-specific folders
         session_id = get_session_id()
         session_data = get_session_folders(session_id)
-        
+
         images = request.files.getlist("image")
         all_data = []
 
         for image in images:
             if image:
                 unique_name = f"{os.path.splitext(image.filename)[0]}.jpg"
-                
+
                 # Use session-specific folders
-                image_path = os.path.join(session_data['upload_folder'], unique_name)
-                processed_path = os.path.join(session_data['processed_folder'], f"processed_{unique_name}")
-                inverted_path = os.path.join(session_data['inverted_folder'], f"inverted_{unique_name}")
-                
+                image_path = os.path.join(session_data["upload_folder"], unique_name)
+                processed_path = os.path.join(
+                    session_data["processed_folder"], f"processed_{unique_name}"
+                )
+                inverted_path = os.path.join(
+                    session_data["inverted_folder"], f"inverted_{unique_name}"
+                )
+
                 image.save(image_path)
 
                 xray_preprocessing.process_single_image(image_path, processed_path)
-                visual_individual_performance.invert_single_image(image_path, inverted_path)
+                visual_individual_performance.invert_single_image(
+                    image_path, inverted_path
+                )
 
                 # Generate the prediction XML in the session outputs folder
-                xml_output_path = os.path.join(session_data['outputs_folder'], f"output_{unique_name}.xml")
-                utils.predictions_to_xml_single("better_predictor_auto.dat", image_path, xml_output_path)
+                xml_output_path = os.path.join(
+                    session_data["outputs_folder"], f"output_{unique_name}.xml"
+                )
+                utils.predictions_to_xml_single(
+                    "better_predictor_auto.dat", image_path, xml_output_path
+                )
 
                 # Generate CSV and TPS output files in the session outputs folder
-                csv_output_path = os.path.join(session_data['outputs_folder'], f"output_{unique_name}.csv")
-                tps_output_path = os.path.join(session_data['outputs_folder'], f"output_{unique_name}.tps")
+                csv_output_path = os.path.join(
+                    session_data["outputs_folder"], f"output_{unique_name}.csv"
+                )
+                tps_output_path = os.path.join(
+                    session_data["outputs_folder"], f"output_{unique_name}.tps"
+                )
                 utils.dlib_xml_to_pandas(xml_output_path)
                 utils.dlib_xml_to_tps(xml_output_path)
 
@@ -267,19 +287,33 @@ def upload():
 
                 # Copy original files to export directory
                 export_handler.copy_file_to_export(image_path, export_dir)
-                export_handler.copy_file_to_export(processed_path, export_dir, f"processed_{unique_name}")
-                export_handler.copy_file_to_export(inverted_path, export_dir, f"inverted_{unique_name}")
-                export_handler.copy_file_to_export(xml_output_path, export_dir, f"{os.path.basename(xml_output_path)}")
-                export_handler.copy_file_to_export(csv_output_path, export_dir, f"{os.path.basename(csv_output_path)}")
-                export_handler.copy_file_to_export(tps_output_path, export_dir, f"{os.path.basename(tps_output_path)}")
+                export_handler.copy_file_to_export(
+                    processed_path, export_dir, f"processed_{unique_name}"
+                )
+                export_handler.copy_file_to_export(
+                    inverted_path, export_dir, f"inverted_{unique_name}"
+                )
+                export_handler.copy_file_to_export(
+                    xml_output_path, export_dir, f"{os.path.basename(xml_output_path)}"
+                )
+                export_handler.copy_file_to_export(
+                    csv_output_path, export_dir, f"{os.path.basename(csv_output_path)}"
+                )
+                export_handler.copy_file_to_export(
+                    tps_output_path, export_dir, f"{os.path.basename(tps_output_path)}"
+                )
 
                 # Parse XML for frontend
-                data = visual_individual_performance.parse_xml_for_frontend(xml_output_path)
+                data = visual_individual_performance.parse_xml_for_frontend(
+                    xml_output_path
+                )
                 data["name"] = unique_name
                 data["session_id"] = session_id
                 all_data.append(data)
 
-                logger.info(f"Processed image: {unique_name} for session: {session_id[:8]}")
+                logger.info(
+                    f"Processed image: {unique_name} for session: {session_id[:8]}"
+                )
 
         return jsonify(all_data)
 
@@ -299,14 +333,18 @@ def get_input_image():
         # Get session-specific folders
         session_id = get_session_id()
         session_data = get_session_folders(session_id)
-        
+
         image_data = {}
 
         # Define exact paths for each image version using session folders
         paths = {
-            "image1": os.path.join(session_data['processed_folder'], f"processed_{image_filename}"),
-            "image2": os.path.join(session_data['inverted_folder'], f"inverted_{image_filename}"),
-            "image3": os.path.join(session_data['upload_folder'], image_filename),
+            "image1": os.path.join(
+                session_data["processed_folder"], f"processed_{image_filename}"
+            ),
+            "image2": os.path.join(
+                session_data["inverted_folder"], f"inverted_{image_filename}"
+            ),
+            "image3": os.path.join(session_data["upload_folder"], image_filename),
         }
 
         for key, path in paths.items():
@@ -324,7 +362,7 @@ def get_input_image():
             return jsonify({"error": "Original image not found"}), 404
 
         return jsonify(image_data)
-        
+
     except Exception as e:
         logger.error(f"Error getting image: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -347,7 +385,7 @@ def process_scatter_data():
         # Get session-specific folders
         session_id = get_session_id()
         session_data = get_session_folders(session_id)
-        
+
         # Remove file extension if present
         base_name = name.split(".")[0] if "." in name else name
 
@@ -355,7 +393,7 @@ def process_scatter_data():
         export_dir = export_handler.create_export_directory(name)
 
         # Create TPS file in session TPS folder and export directory
-        tps_file_path = os.path.join(session_data['tps_folder'], f"{base_name}.tps")
+        tps_file_path = os.path.join(session_data["tps_folder"], f"{base_name}.tps")
         export_tps_path = export_handler.export_tps_file(coords, name, export_dir)
 
         logger.info(f"Creating TPS file at: {tps_file_path}")
@@ -368,7 +406,7 @@ def process_scatter_data():
             # Get image height for y-flip
             from PIL import Image
 
-            image_path = os.path.join(session_data['upload_folder'], name)
+            image_path = os.path.join(session_data["upload_folder"], name)
             with Image.open(image_path) as img:
                 height = img.height
 
@@ -391,7 +429,7 @@ def process_scatter_data():
         try:
             logger.info(f"Creating annotated image for: {tps_file_path}")
             output_paths = visual_individual_performance.create_image(
-                tps_file_path, session_data['image_download_folder']
+                tps_file_path, session_data["image_download_folder"]
             )
 
             # Copy annotated images to export directory
@@ -402,7 +440,9 @@ def process_scatter_data():
             image_urls = []
             if output_paths:
                 for path in output_paths:
-                    image_urls.append(f"/api/images/{session_id[:8]}/{os.path.basename(path)}")
+                    image_urls.append(
+                        f"/api/images/{session_id[:8]}/{os.path.basename(path)}"
+                    )
 
             logger.info(f"Annotated images created: {output_paths}")
 
@@ -448,18 +488,18 @@ def serve_session_image(session_id_short, filename):
         # Find session by short ID
         sessions = session_manager.list_sessions()
         session_data = None
-        
+
         for session in sessions:
-            if session['session_id_short'] == session_id_short:
-                session_folder = session['session_folder']
-                image_download_folder = os.path.join(session_folder, 'annotated')
+            if session["session_id_short"] == session_id_short:
+                session_folder = session["session_folder"]
+                image_download_folder = os.path.join(session_folder, "annotated")
                 if os.path.exists(os.path.join(image_download_folder, filename)):
                     return send_from_directory(image_download_folder, filename)
                 break
-        
+
         # Fallback to global folder for backward compatibility
         return send_from_directory(IMAGE_DOWNLOAD_FOLDER, filename)
-        
+
     except Exception as e:
         logger.error(f"Error serving session image: {str(e)}", exc_info=True)
         return jsonify({"error": "Image not found"}), 404
@@ -470,18 +510,18 @@ def serve_image(filename):
     """Serve images from the current session or global folder."""
     try:
         # Try to get current session's image folder
-        session_id = request.headers.get('X-Session-ID')
+        session_id = request.headers.get("X-Session-ID")
         if session_id:
             session_data = session_manager.get_session(session_id)
             if session_data:
-                image_download_folder = session_data['image_download_folder']
+                image_download_folder = session_data["image_download_folder"]
                 image_path = os.path.join(image_download_folder, filename)
                 if os.path.exists(image_path):
                     return send_from_directory(image_download_folder, filename)
-        
+
         # Fallback to global folder
         return send_from_directory(IMAGE_DOWNLOAD_FOLDER, filename)
-        
+
     except Exception as e:
         logger.error(f"Error serving image: {str(e)}", exc_info=True)
         return jsonify({"error": "Image not found"}), 404
@@ -494,8 +534,8 @@ def list_uploads():
     try:
         session_id = get_session_id()
         session_data = get_session_folders(session_id)
-        upload_folder = session_data['upload_folder']
-        
+        upload_folder = session_data["upload_folder"]
+
         if not os.path.exists(upload_folder):
             return jsonify([]), 200
 
@@ -510,7 +550,9 @@ def list_uploads():
                 if ext.lower() in valid_extensions:
                     files.append(filename)
 
-        logger.info(f"Found {len(files)} files in session upload folder for session: {session_id[:8]}")
+        logger.info(
+            f"Found {len(files)} files in session upload folder for session: {session_id[:8]}"
+        )
         return jsonify(files), 200
     except Exception as e:
         logger.error(f"Error listing session upload directory: {str(e)}", exc_info=True)
@@ -529,11 +571,13 @@ def process_existing():
         # Get session-specific folders
         session_id = get_session_id()
         session_data = get_session_folders(session_id)
-        
-        image_path = os.path.join(session_data['upload_folder'], filename)
+
+        image_path = os.path.join(session_data["upload_folder"], filename)
         if not os.path.exists(image_path):
             return (
-                jsonify({"error": f"File {filename} not found in session uploads folder"}),
+                jsonify(
+                    {"error": f"File {filename} not found in session uploads folder"}
+                ),
                 404,
             )
 
@@ -541,9 +585,15 @@ def process_existing():
         export_dir = export_handler.create_export_directory(filename)
 
         # Check if the processed versions already exist in session folders
-        processed_path = os.path.join(session_data['processed_folder'], f"processed_{filename}")
-        inverted_path = os.path.join(session_data['inverted_folder'], f"inverted_{filename}")
-        xml_path = os.path.join(session_data['outputs_folder'], f"output_{filename}.xml")
+        processed_path = os.path.join(
+            session_data["processed_folder"], f"processed_{filename}"
+        )
+        inverted_path = os.path.join(
+            session_data["inverted_folder"], f"inverted_{filename}"
+        )
+        xml_path = os.path.join(
+            session_data["outputs_folder"], f"output_{filename}.xml"
+        )
 
         # Process the image if needed
         if not os.path.exists(processed_path):
@@ -573,8 +623,12 @@ def process_existing():
         )
 
         # Copy CSV and TPS files
-        csv_path = os.path.join(session_data['outputs_folder'], f"output_{filename}.csv")
-        tps_path = os.path.join(session_data['outputs_folder'], f"output_{filename}.tps")
+        csv_path = os.path.join(
+            session_data["outputs_folder"], f"output_{filename}.csv"
+        )
+        tps_path = os.path.join(
+            session_data["outputs_folder"], f"output_{filename}.tps"
+        )
         if os.path.exists(csv_path):
             export_handler.copy_file_to_export(
                 csv_path, export_dir, os.path.basename(csv_path)
@@ -590,7 +644,9 @@ def process_existing():
         data["export_dir"] = export_dir
         data["session_id"] = session_id
 
-        logger.info(f"Processed existing image: {filename} for session: {session_id[:8]}")
+        logger.info(
+            f"Processed existing image: {filename} for session: {session_id[:8]}"
+        )
         return jsonify(data)
 
     except Exception as e:
@@ -624,9 +680,9 @@ def save_annotations():
         timestamp = int(time.time())
 
         # Define filenames for the output files in session folders
-        xml_path = os.path.join(session_data['outputs_folder'], f"output_{name}.xml")
-        csv_path = os.path.join(session_data['outputs_folder'], f"output_{name}.csv")
-        tps_path = os.path.join(session_data['outputs_folder'], f"output_{name}.tps")
+        xml_path = os.path.join(session_data["outputs_folder"], f"output_{name}.xml")
+        csv_path = os.path.join(session_data["outputs_folder"], f"output_{name}.csv")
+        tps_path = os.path.join(session_data["outputs_folder"], f"output_{name}.tps")
 
         # Create backup of existing files if they exist
         if os.path.exists(xml_path):
@@ -637,7 +693,9 @@ def save_annotations():
             shutil.copy2(tps_path, f"{tps_path}.{timestamp}.bak")
 
         # Create export directory for this save operation
-        export_dir = export_handler.create_export_directory(f"{name}_updated_{timestamp}")
+        export_dir = export_handler.create_export_directory(
+            f"{name}_updated_{timestamp}"
+        )
 
         # Update XML file with new coordinates
         # Since we need direct XML manipulation, we'll read the current XML
@@ -679,7 +737,7 @@ def save_annotations():
                 logger.info("Falling back to direct TPS file creation")
 
         # Create TPS file directly from coordinates
-        tps_file_path = os.path.join(session_data['tps_folder'], f"{base_name}.tps")
+        tps_file_path = os.path.join(session_data["tps_folder"], f"{base_name}.tps")
         export_tps_path = export_handler.export_tps_file(coords, name, export_dir)
 
         logger.info(f"Created TPS file at: {tps_file_path}")
@@ -688,7 +746,7 @@ def save_annotations():
         # Generate annotated image with updated points
         try:
             output_paths = visual_individual_performance.create_image(
-                tps_file_path, session_data['image_download_folder']
+                tps_file_path, session_data["image_download_folder"]
             )
 
             # Copy all generated files to the export directory
@@ -705,7 +763,9 @@ def save_annotations():
             for path in output_paths:
                 export_handler.copy_file_to_export(path, export_dir)
 
-            logger.info(f"Annotations saved successfully for {name} in session {session_id[:8]}")
+            logger.info(
+                f"Annotations saved successfully for {name} in session {session_id[:8]}"
+            )
 
             return jsonify(
                 {
@@ -828,23 +888,30 @@ def clear_history():
     """
     try:
         session_id = get_session_id()
-        
+
         # Use session manager to clear session-specific files
         result = session_manager.clear_session(session_id)
-        
-        if result['success']:
+
+        if result["success"]:
             logger.info(f"Session history cleared for session: {session_id[:8]}")
             return jsonify(result), 200
         else:
-            logger.error(f"Failed to clear session history: {result.get('error', 'Unknown error')}")
+            logger.error(
+                f"Failed to clear session history: {result.get('error', 'Unknown error')}"
+            )
             return jsonify(result), 500
 
     except Exception as e:
         logger.error(f"Error clearing session history: {str(e)}", exc_info=True)
-        return jsonify({
-            "success": False, 
-            "error": f"Failed to clear session history: {str(e)}"
-        }), 500
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": f"Failed to clear session history: {str(e)}",
+                }
+            ),
+            500,
+        )
 
 
 @app.route("/favicon.ico")
