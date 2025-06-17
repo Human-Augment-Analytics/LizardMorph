@@ -106,4 +106,13 @@ export class ApiService {
     if (!res.ok) throw new Error("Failed to export scatter data");
     return res.json();
   }
+
+  static async clearHistory(): Promise<{ success: boolean }> {
+    const res = await fetch(`${BASE_URL}/clear_history`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!res.ok) throw new Error("Failed to clear history");
+    return res.json();
+  }
 }
