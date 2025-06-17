@@ -72,6 +72,42 @@ for folder in [
 export_handler = ExportHandler(OUTPUTS_FOLDER)
 
 
+def cleanup_on_startup():
+    """
+    Optional cleanup function that can be called on app startup
+    to clear any leftover files from previous sessions.
+    """
+    try:
+        logger.info("Performing startup cleanup...")
+        directories_to_check = [
+            UPLOAD_FOLDER,
+            COLOR_CONTRAST_FOLDER,
+            INVERT_IMAGE_FOLDER,
+            TPS_DOWNLOAD_FOLDER,
+            IMAGE_DOWNLOAD_FOLDER,
+        ]
+
+        for directory in directories_to_check:
+            if os.path.exists(directory):
+                file_count = len(
+                    [
+                        f
+                        for f in os.listdir(directory)
+                        if os.path.isfile(os.path.join(directory, f))
+                    ]
+                )
+                if file_count > 0:
+                    logger.info(f"Found {file_count} files in {directory}")
+
+        logger.info("Startup cleanup completed")
+    except Exception as e:
+        logger.error(f"Error during startup cleanup: {str(e)}")
+
+
+# Uncomment the next line if you want to clear files on every app startup
+# cleanup_on_startup()
+
+
 @app.route("/data", methods=["POST", "OPTIONS"])
 def upload():
     if request.method == "OPTIONS":
@@ -543,6 +579,120 @@ def download_all_exports():
     except Exception as e:
         logger.error(f"Error creating zip file: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/clear_history", methods=["POST"])
+@cross_origin()
+def clear_history():
+    """
+    Clear all temporary files and history data from the server.
+    This includes uploaded images, processed files, outputs, and export directories.
+    """
+    try:
+        cleared_items = []
+        errors = []
+
+        # Define directories to clear
+        directories_to_clear = [
+            (UPLOAD_FOLDER, "uploaded images"),
+            (COLOR_CONTRAST_FOLDER, "processed images"),
+            (INVERT_IMAGE_FOLDER, "inverted images"),
+            (TPS_DOWNLOAD_FOLDER, "TPS files"),
+            (IMAGE_DOWNLOAD_FOLDER, "annotated images"),
+            (OUTPUTS_FOLDER, "export directories"),
+        ]
+
+        # Clear each directory
+        for directory, description in directories_to_clear:
+            try:
+                if os.path.exists(directory):
+                    # Get count of items before clearing
+                    item_count = len(
+                        [
+                            f
+                            for f in os.listdir(directory)
+                            if os.path.isfile(os.path.join(directory, f))
+                            or os.path.isdir(os.path.join(directory, f))
+                        ]
+                    )
+
+                    if item_count > 0:
+                        # Clear all files and subdirectories
+                        for filename in os.listdir(directory):
+                            file_path = os.path.join(directory, filename)
+                            try:
+                                if os.path.isfile(file_path):
+                                    os.unlink(file_path)
+                                elif os.path.isdir(file_path):
+                                    shutil.rmtree(file_path)
+                            except Exception as file_error:
+                                logger.warning(
+                                    f"Could not delete {file_path}: {str(file_error)}"
+                                )
+                                errors.append(
+                                    f"Could not delete {filename} from {description}"
+                                )
+
+                        cleared_items.append(f"{item_count} {description}")
+                        logger.info(f"Cleared {item_count} items from {directory}")
+            except Exception as dir_error:
+                logger.error(f"Error clearing {directory}: {str(dir_error)}")
+                errors.append(f"Error clearing {description}: {str(dir_error)}")
+
+        # Clear any output files in the root directory (XML, CSV, TPS files)
+        try:
+            root_files_cleared = 0
+            for filename in os.listdir(os.getcwd()):
+                if filename.startswith("output_") and (
+                    filename.endswith(".xml")
+                    or filename.endswith(".csv")
+                    or filename.endswith(".tps")
+                    or filename.endswith(".bak")
+                ):
+                    try:
+                        os.unlink(os.path.join(os.getcwd(), filename))
+                        root_files_cleared += 1
+                    except Exception as file_error:
+                        logger.warning(
+                            f"Could not delete {filename}: {str(file_error)}"
+                        )
+                        errors.append(f"Could not delete {filename}")
+
+            if root_files_cleared > 0:
+                cleared_items.append(f"{root_files_cleared} output files")
+                logger.info(
+                    f"Cleared {root_files_cleared} output files from root directory"
+                )
+        except Exception as root_error:
+            logger.error(f"Error clearing root directory files: {str(root_error)}")
+            errors.append(f"Error clearing root directory files: {str(root_error)}")
+
+        # Log the cleanup results
+        if cleared_items:
+            logger.info(
+                f"History cleanup completed. Cleared: {', '.join(cleared_items)}"
+            )
+        else:
+            logger.info("History cleanup completed. No items found to clear.")
+
+        response_data = {
+            "success": True,
+            "message": "History cleared successfully",
+            "cleared_items": cleared_items,
+        }
+
+        if errors:
+            response_data["warnings"] = errors
+            logger.warning(f"History cleanup completed with warnings: {errors}")
+
+        return jsonify(response_data), 200
+
+    except Exception as e:
+        logger.error(f"Error clearing history: {str(e)}", exc_info=True)
+        return (
+            jsonify({"success": False, "error": f"Failed to clear history: {str(e)}"}),
+            500,
+        )
 
 
 @app.route("/favicon.ico")
