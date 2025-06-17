@@ -40,7 +40,7 @@ CORS(
         r"/*": {
             "origins": "*",  # Allow all origins during development
             "methods": ["GET", "POST", "OPTIONS"],
-            "allow_headers": ["Content-Type"],
+            "allow_headers": ["Content-Type", "X-Session-ID"],
         }
     },
 )
