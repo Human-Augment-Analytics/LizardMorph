@@ -2,7 +2,7 @@ import type { ImageSetResponse } from "../models/ImageSetResponse";
 import type { AnnotationsData } from "../models/AnnotationsData";
 import type { ImageSet } from "../models/ImageSet";
 
-const BASE_URL = "/api";
+const BASE_URL = "";
 
 export class ApiService {
   static async uploadMultipleImages(files: File[]): Promise<AnnotationsData[]> {
