@@ -1,9 +1,10 @@
-import utils
+from . import utils
+from . import visual_individual_performance
+from . import xray_preprocessing
+from .export_handler import ExportHandler
+
 import os
-import visual_individual_performance
-import xray_preprocessing
-from export_handler import ExportHandler
-from flask import Flask, jsonify, request, send_from_directory, send_file
+from flask import Flask, jsonify, request, send_from_directory, send_file, render_template
 from flask_cors import CORS, cross_origin
 import flask
 from base64 import b64encode
@@ -24,9 +25,9 @@ logger = logging.getLogger(__name__)
 
 app = Flask(
     __name__,
-    static_folder="frontend/dist/",  # Specify the static folder explicitly
+    static_folder="../frontend/dist/",  # Specify the static folder explicitly
     static_url_path="",
-    template_folder="frontend/dist/",  # This makes static files available at root URL
+    template_folder="../frontend/dist/",  # This makes static files available at root URL
 )
 
 
@@ -555,14 +556,10 @@ def favicon():
     )
 
 
-# Add these routes to serve the React frontend
-@app.route("/", defaults={"path": ""})
-@app.route("/<path:path>")
-def serve(path):
-    if path != "" and os.path.exists(os.path.join("../frontend/dist", path)):
-        return send_from_directory("../frontend/dist", path)
-    else:
-        return send_from_directory("../frontend/dist", "index.html")
+@app.route("/")
+def index():
+        # return "The URL for this page is {}".format(url_for("index"))
+        return render_template('index.html')
 
 
 # Make sure your app runs on the correct host and port if started directly
