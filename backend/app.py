@@ -24,8 +24,9 @@ logger = logging.getLogger(__name__)
 
 app = Flask(
     __name__,
-    static_folder="static",  # Specify the static folder explicitly
-    static_url_path="",  # This makes static files available at root URL
+    static_folder="frontend/dist/",  # Specify the static folder explicitly
+    static_url_path="",
+    template_folder="frontend/dist/",  # This makes static files available at root URL
 )
 
 
@@ -548,7 +549,7 @@ def download_all_exports():
 @app.route("/favicon.ico")
 def favicon():
     return send_from_directory(
-        os.path.join(app.root_path, "static"),
+        os.path.join(app.root_path, "../frontend/dist"),
         "favicon.ico",
         mimetype="image/vnd.microsoft.icon",
     )
@@ -558,10 +559,10 @@ def favicon():
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
 def serve(path):
-    if path != "" and os.path.exists(os.path.join("static", path)):
-        return send_from_directory("static", path)
+    if path != "" and os.path.exists(os.path.join("../frontend/dist", path)):
+        return send_from_directory("../frontend/dist", path)
     else:
-        return send_from_directory("static", "index.html")
+        return send_from_directory("../frontend/dist", "index.html")
 
 
 # Make sure your app runs on the correct host and port if started directly
