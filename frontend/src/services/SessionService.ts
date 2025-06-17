@@ -12,39 +12,11 @@ interface SessionInfo {
 export class SessionService {
   private static readonly SESSION_KEY = "lizardmorph_session_id";
   private static sessionId: string | null = null;
-
   /**
-   * Initialize session - either start a new one or restore existing
+   * Initialize session - always start a new session
    */
   static async initializeSession(): Promise<string> {
-    // Try to get existing session from localStorage
-    const existingSessionId = localStorage.getItem(this.SESSION_KEY);
-
-    if (existingSessionId) {
-      // Verify the session still exists on the server
-      try {
-        const response = await fetch("/api/session/info", {
-          method: "GET",
-          headers: {
-            "X-Session-ID": existingSessionId,
-            "Content-Type": "application/json",
-          },
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success) {
-            this.sessionId = existingSessionId;
-            console.log(`Restored existing session: ${data.session_id_short}`);
-            return existingSessionId;
-          }
-        }
-      } catch (error) {
-        console.warn("Failed to verify existing session:", error);
-      }
-    }
-
-    // Create new session
+    // Always create a new session (no persistence)
     return await this.startNewSession();
   }
 
@@ -67,7 +39,8 @@ export class SessionService {
       const data = await response.json();
       if (data.success && data.session_id) {
         this.sessionId = data.session_id;
-        localStorage.setItem(this.SESSION_KEY, data.session_id);
+        // Store in sessionStorage (cleared on tab close) instead of localStorage
+        sessionStorage.setItem(this.SESSION_KEY, data.session_id);
         console.log(`Started new session: ${data.session_id.substring(0, 8)}`);
         return data.session_id;
       } else {
@@ -78,12 +51,11 @@ export class SessionService {
       throw error;
     }
   }
-
   /**
    * Get current session ID
    */
   static getSessionId(): string | null {
-    return this.sessionId || localStorage.getItem(this.SESSION_KEY);
+    return this.sessionId || sessionStorage.getItem(this.SESSION_KEY);
   }
 
   /**
@@ -93,13 +65,12 @@ export class SessionService {
     const sessionId = this.getSessionId();
     return sessionId ? { "X-Session-ID": sessionId } : {};
   }
-
   /**
    * Clear current session
    */
   static clearSession(): void {
     this.sessionId = null;
-    localStorage.removeItem(this.SESSION_KEY);
+    sessionStorage.removeItem(this.SESSION_KEY);
   }
   /**
    * Get session information
