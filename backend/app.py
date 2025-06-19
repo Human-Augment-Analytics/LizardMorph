@@ -1,7 +1,7 @@
-from . import utils
-from . import visual_individual_performance
-from . import xray_preprocessing
-from .export_handler import ExportHandler
+import utils
+import visual_individual_performance
+import xray_preprocessing
+from export_handler import ExportHandler
 
 import os
 from flask import Flask, jsonify, request, send_from_directory, send_file, render_template
@@ -25,9 +25,9 @@ logger = logging.getLogger(__name__)
 
 app = Flask(
     __name__,
-    static_folder="../frontend/dist/",  # Specify the static folder explicitly
+    static_folder="./dist/",  # Specify the static folder explicitly
     static_url_path="",
-    template_folder="../frontend/dist/",  # This makes static files available at root URL
+    template_folder="./dist/",  # This makes static files available at root URL
 )
 
 
@@ -104,7 +104,7 @@ def upload():
                 # Generate the prediction XML
                 xml_output_path = f"output_{unique_name}.xml"
                 utils.predictions_to_xml_single(
-                    "./backend/better_predictor_auto.dat", image_path, xml_output_path
+                    "better_predictor_auto.dat", image_path, xml_output_path
                 )
 
                 # Generate CSV and TPS output files
@@ -340,7 +340,7 @@ def process_existing():
         # Generate XML if it doesn't exist
         if not os.path.exists(xml_path):
             utils.predictions_to_xml_single(
-                "./backend/better_predictor_auto.dat", image_path, xml_path
+                "better_predictor_auto.dat", image_path, xml_path
             )
             utils.dlib_xml_to_pandas(xml_path)
             utils.dlib_xml_to_tps(xml_path)

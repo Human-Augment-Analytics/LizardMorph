@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for React Frontend + Flask Backend
 
 # ---- Frontend Build Stage ----
-    FROM node:16 AS frontend-build
+    FROM node:18 AS frontend-build
 
     # Set working directory for frontend
     WORKDIR /frontend-build
@@ -52,7 +52,7 @@
     
     # Copy requirements file from backend directory
     COPY backend/requirements.txt .
-    
+
     # First, install numpy which is required by OpenCV and dlib
     RUN pip3 install --upgrade pip && \
         pip3 install numpy==1.20.3
@@ -67,7 +67,8 @@
         pip3 install Flask==2.2.5 && \
         pip3 install flask-cors==3.0.10 && \
         pip3 install gunicorn==20.1.0 && \
-        pip3 install pydicom==2.3.1
+        pip3 install pydicom==2.3.1 && \
+        pip3 install python-dotenv==1.0.0
     
     # Install dlib - this is often the trickiest one
     RUN pip3 install dlib==19.22.1
@@ -78,19 +79,19 @@
     # Copy the backend code
     COPY backend/ .
     
-    COPY --from=frontend-build /frontend-build/build ./static/
+    COPY --from=frontend-build /frontend-build/dist ./dist/
 
     # Explicitly copy favicon to both locations (root and static)
-    COPY --from=frontend-build /frontend-build/build/favicon.ico ./static/favicon.ico
-    COPY --from=frontend-build /frontend-build/build/favicon.ico ./favicon.ico
+    COPY --from=frontend-build /frontend-build/dist/favicon.ico ./dist/favicon.ico
+    COPY --from=frontend-build /frontend-build/dist/favicon.ico ./favicon.ico
 
 
 
     # Copy built frontend assets from the frontend build stage
-    COPY --from=frontend-build /frontend-build/build ./static/
+    COPY --from=frontend-build /frontend-build/dist ./dist/
 
     # Expose port for Flask application
-    EXPOSE 5000
+    EXPOSE 3000
     
     # Set environment variables
     ENV FLASK_APP=app.py
@@ -100,4 +101,4 @@
     #CMD ["python", "-c", "import sys; print(sys.path); import cv2; print('OpenCV loaded successfully'); import dlib; print('dlib loaded successfully')"]
     
     # Run with gunicorn pointing directly to app.py
-    CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+    CMD ["gunicorn", "--bind", "0.0.0.0:3000", "app:app"]

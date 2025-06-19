@@ -1,7 +1,8 @@
 import JSZip from "jszip";
 import type { Point } from "../models/Point";
 import { ApiService } from "./ApiService";
-const BASE_URL = "/pun/dev/LizardMorph";
+const BASE_URL = import.meta.env.VITE_BASE_URL || "";
+
 export class ExportService {
   static createTpsContent(coords: Point[], imageName: string): string {
     let tpsContent = `LM=${coords.length}\n`;
