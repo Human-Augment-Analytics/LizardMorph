@@ -2,7 +2,7 @@ import type { ImageSetResponse } from "../models/ImageSetResponse";
 import type { AnnotationsData } from "../models/AnnotationsData";
 import type { ImageSet } from "../models/ImageSet";
 
-const BASE_URL = "";
+const BASE_URL = "/pun/dev/LizardMorph";
 
 export class ApiService {
   static async uploadMultipleImages(files: File[]): Promise<AnnotationsData[]> {
