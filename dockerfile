@@ -76,6 +76,9 @@
     # Create necessary directories
     RUN mkdir -p upload color_constrasted tps_download image_download invert_image outputs static
     
+    # Define volume for backend code - this allows mounting at runtime
+    VOLUME ["/app"]
+    
     # Copy the backend code
     COPY backend/ .
     
