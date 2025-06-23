@@ -104,7 +104,7 @@ def upload():
                 # Generate the prediction XML
                 xml_output_path = f"output_{unique_name}.xml"
                 utils.predictions_to_xml_single(
-                    "better_predictor_auto.dat", image_path, xml_output_path
+                    "/mnt/better_predictor_auto.dat", image_path, xml_output_path
                 )
 
                 # Generate CSV and TPS output files
@@ -340,7 +340,7 @@ def process_existing():
         # Generate XML if it doesn't exist
         if not os.path.exists(xml_path):
             utils.predictions_to_xml_single(
-                "better_predictor_auto.dat", image_path, xml_path
+                "/mnt/better_predictor_auto.dat", image_path, xml_path
             )
             utils.dlib_xml_to_pandas(xml_path)
             utils.dlib_xml_to_tps(xml_path)
