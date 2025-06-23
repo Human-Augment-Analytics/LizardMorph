@@ -74,7 +74,6 @@ export class MainView extends Component<MainProps, MainState> {
 
   componentDidMount(): void {
     this.fetchUploadedFiles();
-    this.setupInterval();
   }
 
   componentWillUnmount(): void {
@@ -123,9 +122,6 @@ export class MainView extends Component<MainProps, MainState> {
     });
   };
 
-  private readonly setupInterval = (): void => {
-    this.intervalId = setInterval(this.fetchUploadedFiles, 30000);
-  };
   private readonly handleUpload = async (
     e: React.ChangeEvent<HTMLInputElement>
   ): Promise<void> => {
