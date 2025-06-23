@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Embedded Web Application</title>
+    <title>Lizard X-ray</title>
     <style>
         body {
             margin: 0;
@@ -15,23 +15,37 @@
             width: 1500px;
             height: 1600px;
             border: none;
-            -moz-transform: scale(.40, .40); 
-            -webkit-transform: scale(.40, .40); 
-            -o-transform: scale(.40, .40);
-            -ms-transform: scale(.40, .40);
-            transform: scale(.40, .40); 
-            -moz-transform-origin: top left;
-            -webkit-transform-origin: top left;
-            -o-transform-origin: top left;
-            -ms-transform-origin: top left;
-            transform-origin: top left;
+        }
+
+        #navbar-main .navbar-container {
+            display: none;
+        }
+        .page-header {
+            display: none;
+        }
+        #content.container {
+            max-width: fit-content !important;
+            width: 100%;
+            padding-right: 0;
+            padding-left: 0;
+            margin-right: 0;
+            margin-left: 0;
+        }
+        .main-wrapper.wrapper {
+            padding:0;
+        }
+        .wrapper-navbar-main{
+            display:none;
+        }
+        #root {
+            width:100;
         }
     </style>
 </head>
 <body>
     <iframe 
-        src="https://lizard-415332286359.us-central1.run.app/" 
-        title="Embedded Web Application">
+        src="https://lizard-xray-415332286359.us-central1.run.app/" 
+        title="Lizard X-ray">
         <div id="iFrame1"></div>
     </iframe>
 </body>
