@@ -12,8 +12,8 @@
         }
         
         iframe {
-            width: 1500px;
-            height: 1600px;
+            width: 100%;
+            height: calc(100vh + 80px);
             border: none;
         }
 
@@ -23,8 +23,8 @@
         .page-header {
             display: none;
         }
-        #content.container {
-            max-width: fit-content !important;
+        .container-content, body.singular:not(.has-sidebar) #content.container {
+            max-width: none;
             width: 100%;
             padding-right: 0;
             padding-left: 0;
@@ -34,8 +34,8 @@
         .main-wrapper.wrapper {
             padding:0;
         }
-        .wrapper-navbar-main{
-            display:none;
+        #wrapper-navbar-main {
+            display: none;
         }
         #root {
             width:100;
@@ -44,7 +44,7 @@
 </head>
 <body>
     <iframe 
-        src="https://lizard-xray-415332286359.us-central1.run.app/" 
+        src="https://lizard-xray-415332286359.us-east1.run.app" 
         title="Lizard X-ray">
         <div id="iFrame1"></div>
     </iframe>
