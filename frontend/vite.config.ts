@@ -22,7 +22,6 @@ export default defineConfig(({ mode }) => {
                 '^/api': {
                     target: `http://localhost:${apiPort}`,
                     changeOrigin: true,
-                    rewrite: (path) => path.replace(/^\/api/, ''),
                 }
             },
             allowedHosts: ['localhost', '127.0.0.1', '0.0.0.0', env.VITE_ALLOWED_HOSTS],
