@@ -1,10 +1,18 @@
 import type { ImageSetResponse } from "../models/ImageSetResponse";
 import type { AnnotationsData } from "../models/AnnotationsData";
 import type { ImageSet } from "../models/ImageSet";
+import { SessionService } from "./SessionService";
 
 const BASE_URL = "/api";
 
 export class ApiService {
+  /**
+   * Initialize session before making API calls
+   */
+  static async initialize(): Promise<void> {
+    await SessionService.initializeSession();
+  }
+
   static async uploadMultipleImages(files: File[]): Promise<AnnotationsData[]> {
     const formData = new FormData();
     files.forEach((file) => {
@@ -12,6 +20,9 @@ export class ApiService {
     });
     const res = await fetch(`${BASE_URL}/data`, {
       method: "POST",
+      headers: {
+        ...SessionService.getSessionHeaders(),
+      },
       body: formData,
     });
     if (!res.ok) {
@@ -20,7 +31,6 @@ export class ApiService {
     }
     return res.json() as Promise<AnnotationsData[]>;
   }
-
   static async fetchImageSet(imageFilename: string): Promise<ImageSet> {
     const res = await fetch(
       `${BASE_URL}/image?image_filename=${encodeURIComponent(imageFilename)}`,
@@ -28,6 +38,7 @@ export class ApiService {
         method: "POST",
         headers: {
           "Access-Control-Allow-Origin": "*",
+          ...SessionService.getSessionHeaders(),
         },
       }
     );
@@ -54,10 +65,12 @@ export class ApiService {
       color_contrasted: `data:${mimeType};base64,${result.image1}`,
     };
   }
-
   static async fetchUploadedFiles(): Promise<string[]> {
     const res = await fetch(`${BASE_URL}/list_uploads`, {
       method: "GET",
+      headers: {
+        ...SessionService.getSessionHeaders(),
+      },
     });
     if (!res.ok) throw new Error("Failed to fetch uploaded files");
     return res.json();
@@ -70,6 +83,9 @@ export class ApiService {
       `${BASE_URL}/process_existing?filename=${encodeURIComponent(filename)}`,
       {
         method: "POST",
+        headers: {
+          ...SessionService.getSessionHeaders(),
+        },
       }
     );
     if (!res.ok) throw new Error("Failed to process existing image");
@@ -81,7 +97,10 @@ export class ApiService {
   ): Promise<{ success: boolean }> {
     const res = await fetch(`${BASE_URL}/save_annotations`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...SessionService.getSessionHeaders(),
+      },
       body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error("Failed to save annotations");
@@ -93,17 +112,47 @@ export class ApiService {
     if (!res.ok) throw new Error("Failed to fetch annotated image");
     return res.blob();
   }
-
   static async exportScatterData(payload: {
     coords: { x: number; y: number }[];
     name: string;
   }): Promise<{ image_urls?: string[] }> {
     const res = await fetch(`${BASE_URL}/endpoint`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...SessionService.getSessionHeaders(),
+      },
       body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error("Failed to export scatter data");
     return res.json();
   }
+
+  static async clearHistory(): Promise<{ success: boolean }> {
+    const res = await fetch(`${BASE_URL}/clear_history`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...SessionService.getSessionHeaders(),
+      },
+    });
+    if (!res.ok) throw new Error("Failed to clear history");
+    return res.json();
+  }
+
+  /**
+   * Get current session information
+   */
+  static async getSessionInfo(): Promise<SessionInfo> {
+    return await SessionService.getSessionInfo();
+  }
+}
+
+interface SessionInfo {
+  success: boolean;
+  session_id: string;
+  session_id_short: string;
+  created_at: string;
+  session_folder: string;
+  file_count: number;
 }

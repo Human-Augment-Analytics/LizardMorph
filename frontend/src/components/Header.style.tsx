@@ -104,6 +104,25 @@ export class HeaderStyles {
     opacity: 0.7,
   };
 
+  static readonly clearHistoryButton: CSSProperties = {
+    padding: "12px 20px",
+    backgroundColor: "#f44336",
+    color: "white",
+    border: "none",
+    borderRadius: "4px",
+    cursor: "pointer",
+    width: "100%",
+    boxSizing: "border-box",
+    fontWeight: "bold",
+    fontSize: "14px",
+    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+  };
+
+  static readonly clearHistoryButtonDisabled: CSSProperties = {
+    cursor: "not-allowed",
+    opacity: 0.7,
+  };
+
   static readonly titleContainer: CSSProperties = {
     display: "flex",
     alignItems: "center",
