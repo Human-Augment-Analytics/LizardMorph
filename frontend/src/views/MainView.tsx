@@ -74,7 +74,7 @@ export class MainView extends Component<MainProps, MainState> {
     sessionReady: false,
   };
   componentDidMount(): void {
-    this.fetchUploadedFiles();
+    this.initializeApp();
   }
 
   componentWillUnmount(): void {

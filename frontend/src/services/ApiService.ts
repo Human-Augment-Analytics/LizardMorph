@@ -2,8 +2,7 @@ import type { ImageSetResponse } from "../models/ImageSetResponse";
 import type { AnnotationsData } from "../models/AnnotationsData";
 import type { ImageSet } from "../models/ImageSet";
 import { SessionService } from "./SessionService";
-
-const BASE_URL = import.meta.env.VITE_BASE_URL || "";
+import { BASE_URL } from "./config";
 
 export class ApiService {
   /**
