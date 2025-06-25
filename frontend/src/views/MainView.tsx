@@ -161,78 +161,65 @@ export class MainView extends Component<MainProps, MainState> {
     if (!files || files.length === 0) return;
 
     this.setState({ loading: true, dataLoading: true, dataError: null });
-
     try {
-      const results = await ApiService.uploadMultipleImages(Array.from(files));
+        Array.from(files).map(async (file) => {
+        // Upload the file (replace with your actual upload logic)
+        const [result] = await ApiService.uploadMultipleImages([file]);
+        // Process the uploaded image immediately
+        const imageSets = await ApiService.fetchImageSet(result.name);
+        const coords = result.coords.map((coord, index: number) => ({
+          ...coord,
+          id: index + 1,
+        }));
 
-      const processedImages = await Promise.all(
-        results.map(async (result) => {
-          const imageSets = await ApiService.fetchImageSet(result.name);
-          const coords = result.coords.map((coord, index: number) => ({
-            ...coord,
-            id: index + 1,
-          }));
+        const processedImage = {
+          name: result.name,
+          coords: coords,
+          originalCoords: JSON.parse(JSON.stringify(coords)),
+          imageSets,
+          timestamp: new Date().toLocaleString(),
+        };
 
-          return {
-            name: result.name,
-            coords: coords,
-            originalCoords: JSON.parse(JSON.stringify(coords)), // Deep copy
-            imageSets,
-            timestamp: new Date().toLocaleString(), // Add timestamp for history
-          };
-        })
-      );
-      if (processedImages.length > 0) {
-        const firstImage = processedImages[0];
-
+        // Update state for each processed image as it finishes
         this.setState((prevState) => {
-          // Update images with new uploads
-          const updatedImages = [...prevState.images, ...processedImages];
-
-          // Update upload history
-          const newHistory = [...prevState.uploadHistory];
-          processedImages.forEach((img) => {
-            newHistory.push({
-              name: img.name,
-              timestamp: img.timestamp,
-              index: updatedImages.findIndex(
-                (i) => i.name === img.name && i.timestamp === img.timestamp
-              ),
-            });
-          });
-
-          // Set current image to the first of the new uploads
-          const newImageIndex = prevState.images.length; // Index of the first new image
-
+          const updatedImages = [...prevState.images, processedImage];
+          const newHistory = [
+            ...prevState.uploadHistory,
+            {
+              name: processedImage.name,
+              timestamp: processedImage.timestamp,
+              index: updatedImages.length - 1,
+            },
+          ];
           return {
+            ...prevState,
             images: updatedImages,
             uploadHistory: newHistory,
-            currentImageIndex: newImageIndex,
-            imageFilename: firstImage.name,
-            originalScatterData: firstImage.originalCoords,
-            scatterData: firstImage.coords,
-            imageSet: firstImage.imageSets,
-            currentImageURL: firstImage.imageSets.original,
-            needsScaling: true,
-            dataFetched: true,
-            selectedPoint: null,
+            currentImageIndex: prevState.images.length === 0 ? 0 : prevState.currentImageIndex,
+            imageFilename: prevState.images.length === 0 ? processedImage.name : prevState.imageFilename,
+            originalScatterData: prevState.images.length === 0 ? processedImage.originalCoords : prevState.originalScatterData,
+            scatterData: prevState.images.length === 0 ? processedImage.coords : prevState.scatterData,
+            imageSet: prevState.images.length === 0 ? processedImage.imageSets : prevState.imageSet,
+            currentImageURL: prevState.images.length === 0 ? processedImage.imageSets.original : prevState.currentImageURL,
+            needsScaling: prevState.images.length === 0 ? true : prevState.needsScaling,
+            dataFetched: prevState.images.length === 0 ? true : prevState.dataFetched,
+            selectedPoint: prevState.images.length === 0 ? null : prevState.selectedPoint,
+            dataLoading: false,
           };
         });
-      }
+      });
     } catch (err) {
       console.error("Upload error:", err);
       this.setState({
         dataError: err instanceof Error ? err : new Error("Upload failed"),
       });
     } finally {
-      this.setState({ loading: false });
-      // dataLoading will be set to false by the image onload handler
+      this.setState({ loading: false, });
     }
   };
   // This loads the image when the currentImageURL changes
   private readonly loadImage = (): void => {
     if (this.state.currentImageURL) {
-      console.log("Loading image from URL:", this.state.currentImageURL);
 
       const img = new Image();
 
@@ -615,7 +602,6 @@ export class MainView extends Component<MainProps, MainState> {
   private readonly fetchUploadedFiles = async (): Promise<void> => {
     try {
       const files = await ApiService.fetchUploadedFiles();
-      console.log("Files in upload folder:", files);
 
       // Create history entries for files that aren't in current upload history
       const currentFileNames = new Set(
