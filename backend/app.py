@@ -18,6 +18,7 @@ from flask import Blueprint
 load_dotenv()
 frontend_dir = os.getenv("FRONTEND_DIR", "../frontend/dist")
 predictor_file = os.getenv("PREDICTOR_FILE", "./better_predictor_auto.dat")
+session_dir = os.getenv("SESSION_DIR", "sessions")
 
 # Configure logging
 logging.basicConfig(
@@ -49,7 +50,7 @@ CORS(
     },
 )
 
-SESSIONS_FOLDER = os.path.join(os.getcwd(), "sessions")
+SESSIONS_FOLDER = os.path.join(os.getcwd(), session_dir)
 UPLOAD_FOLDER = os.path.join(os.getcwd(), "upload")
 COLOR_CONTRAST_FOLDER = os.path.join(os.getcwd(), "color_constrasted")
 TPS_DOWNLOAD_FOLDER = os.path.join(os.getcwd(), "tps_download")

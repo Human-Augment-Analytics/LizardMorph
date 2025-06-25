@@ -74,8 +74,7 @@
     RUN pip3 install dlib==19.22.1
     
     # Create necessary directories
-    RUN mkdir -p upload color_constrasted tps_download image_download invert_image outputs static
-    
+    RUN mkdir -p sessions
     # Define volume for backend code - this allows mounting at runtime
     VOLUME ["/app"]
     
@@ -102,7 +101,7 @@
     ENV API_PORT=3000
     ENV FRONTEND_DIR="./dist"
     ENV PREDICTOR_FILE="/mnt/better_predictor_auto.dat"
-    
+    ENV SESSION_DIR="/mnt/sessions"
     # Use this for debugging Python imports
     #CMD ["python", "-c", "import sys; print(sys.path); import cv2; print('OpenCV loaded successfully'); import dlib; print('dlib loaded successfully')"]
     
