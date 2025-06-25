@@ -1,5 +1,5 @@
 // Session management service for handling session lifecycle and storage
-import { BASE_URL } from "./config";
+import { API_URL } from "./config";
 interface SessionInfo {
   success: boolean;
   session_id: string;
@@ -26,7 +26,7 @@ export class SessionService {
    */
   static async startNewSession(): Promise<string> {
     try {
-      const response = await fetch(`${BASE_URL}/session/start`, {
+      const response = await fetch(`${API_URL}/session/start`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -82,7 +82,7 @@ export class SessionService {
       throw new Error("No active session");
     }
 
-    const response = await fetch(`${BASE_URL}/session/info`, {
+    const response = await fetch(`${API_URL}/session/info`, {
       method: "GET",
       headers: {
         ...this.getSessionHeaders(),
