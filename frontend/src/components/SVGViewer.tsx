@@ -367,6 +367,14 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
           .on("drag", this.dragged)
           .on("end", this.dragended)
       );
+    } else {
+      pointGroups.call(
+        d3
+          .drag<SVGGElement, Point>()
+          .on("start", null)
+          .on("drag", null)
+          .on("end", null)
+      );
     }
   };
 
