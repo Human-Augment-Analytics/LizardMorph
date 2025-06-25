@@ -39,6 +39,11 @@ interface MainState {
   zoomTransform: d3.ZoomTransform;
   isEditMode: boolean;
   sessionReady: boolean;
+  onPointSelect: (point: Point) => void;
+  onScatterDataUpdate: (
+    scatterData: Point[],
+    originalScatterData: Point[]
+  ) => void;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -74,6 +79,8 @@ export class MainView extends Component<MainProps, MainState> {
     zoomTransform: d3.zoomIdentity,
     isEditMode: false,
     sessionReady: false,
+    onPointSelect: () => {},
+    onScatterDataUpdate: () => {},
   };
   componentDidMount(): void {
     this.initializeApp();
@@ -135,14 +142,9 @@ export class MainView extends Component<MainProps, MainState> {
       (prevState.currentImageURL !== this.state.currentImageURL ||
         prevState.imageWidth !== this.state.imageWidth ||
         prevState.imageHeight !== this.state.imageHeight ||
-        prevState.originalScatterData !== this.state.originalScatterData ||
-        prevState.needsScaling !== this.state.needsScaling)
+        this.state.needsScaling)
     ) {
       this.renderSVG();
-    }
-
-    if (prevState.selectedPoint !== this.state.selectedPoint) {
-      this.updatePointSelection();
     }
   }
   private readonly countUniqueImages = (): void => {
@@ -435,30 +437,6 @@ export class MainView extends Component<MainProps, MainState> {
       ) {
         svg.call(zoom.transform, this.state.zoomTransform);
       }
-    }
-  };
-
-  // Separate method for updating point selection styles without re-rendering the entire SVG
-  private readonly updatePointSelection = (): void => {
-    if (this.svgRef.current && this.state.scatterData.length > 0) {
-      const svg = d3.select(this.svgRef.current);
-
-      // Update the visual appearance of circles based on selection
-      svg
-        .selectAll<SVGCircleElement, Point>("circle")
-        .attr("fill", (d: Point) => {
-          // Match circle by data-id attribute
-          const id = d.id ?? d3.select(svg.node()).attr("data-id");
-          return this.state.selectedPoint && id == this.state.selectedPoint.id
-            ? "yellow"
-            : "red";
-        })
-        .attr("stroke-width", (d: Point) => {
-          const id = d.id ?? d3.select(svg.node()).attr("data-id");
-          return this.state.selectedPoint && id == this.state.selectedPoint.id
-            ? 2
-            : 1;
-        });
     }
   };
 
