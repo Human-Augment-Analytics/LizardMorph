@@ -1,7 +1,7 @@
 import JSZip from "jszip";
 import type { Point } from "../models/Point";
 import { ApiService } from "./ApiService";
-const BASE_URL = import.meta.env.VITE_BASE_URL || "";
+import { BASE_URL } from "./config";
 
 export class ExportService {
   static createTpsContent(coords: Point[], imageName: string): string {

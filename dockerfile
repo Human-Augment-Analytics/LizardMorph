@@ -99,6 +99,9 @@
     # Set environment variables
     ENV FLASK_APP=app.py
     ENV PYTHONUNBUFFERED=1
+    ENV API_PORT=3000
+    ENV FRONTEND_DIR="./dist"
+    ENV PREDICTOR_FILE="/mnt/better_predictor_auto.dat"
     
     # Use this for debugging Python imports
     #CMD ["python", "-c", "import sys; print(sys.path); import cv2; print('OpenCV loaded successfully'); import dlib; print('dlib loaded successfully')"]
