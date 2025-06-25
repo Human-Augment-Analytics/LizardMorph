@@ -10,6 +10,7 @@ import { Header } from "../components/Header";
 import { NavigationControls } from "../components/NavigationControls";
 import { ImageVersionControls } from "../components/ImageVersionControls";
 import { HistoryPanel } from "../components/HistoryPanel";
+import { SessionInfo } from "../components/SessionInfo";
 import { MainViewStyles } from "./MainView.style";
 import { SVGViewer } from "../components/SVGViewer";
 import { ApiService } from "../services/ApiService";
@@ -37,6 +38,7 @@ interface MainState {
   lizardCount: number;
   zoomTransform: d3.ZoomTransform;
   isEditMode: boolean;
+  sessionReady: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -45,7 +47,6 @@ interface MainProps {}
 export class MainView extends Component<MainProps, MainState> {
   readonly svgRef = createRef<SVGSVGElement>();
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
-
   state: MainState = {
     currentImageIndex: 0,
     images: [],
@@ -72,16 +73,42 @@ export class MainView extends Component<MainProps, MainState> {
     lizardCount: 0,
     zoomTransform: d3.zoomIdentity,
     isEditMode: false,
+    sessionReady: false,
   };
-
   componentDidMount(): void {
-    this.fetchUploadedFiles();
-    this.setupInterval();
+    this.initializeApp();
   }
 
   componentWillUnmount(): void {
     if (this.intervalId) {
       clearInterval(this.intervalId);
+    }
+    // Clean up history on component unmount
+    this.clearHistory();
+    // Remove beforeunload event listener
+    window.removeEventListener("beforeunload", this.handleBeforeUnload);
+  }
+  private async initializeApp(): Promise<void> {
+    try {
+      // Initialize session management
+      await ApiService.initialize();
+
+      // Mark session as ready
+      this.setState({ sessionReady: true });
+
+      // Now proceed with normal initialization
+      this.fetchUploadedFiles();
+      this.setupBeforeUnloadHandler();
+    } catch (error) {
+      console.error("Failed to initialize app:", error);
+      // Show error to user or handle gracefully
+      this.setState({
+        dataError:
+          error instanceof Error
+            ? error
+            : new Error("Failed to initialize session"),
+        sessionReady: false,
+      });
     }
   }
 
@@ -125,9 +152,6 @@ export class MainView extends Component<MainProps, MainState> {
     });
   };
 
-  private readonly setupInterval = (): void => {
-    this.intervalId = setInterval(this.fetchUploadedFiles, 30000);
-  };
   private readonly handleUpload = async (
     e: React.ChangeEvent<HTMLInputElement>
   ): Promise<void> => {
@@ -446,7 +470,7 @@ export class MainView extends Component<MainProps, MainState> {
   private readonly handleScatterData = async (): Promise<void> => {
     try {
       this.setState({ loading: true });
-      
+
       const result = await ExportService.exportAllData(
         this.state.images,
         this.state.currentImageIndex,
@@ -456,51 +480,88 @@ export class MainView extends Component<MainProps, MainState> {
       );
 
       if (result.failedFiles > 0) {
-        alert(`Some files failed to download: ${result.failedFiles} of ${result.totalFiles}`);
+        alert(
+          `Some files failed to download: ${result.failedFiles} of ${result.totalFiles}`
+        );
       } else {
-        alert(`Successfully downloaded ${result.successfulFiles} TPS file(s) and annotated image(s)`);
+        alert(
+          `Successfully downloaded ${result.successfulFiles} TPS file(s) and annotated image(s)`
+        );
       }
     } catch (error) {
-      alert('An error occurred during download');
-      console.error('Download error:', error);
+      alert("An error occurred during download");
+      console.error("Download error:", error);
     } finally {
       this.setState({ loading: false });
     }
   };
 
+  private readonly handleClearHistory = async (): Promise<void> => {
+    const confirmed = window.confirm(
+      "Are you sure you want to clear all history? This will delete all uploaded images, processed files, and session data. This action cannot be undone."
+    );
+
+    if (confirmed) {
+      try {
+        this.setState({ loading: true });
+        await this.clearHistory();
+        alert("History cleared successfully");
+      } catch (error) {
+        alert("Error clearing history");
+        console.error("Clear history error:", error);
+      } finally {
+        this.setState({ loading: false });
+      }
+    }
+  };
+
   // Helper method to create image with points overlay as blob
-  private createImageWithPointsBlob = async (imageIndex: number, imageName: string): Promise<Blob> => {
+  private createImageWithPointsBlob = async (
+    imageIndex: number,
+    imageName: string
+  ): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       try {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d')!;
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d")!;
 
         // Determine which image and coordinates to use
-        const imageData = imageIndex === this.state.currentImageIndex ? {
-          imageUrl: this.state.currentImageURL!,
-          coords: this.state.originalScatterData, // Use original coordinates instead of scaled ones
-          width: this.state.imageWidth,
-          height: this.state.imageHeight
-        } : {
-          imageUrl: this.state.images[imageIndex].imageSets.original,
-          coords: this.state.images[imageIndex].originalCoords || this.state.images[imageIndex].coords,
-          width: 0, // Will be set when image loads
-          height: 0 // Will be set when image loads
-        };
+        const imageData =
+          imageIndex === this.state.currentImageIndex
+            ? {
+                imageUrl: this.state.currentImageURL!,
+                coords: this.state.originalScatterData, // Use original coordinates instead of scaled ones
+                width: this.state.imageWidth,
+                height: this.state.imageHeight,
+              }
+            : {
+                imageUrl: this.state.images[imageIndex].imageSets.original,
+                coords:
+                  this.state.images[imageIndex].originalCoords ||
+                  this.state.images[imageIndex].coords,
+                width: 0, // Will be set when image loads
+                height: 0, // Will be set when image loads
+              };
 
         const img = new Image();
 
         img.onload = () => {
           // Set canvas dimensions to match original image
-          canvas.width = imageIndex === this.state.currentImageIndex ? imageData.width : img.width;
-          canvas.height = imageIndex === this.state.currentImageIndex ? imageData.height : img.height;
+          canvas.width =
+            imageIndex === this.state.currentImageIndex
+              ? imageData.width
+              : img.width;
+          canvas.height =
+            imageIndex === this.state.currentImageIndex
+              ? imageData.height
+              : img.height;
 
           // Draw the background image
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
           // Draw each point
-          ctx.fillStyle = 'red';
-          ctx.strokeStyle = 'black';
+          ctx.fillStyle = "red";
+          ctx.strokeStyle = "black";
           ctx.lineWidth = 1;
 
           imageData.coords.forEach((point) => {
@@ -514,8 +575,8 @@ export class MainView extends Component<MainProps, MainState> {
             ctx.stroke();
 
             // Reset styles for next point
-            ctx.fillStyle = 'red';
-            ctx.strokeStyle = 'black';
+            ctx.fillStyle = "red";
+            ctx.strokeStyle = "black";
             ctx.lineWidth = 1;
           });
 
@@ -524,9 +585,9 @@ export class MainView extends Component<MainProps, MainState> {
             if (blob) {
               resolve(blob);
             } else {
-              reject(new Error('Failed to create blob from canvas'));
+              reject(new Error("Failed to create blob from canvas"));
             }
-          }, 'image/png');
+          }, "image/png");
         };
 
         img.onerror = () => {
@@ -535,12 +596,11 @@ export class MainView extends Component<MainProps, MainState> {
 
         // Set image source
         img.src = imageData.imageUrl;
-
       } catch (error) {
         reject(error);
       }
     });
-  }
+  };
 
   // Handle changing to a different image in the set
   private readonly changeCurrentImage = (index: number): void => {
@@ -704,10 +764,32 @@ export class MainView extends Component<MainProps, MainState> {
     this.setState({ zoomTransform: d3.zoomIdentity });
   };
 
+  // Add cleanup functionality to clear history when the app closes, including beforeunload event handler
+  private readonly setupBeforeUnloadHandler = (): void => {
+    window.addEventListener("beforeunload", this.handleBeforeUnload);
+    window.addEventListener("unload", this.handleBeforeUnload);
+  };
+  private readonly handleBeforeUnload = async (): Promise<void> => {
+    try {
+      // Clear session history before page closes
+      await this.clearHistory();
+    } catch (error) {
+      console.error("Failed to clear session on page close:", error);
+    }
+  };
+
+  private readonly clearHistory = async (): Promise<void> => {
+    try {
+      await ApiService.clearHistory();
+      console.log("Session history cleared");
+    } catch (error) {
+      console.error("Failed to clear history:", error);
+    }
+  };
   render() {
     return (
       <div style={MainViewStyles.container}>
-        {" "}
+        {this.state.sessionReady && <SessionInfo />}
         <Header
           lizardCount={this.state.lizardCount}
           loading={this.state.loading}
@@ -715,6 +797,7 @@ export class MainView extends Component<MainProps, MainState> {
           dataError={this.state.dataError}
           onUpload={this.handleUpload}
           onExportAll={this.handleScatterData}
+          onClearHistory={this.handleClearHistory}
         />
         <div style={MainViewStyles.mainContentArea}>
           {" "}

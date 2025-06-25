@@ -8,6 +8,7 @@ interface HeaderProps {
   dataError: Error | null;
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onExportAll: () => void;
+  onClearHistory: () => void;
 }
 
 export class Header extends Component<HeaderProps> {
@@ -19,6 +20,7 @@ export class Header extends Component<HeaderProps> {
       dataError,
       onUpload,
       onExportAll,
+      onClearHistory,
     } = this.props;
 
     return (
@@ -85,6 +87,17 @@ export class Header extends Component<HeaderProps> {
               }}
             >
               Export All Data
+            </button>
+
+            <button
+              onClick={onClearHistory}
+              disabled={loading}
+              style={{
+                ...HeaderStyles.clearHistoryButton,
+                ...(loading ? HeaderStyles.clearHistoryButtonDisabled : {}),
+              }}
+            >
+              Clear History
             </button>
           </div>
 

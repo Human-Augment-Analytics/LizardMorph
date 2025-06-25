@@ -3,29 +3,29 @@
    <name/>
    <comment/>
    <images>
-      <image file="C:\Users\trevi\OneDrive\Desktop\GT\8903 - Research Research\Lizard-CV-Web-App\backend\upload\0003_dorsal - Copy (4)_1746243375_5353.jpg">
+      <image file="/Users/leyangloh/dev/main-lizard/backend/sessions/session_20250625_090844_3d6edf7d/uploads/0003_dorsal.jpg">
          <box top="1" left="1" width="2350" height="2942">
-            <part name="0" x="202" y="1243"/>
+            <part name="0" x="202" y="1244"/>
             <part name="1" x="222" y="1804"/>
             <part name="2" x="1134" y="2648"/>
-            <part name="3" x="1176" y="2510"/>
+            <part name="3" x="1175" y="2510"/>
             <part name="4" x="1212" y="2412"/>
             <part name="5" x="1266" y="2268"/>
             <part name="6" x="1092" y="2509"/>
-            <part name="7" x="1058" y="2416"/>
+            <part name="7" x="1060" y="2416"/>
             <part name="8" x="1002" y="2270"/>
             <part name="9" x="1136" y="2432"/>
             <part name="10" x="1136" y="2342"/>
             <part name="11" x="1136" y="2262"/>
             <part name="12" x="1142" y="2192"/>
-            <part name="13" x="1222" y="2100"/>
+            <part name="13" x="1220" y="2100"/>
             <part name="14" x="1494" y="2090"/>
             <part name="15" x="1478" y="2310"/>
             <part name="16" x="1430" y="2468"/>
             <part name="17" x="1064" y="2088"/>
-            <part name="18" x="785" y="2068"/>
+            <part name="18" x="784" y="2068"/>
             <part name="19" x="812" y="2276"/>
-            <part name="20" x="851" y="2448"/>
+            <part name="20" x="850" y="2449"/>
             <part name="21" x="1174" y="1504"/>
             <part name="22" x="1178" y="1400"/>
             <part name="23" x="1176" y="1324"/>
@@ -33,12 +33,12 @@
             <part name="25" x="1594" y="1354"/>
             <part name="26" x="1520" y="1040"/>
             <part name="27" x="1682" y="939"/>
-            <part name="28" x="1844" y="810"/>
+            <part name="28" x="1846" y="810"/>
             <part name="29" x="1116" y="1388"/>
             <part name="30" x="754" y="1390"/>
             <part name="31" x="760" y="1072"/>
-            <part name="32" x="582" y="1000"/>
-            <part name="33" x="396" y="893"/>
+            <part name="32" x="584" y="999"/>
+            <part name="33" x="395" y="894"/>
          </box>
       </image>
    </images>

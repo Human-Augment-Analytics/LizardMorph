@@ -5,7 +5,6 @@ export class MainViewStyles {
     display: "flex",
     flexDirection: "column",
     height: "100vh",
-    minWidth: "1400px",
   };
 
   static readonly mainContentArea: CSSProperties = {
