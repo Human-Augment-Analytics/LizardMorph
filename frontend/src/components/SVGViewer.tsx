@@ -359,7 +359,6 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
     const scatterPlotGroup = svg.select<SVGGElement>(".scatter-points");
     if (scatterPlotGroup.empty()) return;
     const pointGroups = scatterPlotGroup.selectAll<SVGGElement, Point>("g");
-    console.log(pointGroups);
     if (this.props.isEditMode) {
       pointGroups.call(
         d3
