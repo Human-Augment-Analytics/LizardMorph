@@ -36,6 +36,7 @@ interface MainState {
   imageSet: ImageSet;
   lizardCount: number;
   zoomTransform: d3.ZoomTransform;
+  isEditMode: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -70,6 +71,7 @@ export class MainView extends Component<MainProps, MainState> {
     },
     lizardCount: 0,
     zoomTransform: d3.zoomIdentity,
+    isEditMode: false,
   };
 
   componentDidMount(): void {
@@ -378,15 +380,6 @@ export class MainView extends Component<MainProps, MainState> {
           .attr("stroke-width", "0.5px");
       });
 
-      // Add drag behavior
-      pointGroups.call(
-        d3
-          .drag<SVGGElement, Point>()
-          .on("start", this.dragstarted)
-          .on("drag", this.dragged)
-          .on("end", this.dragended)
-      );
-
       // Add zoom behavior, preserving the current zoom state
       const zoom = d3
         .zoom<SVGSVGElement, unknown>()
@@ -421,90 +414,6 @@ export class MainView extends Component<MainProps, MainState> {
     }
   };
 
-  private readonly dragstarted = (
-    event: d3.D3DragEvent<SVGGElement, Point, Point>,
-    d: Point
-  ): void => {
-    // Prevent event from bubbling up to zoom behavior
-    event.sourceEvent.stopPropagation();
-
-    d3.select(event.sourceEvent.target.parentNode)
-      .raise()
-      .attr("stroke", "black");
-    this.setState({ selectedPoint: d }); // Update selected point when starting to drag    // Update visual appearance of all points
-    const svg = d3.select(this.svgRef.current);
-    const scatterPlotGroup = svg.select(".scatter-points");
-    scatterPlotGroup
-      .selectAll<SVGCircleElement, Point>("circle")
-      .attr("fill", (p: Point) => (p.id === d.id ? "yellow" : "red"))
-      .attr("stroke-width", (p: Point) => (p.id === d.id ? 2 : 1));
-  };
-
-  private readonly dragged = (
-    event: d3.D3DragEvent<SVGGElement, Point, Point>,
-    d: Point
-  ): void => {
-    const point = d3.pointer(event, this.svgRef.current);
-    const transform = d3.zoomTransform(this.svgRef.current!);
-
-    // Calculate actual coordinates accounting for zoom
-    const x = (point[0] - transform.x) / transform.k;
-    const y = (point[1] - transform.y) / transform.k;
-
-    const group = d3.select(event.sourceEvent.target.parentNode);
-    group.select("circle").attr("cx", x).attr("cy", y);
-
-    group
-      .select("text")
-      .attr("x", x + 5)
-      .attr("y", y - 5);
-    this.setState((prevState) => {
-      const updatedScatterData = prevState.scatterData.map((p) =>
-        p.id === d.id ? { ...p, x, y } : p
-      );
-
-      // Create mock scale functions for coordinate conversion
-      const scaleX = d3
-        .scaleLinear()
-        .domain([0, prevState.imageWidth])
-        .range([
-          0,
-          window.innerHeight * (prevState.imageWidth / prevState.imageHeight),
-        ]);
-
-      const scaleY = d3
-        .scaleLinear()
-        .domain([0, prevState.imageHeight])
-        .range([0, window.innerHeight - window.innerHeight * 0.2]);
-
-      // Update original coordinates when dragging
-      const updatedOriginalCoords = prevState.originalScatterData.map((p) =>
-        p.id === d.id
-          ? {
-              ...p,
-              x: scaleX.invert(x),
-              y: scaleY.invert(y),
-            }
-          : p
-      );
-
-      return {
-        scatterData: updatedScatterData,
-        originalScatterData: updatedOriginalCoords,
-        selectedPoint: { ...d, x, y },
-      };
-    });
-  };
-
-  private readonly dragended = (
-    event: d3.D3DragEvent<SVGGElement, Point, Point>
-  ): void => {
-    // Prevent event from bubbling up to zoom behavior
-    event.sourceEvent.stopPropagation();
-
-    d3.select(event.sourceEvent.target.parentNode).attr("stroke", "black");
-    // Keep the point selected after drag ends
-  };
   // Separate method for updating point selection styles without re-rendering the entire SVG
   private readonly updatePointSelection = (): void => {
     if (this.svgRef.current && this.state.scatterData.length > 0) {
@@ -787,6 +696,14 @@ export class MainView extends Component<MainProps, MainState> {
     this.setState({ zoomTransform: transform });
   };
 
+  private readonly handleToggleEditMode = (): void => {
+    this.setState((prevState) => ({ isEditMode: !prevState.isEditMode }));
+  };
+
+  private readonly handleResetZoom = (): void => {
+    this.setState({ zoomTransform: d3.zoomIdentity });
+  };
+
   render() {
     return (
       <div style={MainViewStyles.container}>
@@ -832,26 +749,34 @@ export class MainView extends Component<MainProps, MainState> {
                   currentImageURL: imageURL,
                 });
               }}
-            />{" "}
-            <SVGViewer
-              dataFetched={this.state.dataFetched}
-              loading={this.state.loading}
-              dataLoading={this.state.dataLoading}
-              dataError={this.state.dataError}
-              uploadHistory={this.state.uploadHistory}
-              scatterData={this.state.scatterData}
-              originalScatterData={this.state.originalScatterData}
-              selectedPoint={this.state.selectedPoint}
-              needsScaling={this.state.needsScaling}
-              currentImageURL={this.state.currentImageURL}
-              imageWidth={this.state.imageWidth}
-              imageHeight={this.state.imageHeight}
-              zoomTransform={this.state.zoomTransform}
-              onPointSelect={this.handlePointSelect}
-              onScatterDataUpdate={this.handleScatterDataUpdate}
-              onScalingComplete={this.handleScalingComplete}
-              onZoomChange={this.handleZoomChange}
+              isEditMode={this.state.isEditMode}
+              onToggleEditMode={this.handleToggleEditMode}
+              onResetZoom={this.handleResetZoom}
             />
+            <div style={{overflow: 'auto', height: '100%'}}>
+              <SVGViewer
+                dataFetched={this.state.dataFetched}
+                loading={this.state.loading}
+                dataLoading={this.state.dataLoading}
+                dataError={this.state.dataError}
+                uploadHistory={this.state.uploadHistory}
+                scatterData={this.state.scatterData}
+                originalScatterData={this.state.originalScatterData}
+                selectedPoint={this.state.selectedPoint}
+                needsScaling={this.state.needsScaling}
+                currentImageURL={this.state.currentImageURL}
+                imageWidth={this.state.imageWidth}
+                imageHeight={this.state.imageHeight}
+                zoomTransform={this.state.zoomTransform}
+                onPointSelect={this.handlePointSelect}
+                onScatterDataUpdate={this.handleScatterDataUpdate}
+                onScalingComplete={this.handleScalingComplete}
+                onZoomChange={this.handleZoomChange}
+                isEditMode={this.state.isEditMode}
+                onToggleEditMode={this.handleToggleEditMode}
+                onResetZoom={this.handleResetZoom}
+              />
+            </div>
           </div>
         </div>
       </div>
