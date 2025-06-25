@@ -2,7 +2,7 @@ import type { ImageSetResponse } from "../models/ImageSetResponse";
 import type { AnnotationsData } from "../models/AnnotationsData";
 import type { ImageSet } from "../models/ImageSet";
 import { SessionService } from "./SessionService";
-import { BASE_URL } from "./config";
+import { API_URL } from "./config";
 
 export class ApiService {
   /**
@@ -17,7 +17,7 @@ export class ApiService {
     files.forEach((file) => {
       formData.append("image", file);
     });
-    const res = await fetch(`${BASE_URL}/data`, {
+    const res = await fetch(`${API_URL}/data`, {
       method: "POST",
       headers: {
         ...SessionService.getSessionHeaders(),
@@ -32,7 +32,7 @@ export class ApiService {
   }
   static async fetchImageSet(imageFilename: string): Promise<ImageSet> {
     const res = await fetch(
-      `${BASE_URL}/image?image_filename=${encodeURIComponent(imageFilename)}`,
+      `${API_URL}/image?image_filename=${encodeURIComponent(imageFilename)}`,
       {
         method: "POST",
         headers: {
@@ -65,7 +65,7 @@ export class ApiService {
     };
   }
   static async fetchUploadedFiles(): Promise<string[]> {
-    const res = await fetch(`${BASE_URL}/list_uploads`, {
+    const res = await fetch(`${API_URL}/list_uploads`, {
       method: "GET",
       headers: {
         ...SessionService.getSessionHeaders(),
@@ -79,7 +79,7 @@ export class ApiService {
     filename: string
   ): Promise<AnnotationsData> {
     const res = await fetch(
-      `${BASE_URL}/process_existing?filename=${encodeURIComponent(filename)}`,
+      `${API_URL}/process_existing?filename=${encodeURIComponent(filename)}`,
       {
         method: "POST",
         headers: {
@@ -94,7 +94,7 @@ export class ApiService {
   static async saveAnnotations(
     payload: AnnotationsData
   ): Promise<{ success: boolean }> {
-    const res = await fetch(`${BASE_URL}/save_annotations`, {
+    const res = await fetch(`${API_URL}/save_annotations`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -115,7 +115,7 @@ export class ApiService {
     coords: { x: number; y: number }[];
     name: string;
   }): Promise<{ image_urls?: string[] }> {
-    const res = await fetch(`${BASE_URL}/endpoint`, {
+    const res = await fetch(`${API_URL}/endpoint`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -128,7 +128,7 @@ export class ApiService {
   }
 
   static async clearHistory(): Promise<{ success: boolean }> {
-    const res = await fetch(`${BASE_URL}/clear_history`, {
+    const res = await fetch(`${API_URL}/clear_history`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
