@@ -22,7 +22,7 @@ backend/.venv
 backend/venv
 backend/env
 backend/.pytest_cache
-
+backend/sessions
 
 # Output directories
 backend/upload
