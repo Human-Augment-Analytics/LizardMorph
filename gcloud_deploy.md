@@ -26,7 +26,7 @@ gcloud storage cp ./backend/better_predictor_auto.dat gs://$BUCKET_NAME
 gcloud storage folders create --recursive gs://$BUCKET_NAME/sessions
 ```
 
-## Commands to deploy to google cloud 
+## setup services for google cloud 
 ```
 gcloud services enable cloudbuild.googleapis.com
 gcloud services enable run.googleapis.com
@@ -35,9 +35,10 @@ gcloud services enable containerregistry.googleapis.com
 gcloud projects add-iam-policy-binding $PROJECT_ID \
     --member="serviceAccount:$PROJECT_NUMBER@cloudbuild.gserviceaccount.com" \
     --role="roles/run.admin"
-
-gcloud builds submit --config cloudbuild.yaml
 ```
+
+## deploy to google cloud (note you might need to set the environemnt variable again)
+gcloud builds submit --config cloudbuild.yaml
 
 ## Command to get url 
 ```
