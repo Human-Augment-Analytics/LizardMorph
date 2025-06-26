@@ -50,6 +50,7 @@ export class HistoryPanelStyles {
 
   static readonly historyTableCellSelected: CSSProperties = {
     fontWeight: "bold",
+    color: "black",
   };
 
   static readonly historyTableEmptyCell: CSSProperties = {

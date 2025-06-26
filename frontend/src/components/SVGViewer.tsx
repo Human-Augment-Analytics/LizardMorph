@@ -25,24 +25,16 @@ interface SVGViewerProps {
   ) => void;
   onScalingComplete: () => void;
   onZoomChange: (transform: d3.ZoomTransform) => void;
-}
-
-interface SVGViewerState {
   isEditMode: boolean;
+  onToggleEditMode: () => void;
+  onResetZoom: () => void;
 }
 
-export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
+export class SVGViewer extends Component<SVGViewerProps, object> {
   readonly svgRef = createRef<SVGSVGElement>();
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
 
-  constructor(props: SVGViewerProps) {
-    super(props);
-    this.state = {
-      isEditMode: false
-    };
-  }
-
-  componentDidUpdate(prevProps: SVGViewerProps, prevState: SVGViewerState) {
+  componentDidUpdate(prevProps: SVGViewerProps) {
     if (
       this.props.currentImageURL &&
       this.props.imageWidth &&
@@ -51,17 +43,31 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       (prevProps.currentImageURL !== this.props.currentImageURL ||
         prevProps.imageWidth !== this.props.imageWidth ||
         prevProps.imageHeight !== this.props.imageHeight ||
-        prevProps.originalScatterData !== this.props.originalScatterData ||
-        this.props.needsScaling ||
-        prevState.isEditMode !== this.state.isEditMode)
+        this.props.needsScaling)
     ) {
       setTimeout(() => {
         this.renderSVG();
       }, 0);
     }
 
+    // Update drag behavior if edit mode changed
+    if (prevProps.isEditMode !== this.props.isEditMode) {
+      this.updateDragBehavior();
+    }
+
     if (prevProps.selectedPoint !== this.props.selectedPoint) {
       this.updatePointSelection();
+    }
+
+    // Apply zoom transform if it changed and not in edit mode
+    if (
+      prevProps.zoomTransform !== this.props.zoomTransform &&
+      !this.props.isEditMode &&
+      this.svgRef.current &&
+      this.zoomRef.current
+    ) {
+      const svg = d3.select(this.svgRef.current);
+      svg.call(this.zoomRef.current.transform, this.props.zoomTransform);
     }
   }
 
@@ -202,7 +208,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       });
 
       // Add drag behavior only if in edit mode
-      if (this.state.isEditMode) {
+      if (this.props.isEditMode) {
         pointGroups.call(
           d3
             .drag<SVGGElement, Point>()
@@ -227,7 +233,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
             return false;
           }
           // Disable zoom/pan when in edit mode
-          if (this.state.isEditMode) {
+          if (this.props.isEditMode) {
             return false;
           }
           return !mouseEvent.button && event.type !== "dblclick";
@@ -237,7 +243,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       this.zoomRef.current = zoom;
 
       // Apply zoom behavior to the SVG only if not in edit mode
-      if (!this.state.isEditMode) {
+      if (!this.props.isEditMode) {
         svg.call(zoom);
       }
 
@@ -245,7 +251,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       if (
         this.props.zoomTransform &&
         this.props.zoomTransform !== d3.zoomIdentity &&
-        !this.state.isEditMode
+        !this.props.isEditMode
       ) {
         svg.call(zoom.transform, this.props.zoomTransform);
       }
@@ -346,10 +352,30 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     d3.select(event.sourceEvent.target.parentNode).attr("stroke", "black");
   };
 
-  private readonly toggleEditMode = (): void => {
-    this.setState(prevState => ({
-      isEditMode: !prevState.isEditMode
-    }));
+  // Add or remove drag behavior on points depending on edit mode
+  private readonly updateDragBehavior = (): void => {
+    if (!this.svgRef.current) return;
+    const svg = d3.select(this.svgRef.current);
+    const scatterPlotGroup = svg.select<SVGGElement>(".scatter-points");
+    if (scatterPlotGroup.empty()) return;
+    const pointGroups = scatterPlotGroup.selectAll<SVGGElement, Point>("g");
+    if (this.props.isEditMode) {
+      pointGroups.call(
+        d3
+          .drag<SVGGElement, Point>()
+          .on("start", this.dragstarted)
+          .on("drag", this.dragged)
+          .on("end", this.dragended)
+      );
+    } else {
+      pointGroups.call(
+        d3
+          .drag<SVGGElement, Point>()
+          .on("start", null)
+          .on("drag", null)
+          .on("end", null)
+      );
+    }
   };
 
   render() {
@@ -364,28 +390,6 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
               The images will appear here
             </p>
           </div>
-        )}
-
-        {dataFetched && (
-          <button
-            onClick={this.toggleEditMode}
-            style={{
-              position: 'absolute',
-              top: '10px',
-              right: '10px',
-              zIndex: 1000,
-              padding: '8px 16px',
-              backgroundColor: this.state.isEditMode ? '#ff4444' : '#4CAF50',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: 'bold'
-            }}
-          >
-            {this.state.isEditMode ? 'Exit Edit Mode' : 'Edit Points'}
-          </button>
         )}
 
         <svg

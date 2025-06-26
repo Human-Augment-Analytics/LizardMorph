@@ -69,7 +69,7 @@ https://ngrok.com/docs/getting-started/
    ngrok http 5173  # Use your frontend port number
    ```
 
-5. Copy the generated ngrok URL (e.g., "https://8e41-123-45-67-89.ngrok-free.app")
+5. Copy the generated ngrok URL
    and update your `.env` file with this domain.
 
 Note: The ngrok URL will change each time you restart ngrok unless you have a paid account with a fixed subdomain.
