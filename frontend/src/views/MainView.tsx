@@ -162,7 +162,7 @@ export class MainView extends Component<MainProps, MainState> {
 
     this.setState({ loading: true, dataLoading: true, dataError: null });
     try {
-        Array.from(files).map(async (file) => {
+        Promise.all(Array.from(files).map(async (file) => {
         // Upload the file (replace with your actual upload logic)
         const [result] = await ApiService.uploadMultipleImages([file]);
         // Process the uploaded image immediately
@@ -204,8 +204,12 @@ export class MainView extends Component<MainProps, MainState> {
             needsScaling: prevState.images.length === 0 ? true : prevState.needsScaling,
             dataFetched: prevState.images.length === 0 ? true : prevState.dataFetched,
             selectedPoint: prevState.images.length === 0 ? null : prevState.selectedPoint,
-            dataLoading: false,
           };
+        });
+      })).then(() => {
+        this.setState({
+          loading: false,
+          dataLoading: false,
         });
       });
     } catch (err) {
@@ -213,8 +217,6 @@ export class MainView extends Component<MainProps, MainState> {
       this.setState({
         dataError: err instanceof Error ? err : new Error("Upload failed"),
       });
-    } finally {
-      this.setState({ loading: false, });
     }
   };
   // This loads the image when the currentImageURL changes
