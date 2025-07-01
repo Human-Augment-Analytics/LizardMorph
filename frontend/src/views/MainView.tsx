@@ -37,7 +37,13 @@ interface MainState {
   imageSet: ImageSet;
   lizardCount: number;
   zoomTransform: d3.ZoomTransform;
+  isEditMode: boolean;
   sessionReady: boolean;
+  onPointSelect: (point: Point) => void;
+  onScatterDataUpdate: (
+    scatterData: Point[],
+    originalScatterData: Point[]
+  ) => void;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -71,7 +77,10 @@ export class MainView extends Component<MainProps, MainState> {
     },
     lizardCount: 0,
     zoomTransform: d3.zoomIdentity,
+    isEditMode: false,
     sessionReady: false,
+    onPointSelect: () => {},
+    onScatterDataUpdate: () => {},
   };
   componentDidMount(): void {
     this.initializeApp();
@@ -96,7 +105,6 @@ export class MainView extends Component<MainProps, MainState> {
 
       // Now proceed with normal initialization
       this.fetchUploadedFiles();
-      this.setupInterval();
       this.setupBeforeUnloadHandler();
     } catch (error) {
       console.error("Failed to initialize app:", error);
@@ -134,14 +142,9 @@ export class MainView extends Component<MainProps, MainState> {
       (prevState.currentImageURL !== this.state.currentImageURL ||
         prevState.imageWidth !== this.state.imageWidth ||
         prevState.imageHeight !== this.state.imageHeight ||
-        prevState.originalScatterData !== this.state.originalScatterData ||
-        prevState.needsScaling !== this.state.needsScaling)
+        this.state.needsScaling)
     ) {
       this.renderSVG();
-    }
-
-    if (prevState.selectedPoint !== this.state.selectedPoint) {
-      this.updatePointSelection();
     }
   }
   private readonly countUniqueImages = (): void => {
@@ -151,9 +154,6 @@ export class MainView extends Component<MainProps, MainState> {
     });
   };
 
-  private readonly setupInterval = (): void => {
-    this.intervalId = setInterval(this.fetchUploadedFiles, 30000);
-  };
   private readonly handleUpload = async (
     e: React.ChangeEvent<HTMLInputElement>
   ): Promise<void> => {
@@ -161,78 +161,67 @@ export class MainView extends Component<MainProps, MainState> {
     if (!files || files.length === 0) return;
 
     this.setState({ loading: true, dataLoading: true, dataError: null });
-
     try {
-      const results = await ApiService.uploadMultipleImages(Array.from(files));
+        Promise.all(Array.from(files).map(async (file) => {
+        // Upload the file (replace with your actual upload logic)
+        const [result] = await ApiService.uploadMultipleImages([file]);
+        // Process the uploaded image immediately
+        const imageSets = await ApiService.fetchImageSet(result.name);
+        const coords = result.coords.map((coord, index: number) => ({
+          ...coord,
+          id: index + 1,
+        }));
 
-      const processedImages = await Promise.all(
-        results.map(async (result) => {
-          const imageSets = await ApiService.fetchImageSet(result.name);
-          const coords = result.coords.map((coord, index: number) => ({
-            ...coord,
-            id: index + 1,
-          }));
+        const processedImage = {
+          name: result.name,
+          coords: coords,
+          originalCoords: JSON.parse(JSON.stringify(coords)),
+          imageSets,
+          timestamp: new Date().toLocaleString(),
+        };
 
-          return {
-            name: result.name,
-            coords: coords,
-            originalCoords: JSON.parse(JSON.stringify(coords)), // Deep copy
-            imageSets,
-            timestamp: new Date().toLocaleString(), // Add timestamp for history
-          };
-        })
-      );
-      if (processedImages.length > 0) {
-        const firstImage = processedImages[0];
-
+        // Update state for each processed image as it finishes
         this.setState((prevState) => {
-          // Update images with new uploads
-          const updatedImages = [...prevState.images, ...processedImages];
-
-          // Update upload history
-          const newHistory = [...prevState.uploadHistory];
-          processedImages.forEach((img) => {
-            newHistory.push({
-              name: img.name,
-              timestamp: img.timestamp,
-              index: updatedImages.findIndex(
-                (i) => i.name === img.name && i.timestamp === img.timestamp
-              ),
-            });
-          });
-
-          // Set current image to the first of the new uploads
-          const newImageIndex = prevState.images.length; // Index of the first new image
-
+          const updatedImages = [...prevState.images, processedImage];
+          const newHistory = [
+            ...prevState.uploadHistory,
+            {
+              name: processedImage.name,
+              timestamp: processedImage.timestamp,
+              index: updatedImages.length - 1,
+            },
+          ];
           return {
+            ...prevState,
             images: updatedImages,
             uploadHistory: newHistory,
-            currentImageIndex: newImageIndex,
-            imageFilename: firstImage.name,
-            originalScatterData: firstImage.originalCoords,
-            scatterData: firstImage.coords,
-            imageSet: firstImage.imageSets,
-            currentImageURL: firstImage.imageSets.original,
-            needsScaling: true,
-            dataFetched: true,
-            selectedPoint: null,
+            currentImageIndex: prevState.images.length === 0 ? 0 : prevState.currentImageIndex,
+            imageFilename: prevState.images.length === 0 ? processedImage.name : prevState.imageFilename,
+            originalScatterData: prevState.images.length === 0 ? processedImage.originalCoords : prevState.originalScatterData,
+            scatterData: prevState.images.length === 0 ? processedImage.coords : prevState.scatterData,
+            imageSet: prevState.images.length === 0 ? processedImage.imageSets : prevState.imageSet,
+            currentImageURL: prevState.images.length === 0 ? processedImage.imageSets.original : prevState.currentImageURL,
+            needsScaling: prevState.images.length === 0 ? true : prevState.needsScaling,
+            dataFetched: prevState.images.length === 0 ? true : prevState.dataFetched,
+            selectedPoint: prevState.images.length === 0 ? null : prevState.selectedPoint,
           };
         });
-      }
+      })).then(() => {
+        this.setState({
+          loading: false,
+          dataLoading: false,
+        });
+      });
     } catch (err) {
       console.error("Upload error:", err);
       this.setState({
         dataError: err instanceof Error ? err : new Error("Upload failed"),
       });
-    } finally {
-      this.setState({ loading: false });
-      // dataLoading will be set to false by the image onload handler
     }
   };
   // This loads the image when the currentImageURL changes
   private readonly loadImage = (): void => {
     if (this.state.currentImageURL) {
-      console.log("Loading image from URL:", this.state.currentImageURL);
 
       const img = new Image();
 
@@ -406,15 +395,6 @@ export class MainView extends Component<MainProps, MainState> {
           .attr("stroke-width", "0.5px");
       });
 
-      // Add drag behavior
-      pointGroups.call(
-        d3
-          .drag<SVGGElement, Point>()
-          .on("start", this.dragstarted)
-          .on("drag", this.dragged)
-          .on("end", this.dragended)
-      );
-
       // Add zoom behavior, preserving the current zoom state
       const zoom = d3
         .zoom<SVGSVGElement, unknown>()
@@ -446,114 +426,6 @@ export class MainView extends Component<MainProps, MainState> {
       ) {
         svg.call(zoom.transform, this.state.zoomTransform);
       }
-    }
-  };
-
-  private readonly dragstarted = (
-    event: d3.D3DragEvent<SVGGElement, Point, Point>,
-    d: Point
-  ): void => {
-    // Prevent event from bubbling up to zoom behavior
-    event.sourceEvent.stopPropagation();
-
-    d3.select(event.sourceEvent.target.parentNode)
-      .raise()
-      .attr("stroke", "black");
-    this.setState({ selectedPoint: d }); // Update selected point when starting to drag    // Update visual appearance of all points
-    const svg = d3.select(this.svgRef.current);
-    const scatterPlotGroup = svg.select(".scatter-points");
-    scatterPlotGroup
-      .selectAll<SVGCircleElement, Point>("circle")
-      .attr("fill", (p: Point) => (p.id === d.id ? "yellow" : "red"))
-      .attr("stroke-width", (p: Point) => (p.id === d.id ? 2 : 1));
-  };
-
-  private readonly dragged = (
-    event: d3.D3DragEvent<SVGGElement, Point, Point>,
-    d: Point
-  ): void => {
-    const point = d3.pointer(event, this.svgRef.current);
-    const transform = d3.zoomTransform(this.svgRef.current!);
-
-    // Calculate actual coordinates accounting for zoom
-    const x = (point[0] - transform.x) / transform.k;
-    const y = (point[1] - transform.y) / transform.k;
-
-    const group = d3.select(event.sourceEvent.target.parentNode);
-    group.select("circle").attr("cx", x).attr("cy", y);
-
-    group
-      .select("text")
-      .attr("x", x + 5)
-      .attr("y", y - 5);
-    this.setState((prevState) => {
-      const updatedScatterData = prevState.scatterData.map((p) =>
-        p.id === d.id ? { ...p, x, y } : p
-      );
-
-      // Create mock scale functions for coordinate conversion
-      const scaleX = d3
-        .scaleLinear()
-        .domain([0, prevState.imageWidth])
-        .range([
-          0,
-          window.innerHeight * (prevState.imageWidth / prevState.imageHeight),
-        ]);
-
-      const scaleY = d3
-        .scaleLinear()
-        .domain([0, prevState.imageHeight])
-        .range([0, window.innerHeight - window.innerHeight * 0.2]);
-
-      // Update original coordinates when dragging
-      const updatedOriginalCoords = prevState.originalScatterData.map((p) =>
-        p.id === d.id
-          ? {
-              ...p,
-              x: scaleX.invert(x),
-              y: scaleY.invert(y),
-            }
-          : p
-      );
-
-      return {
-        scatterData: updatedScatterData,
-        originalScatterData: updatedOriginalCoords,
-        selectedPoint: { ...d, x, y },
-      };
-    });
-  };
-
-  private readonly dragended = (
-    event: d3.D3DragEvent<SVGGElement, Point, Point>
-  ): void => {
-    // Prevent event from bubbling up to zoom behavior
-    event.sourceEvent.stopPropagation();
-
-    d3.select(event.sourceEvent.target.parentNode).attr("stroke", "black");
-    // Keep the point selected after drag ends
-  };
-  // Separate method for updating point selection styles without re-rendering the entire SVG
-  private readonly updatePointSelection = (): void => {
-    if (this.svgRef.current && this.state.scatterData.length > 0) {
-      const svg = d3.select(this.svgRef.current);
-
-      // Update the visual appearance of circles based on selection
-      svg
-        .selectAll<SVGCircleElement, Point>("circle")
-        .attr("fill", (d: Point) => {
-          // Match circle by data-id attribute
-          const id = d.id ?? d3.select(svg.node()).attr("data-id");
-          return this.state.selectedPoint && id == this.state.selectedPoint.id
-            ? "yellow"
-            : "red";
-        })
-        .attr("stroke-width", (d: Point) => {
-          const id = d.id ?? d3.select(svg.node()).attr("data-id");
-          return this.state.selectedPoint && id == this.state.selectedPoint.id
-            ? 2
-            : 1;
-        });
     }
   };
 
@@ -732,7 +604,6 @@ export class MainView extends Component<MainProps, MainState> {
   private readonly fetchUploadedFiles = async (): Promise<void> => {
     try {
       const files = await ApiService.fetchUploadedFiles();
-      console.log("Files in upload folder:", files);
 
       // Create history entries for files that aren't in current upload history
       const currentFileNames = new Set(
@@ -851,6 +722,14 @@ export class MainView extends Component<MainProps, MainState> {
     this.setState({ zoomTransform: transform });
   };
 
+  private readonly handleToggleEditMode = (): void => {
+    this.setState((prevState) => ({ isEditMode: !prevState.isEditMode }));
+  };
+
+  private readonly handleResetZoom = (): void => {
+    this.setState({ zoomTransform: d3.zoomIdentity });
+  };
+
   // Add cleanup functionality to clear history when the app closes, including beforeunload event handler
   private readonly setupBeforeUnloadHandler = (): void => {
     window.addEventListener("beforeunload", this.handleBeforeUnload);
@@ -919,26 +798,34 @@ export class MainView extends Component<MainProps, MainState> {
                   currentImageURL: imageURL,
                 });
               }}
-            />{" "}
-            <SVGViewer
-              dataFetched={this.state.dataFetched}
-              loading={this.state.loading}
-              dataLoading={this.state.dataLoading}
-              dataError={this.state.dataError}
-              uploadHistory={this.state.uploadHistory}
-              scatterData={this.state.scatterData}
-              originalScatterData={this.state.originalScatterData}
-              selectedPoint={this.state.selectedPoint}
-              needsScaling={this.state.needsScaling}
-              currentImageURL={this.state.currentImageURL}
-              imageWidth={this.state.imageWidth}
-              imageHeight={this.state.imageHeight}
-              zoomTransform={this.state.zoomTransform}
-              onPointSelect={this.handlePointSelect}
-              onScatterDataUpdate={this.handleScatterDataUpdate}
-              onScalingComplete={this.handleScalingComplete}
-              onZoomChange={this.handleZoomChange}
+              isEditMode={this.state.isEditMode}
+              onToggleEditMode={this.handleToggleEditMode}
+              onResetZoom={this.handleResetZoom}
             />
+            <div style={{overflow: 'auto', height: '100%'}}>
+              <SVGViewer
+                dataFetched={this.state.dataFetched}
+                loading={this.state.loading}
+                dataLoading={this.state.dataLoading}
+                dataError={this.state.dataError}
+                uploadHistory={this.state.uploadHistory}
+                scatterData={this.state.scatterData}
+                originalScatterData={this.state.originalScatterData}
+                selectedPoint={this.state.selectedPoint}
+                needsScaling={this.state.needsScaling}
+                currentImageURL={this.state.currentImageURL}
+                imageWidth={this.state.imageWidth}
+                imageHeight={this.state.imageHeight}
+                zoomTransform={this.state.zoomTransform}
+                onPointSelect={this.handlePointSelect}
+                onScatterDataUpdate={this.handleScatterDataUpdate}
+                onScalingComplete={this.handleScalingComplete}
+                onZoomChange={this.handleZoomChange}
+                isEditMode={this.state.isEditMode}
+                onToggleEditMode={this.handleToggleEditMode}
+                onResetZoom={this.handleResetZoom}
+              />
+            </div>
           </div>
         </div>
       </div>

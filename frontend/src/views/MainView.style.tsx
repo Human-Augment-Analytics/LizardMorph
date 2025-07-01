@@ -5,7 +5,6 @@ export class MainViewStyles {
     display: "flex",
     flexDirection: "column",
     height: "100vh",
-    minWidth: "1400px",
   };
 
   static readonly mainContentArea: CSSProperties = {
@@ -16,7 +15,7 @@ export class MainViewStyles {
 
   static readonly svgContainer: CSSProperties = {
     flex: 3,
-    overflow: "auto",
+    overflow: "visible",
     position: "relative",
   };
 
