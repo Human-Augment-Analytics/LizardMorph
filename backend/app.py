@@ -1,33 +1,38 @@
 import utils
-import os
 import visual_individual_performance
 import xray_preprocessing
 from export_handler import ExportHandler
 from session_manager import SessionManager
-from flask import Flask, jsonify, request, send_from_directory, send_file, session
+
+import os
+from flask import Flask, jsonify, request, send_from_directory, send_file, session, render_template
 from flask_cors import CORS, cross_origin
-import flask
 from base64 import b64encode
 import time
-import random
 import logging
 import shutil
-import json
 from dotenv import load_dotenv
+from flask import Blueprint
 
+# Load ENV variables
 load_dotenv()
+frontend_dir = os.getenv("FRONTEND_DIR", "../frontend/dist")
+predictor_file = os.getenv("PREDICTOR_FILE", "./better_predictor_auto.dat")
+session_dir = os.getenv("SESSION_DIR", "sessions")
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
-
+logger.info(predictor_file);
 app = Flask(
     __name__,
-    static_folder="static",  # Specify the static folder explicitly
-    static_url_path="",  # This makes static files available at root URL
+    static_folder=frontend_dir,  # Specify the static folder explicitly
+    static_url_path="",
+    template_folder=frontend_dir,  # This makes static files available at root URL
 )
+api_bp = Blueprint('api', __name__, url_prefix='/api')
 
 # Configure Flask session
 app.secret_key = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
@@ -45,7 +50,7 @@ CORS(
     },
 )
 
-SESSIONS_FOLDER = os.path.join(os.getcwd(), "sessions")
+SESSIONS_FOLDER = os.path.join(os.getcwd(), session_dir)
 UPLOAD_FOLDER = os.path.join(os.getcwd(), "upload")
 COLOR_CONTRAST_FOLDER = os.path.join(os.getcwd(), "color_constrasted")
 TPS_DOWNLOAD_FOLDER = os.path.join(os.getcwd(), "tps_download")
@@ -143,7 +148,7 @@ def cleanup_on_startup():
 # cleanup_on_startup()
 
 
-@app.route("/session/start", methods=["POST"])
+@api_bp.route("/session/start", methods=["POST"])
 @cross_origin()
 def start_session():
     """Start a new session and return the session ID."""
@@ -172,7 +177,7 @@ def start_session():
         )
 
 
-@app.route("/session/info", methods=["GET"])
+@api_bp.route("/session/info", methods=["GET"])
 @cross_origin()
 def get_session_info():
     """Get information about the current session."""
@@ -214,7 +219,7 @@ def get_session_info():
         )
 
 
-@app.route("/session/list", methods=["GET"])
+@api_bp.route("/session/list", methods=["GET"])
 @cross_origin()
 def list_sessions():
     """List all available sessions."""
@@ -231,7 +236,7 @@ def list_sessions():
         )
 
 
-@app.route("/data", methods=["POST", "OPTIONS"])
+@api_bp.route("/data", methods=["POST", "OPTIONS"])
 def upload():
     if request.method == "OPTIONS":
         return "", 204
@@ -269,7 +274,7 @@ def upload():
                     session_data["outputs_folder"], f"output_{unique_name}.xml"
                 )
                 utils.predictions_to_xml_single(
-                    "better_predictor_auto.dat", image_path, xml_output_path
+                    predictor_file, image_path, xml_output_path
                 )
 
                 # Generate CSV and TPS output files in the session outputs folder
@@ -322,7 +327,7 @@ def upload():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/image", methods=["POST"])
+@api_bp.route("/image", methods=["POST"])
 @cross_origin()
 def get_input_image():
     image_filename = request.args.get("image_filename")
@@ -368,7 +373,7 @@ def get_input_image():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/endpoint", methods=["POST"])
+@api_bp.route("/endpoint", methods=["POST"])
 @cross_origin()
 def process_scatter_data():
     data = request.json
@@ -481,7 +486,7 @@ def process_scatter_data():
         )
 
 
-@app.route("/images/<session_id_short>/<path:filename>")
+@api_bp.route("/images/<session_id_short>/<path:filename>")
 def serve_session_image(session_id_short, filename):
     """Serve images from session-specific folders."""
     try:
@@ -505,7 +510,7 @@ def serve_session_image(session_id_short, filename):
         return jsonify({"error": "Image not found"}), 404
 
 
-@app.route("/images/<path:filename>")
+@api_bp.route("/images/<path:filename>")
 def serve_image(filename):
     """Serve images from the current session or global folder."""
     try:
@@ -528,7 +533,7 @@ def serve_image(filename):
 
 
 # New endpoint to list all files in the session upload folder
-@app.route("/list_uploads", methods=["GET"])
+@api_bp.route("/list_uploads", methods=["GET"])
 @cross_origin()
 def list_uploads():
     try:
@@ -560,7 +565,7 @@ def list_uploads():
 
 
 # Endpoint to process an existing image from the session uploads folder
-@app.route("/process_existing", methods=["POST"])
+@api_bp.route("/process_existing", methods=["POST"])
 @cross_origin()
 def process_existing():
     try:
@@ -605,7 +610,7 @@ def process_existing():
         # Generate XML if it doesn't exist
         if not os.path.exists(xml_path):
             utils.predictions_to_xml_single(
-                "better_predictor_auto.dat", image_path, xml_path
+                predictor_file, image_path, xml_path
             )
             utils.dlib_xml_to_pandas(xml_path)
             utils.dlib_xml_to_tps(xml_path)
@@ -655,7 +660,7 @@ def process_existing():
 
 
 # New endpoint to save annotations (updated landmark points)
-@app.route("/save_annotations", methods=["POST"])
+@api_bp.route("/save_annotations", methods=["POST"])
 @cross_origin()
 def save_annotations():
     try:
@@ -850,7 +855,7 @@ def save_annotations():
 
 
 # New endpoint to create zip from all export directories
-@app.route("/download_all", methods=["GET"])
+@api_bp.route("/download_all", methods=["GET"])
 @cross_origin()
 def download_all_exports():
     try:
@@ -879,7 +884,7 @@ def download_all_exports():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/clear_history", methods=["POST"])
+@api_bp.route("/clear_history", methods=["POST"])
 @cross_origin()
 def clear_history():
     """
@@ -917,21 +922,18 @@ def clear_history():
 @app.route("/favicon.ico")
 def favicon():
     return send_from_directory(
-        os.path.join(app.root_path, "static"),
+        os.path.join(app.root_path, "../frontend/dist"),
         "favicon.ico",
         mimetype="image/vnd.microsoft.icon",
     )
 
 
-# Add these routes to serve the React frontend
-@app.route("/", defaults={"path": ""})
-@app.route("/<path:path>")
-def serve(path):
-    if path != "" and os.path.exists(os.path.join("static", path)):
-        return send_from_directory("static", path)
-    else:
-        return send_from_directory("static", "index.html")
+@app.route("/")
+def index():
+        # return "The URL for this page is {}".format(url_for("index"))
+        return render_template('index.html')
 
+app.register_blueprint(api_bp)
 
 # Make sure your app runs on the correct host and port if started directly
 if __name__ == "__main__":

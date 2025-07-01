@@ -4,8 +4,11 @@ export class ImageVersionControlsStyles {
   static readonly imageVersionButtons: CSSProperties = {
     marginTop: "10px",
     display: "flex",
-    gap: "10px",
+    gap: "12px",
     justifyContent: "center",
+    padding: "5px",
+    flexDirection: 'row',
+    alignItems: 'center',
   };
 
   static readonly versionButton: CSSProperties = {
