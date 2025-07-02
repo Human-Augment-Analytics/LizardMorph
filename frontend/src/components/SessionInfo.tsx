@@ -11,6 +11,7 @@ interface SessionInfoState {
   loading: boolean;
   error: string | null;
   isCached: boolean;
+  storageType: "cookies" | "sessionStorage";
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -20,6 +21,7 @@ export class SessionInfo extends Component<{}, SessionInfoState> {
     loading: true,
     error: null,
     isCached: false,
+    storageType: SessionService.getStorageType(),
   };
 
   componentDidMount() {
@@ -40,6 +42,7 @@ export class SessionInfo extends Component<{}, SessionInfoState> {
         sessionInfo: info,
         loading: false,
         isCached,
+        storageType: SessionService.getStorageType(),
       });
     } catch (error) {
       this.setState({
@@ -52,7 +55,7 @@ export class SessionInfo extends Component<{}, SessionInfoState> {
     }
   }
   render() {
-    const { sessionInfo, loading, error, isCached } = this.state;
+    const { sessionInfo, loading, error, isCached, storageType } = this.state;
 
     if (loading) {
       return (
@@ -106,7 +109,8 @@ export class SessionInfo extends Component<{}, SessionInfoState> {
                   "$1-$2-$3T$4:$5:$6"
                 )
               ).toLocaleString()
-            : "Unknown"}
+            : "Unknown"}{" "}
+          | Storage: {storageType}
         </span>
         {isCached && (
           <span
@@ -120,6 +124,20 @@ export class SessionInfo extends Component<{}, SessionInfoState> {
             }}
           >
             CACHED
+          </span>
+        )}
+        {storageType === "cookies" && (
+          <span
+            style={{
+              backgroundColor: "#2196f3",
+              color: "white",
+              padding: "2px 6px",
+              borderRadius: "3px",
+              fontSize: "10px",
+              fontWeight: "bold",
+            }}
+          >
+            PERSISTENT
           </span>
         )}
       </div>
