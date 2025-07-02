@@ -18,7 +18,7 @@ interface SVGViewerProps {
   imageWidth: number;
   imageHeight: number;
   zoomTransform: d3.ZoomTransform;
-  onPointSelect: (point: Point) => void;
+  onPointSelect: (point: Point | null) => void;
   onScatterDataUpdate: (
     scatterData: Point[],
     originalScatterData: Point[]
@@ -302,47 +302,47 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
     const point = d3.pointer(event, this.svgRef.current);
     const transform = d3.zoomTransform(this.svgRef.current!);
 
+    // SVG/display coordinates
     const x = (point[0] - transform.x) / transform.k;
     const y = (point[1] - transform.y) / transform.k;
 
-    const group = d3.select(event.sourceEvent.target.parentNode);
-    group.select("circle").attr("cx", x).attr("cy", y);
+    // Get SVG and image dimensions
+    const svg = d3.select(this.svgRef.current!);
+    const width = +svg.attr("width");
+    const height = +svg.attr("height");
 
-    group
-      .select("text")
-      .attr("x", x + 5)
-      .attr("y", y - 5);
+    // Calculate new image-space coordinates
+    const scaleXToImg = d3.scaleLinear().domain([0, width]).range([0, this.props.imageWidth]);
+    const scaleYToImg = d3.scaleLinear().domain([0, height]).range([0, this.props.imageHeight]);
+    const newImgX = scaleXToImg(x);
+    const newImgY = scaleYToImg(y);
 
-    const updatedScatterData = this.props.scatterData.map((p) =>
-      p.id === d.id ? { ...p, x, y } : p
-    );
-
-    const scaleX = d3
-      .scaleLinear()
-      .domain([0, this.props.imageWidth])
-      .range([
-        0,
-        window.innerHeight * (this.props.imageWidth / this.props.imageHeight),
-      ]);
-
-    const scaleY = d3
-      .scaleLinear()
-      .domain([0, this.props.imageHeight])
-      .range([0, window.innerHeight - window.innerHeight * 0.2]);
-
-    const updatedOriginalCoords = this.props.originalScatterData.map(
+    // Update originalScatterData (image space)
+    const updatedoriginalScatterData = this.props.originalScatterData.map(
       (p: Point) =>
         p.id === d.id
-          ? {
-              ...p,
-              x: scaleX.invert(x),
-              y: scaleY.invert(y),
-            }
+          ? { ...p, x: newImgX, y: newImgY }
           : p
     );
 
-    this.props.onScatterDataUpdate(updatedScatterData, updatedOriginalCoords);
-    this.props.onPointSelect({ ...d, x, y });
+    // Re-scale for display
+    const scaleXDisplay = d3.scaleLinear().domain([0, this.props.imageWidth]).range([0, width]);
+    const scaleYDisplay = d3.scaleLinear().domain([0, this.props.imageHeight]).range([0, height]);
+    const updatedScatterData = updatedoriginalScatterData.map(
+      (p: Point) => ({
+        ...p,
+        x: scaleXDisplay(p.x),
+        y: scaleYDisplay(p.y),
+      })
+    );
+
+    // Update the display and image-space coordinates in parent
+    this.props.onScatterDataUpdate(updatedScatterData, updatedoriginalScatterData);
+
+    // Update the dragged point visually
+    const group = d3.select(event.sourceEvent.target.parentNode);
+    group.select("circle").attr("cx", x).attr("cy", y);
+    group.select("text").attr("x", x + 5).attr("y", y - 5);
   };
 
   private readonly dragended = (
@@ -375,6 +375,8 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
           .on("drag", null)
           .on("end", null)
       );
+
+      this.props.onPointSelect(null);
     }
   };
 
