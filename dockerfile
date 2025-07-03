@@ -106,4 +106,4 @@
     #CMD ["python", "-c", "import sys; print(sys.path); import cv2; print('OpenCV loaded successfully'); import dlib; print('dlib loaded successfully')"]
     
     # Run with gunicorn pointing directly to app.py
-    CMD ["gunicorn", "--bind", "0.0.0.0:3000", "--workers", "4", "--timeout", "600", "app:app"]
+    CMD ["gunicorn", "--bind", "0.0.0.0:3000", "--timeout", "600", "app:app"]
