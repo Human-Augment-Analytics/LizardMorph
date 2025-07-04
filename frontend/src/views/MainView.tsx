@@ -97,11 +97,14 @@ export class MainView extends Component<MainProps, MainState> {
   }
   private async initializeApp(): Promise<void> {
     try {
-      // Initialize session management
+      console.log("Initializing LizardMorph app...");
+
+      // Initialize session management (will reuse existing session if available)
       await ApiService.initialize();
 
       // Mark session as ready
       this.setState({ sessionReady: true });
+      console.log("Session initialized successfully");
 
       // Now proceed with normal initialization
       this.fetchUploadedFiles();
@@ -162,51 +165,72 @@ export class MainView extends Component<MainProps, MainState> {
 
     this.setState({ loading: true, dataLoading: true, dataError: null });
     try {
-        Promise.all(Array.from(files).map(async (file) => {
-        // Upload the file (replace with your actual upload logic)
-        const [result] = await ApiService.uploadMultipleImages([file]);
-        // Process the uploaded image immediately
-        const imageSets = await ApiService.fetchImageSet(result.name);
-        const coords = result.coords.map((coord, index: number) => ({
-          ...coord,
-          id: index + 1,
-        }));
+      Promise.all(
+        Array.from(files).map(async (file) => {
+          // Upload the file (replace with your actual upload logic)
+          const [result] = await ApiService.uploadMultipleImages([file]);
+          // Process the uploaded image immediately
+          const imageSets = await ApiService.fetchImageSet(result.name);
+          const coords = result.coords.map((coord, index: number) => ({
+            ...coord,
+            id: index + 1,
+          }));
 
-        const processedImage = {
-          name: result.name,
-          coords: coords,
-          originalCoords: JSON.parse(JSON.stringify(coords)),
-          imageSets,
-          timestamp: new Date().toLocaleString(),
-        };
-
-        // Update state for each processed image as it finishes
-        this.setState((prevState) => {
-          const updatedImages = [...prevState.images, processedImage];
-          const newHistory = [
-            ...prevState.uploadHistory,
-            {
-              name: processedImage.name,
-              timestamp: processedImage.timestamp,
-              index: updatedImages.length - 1,
-            },
-          ];
-          return {
-            ...prevState,
-            images: updatedImages,
-            uploadHistory: newHistory,
-            currentImageIndex: prevState.images.length === 0 ? 0 : prevState.currentImageIndex,
-            imageFilename: prevState.images.length === 0 ? processedImage.name : prevState.imageFilename,
-            originalScatterData: prevState.images.length === 0 ? processedImage.originalCoords : prevState.originalScatterData,
-            scatterData: prevState.images.length === 0 ? processedImage.coords : prevState.scatterData,
-            imageSet: prevState.images.length === 0 ? processedImage.imageSets : prevState.imageSet,
-            currentImageURL: prevState.images.length === 0 ? processedImage.imageSets.original : prevState.currentImageURL,
-            needsScaling: prevState.images.length === 0 ? true : prevState.needsScaling,
-            dataFetched: prevState.images.length === 0 ? true : prevState.dataFetched,
-            selectedPoint: prevState.images.length === 0 ? null : prevState.selectedPoint,
+          const processedImage = {
+            name: result.name,
+            coords: coords,
+            originalCoords: JSON.parse(JSON.stringify(coords)),
+            imageSets,
+            timestamp: new Date().toLocaleString(),
           };
-        });
-      })).then(() => {
+
+          // Update state for each processed image as it finishes
+          this.setState((prevState) => {
+            const updatedImages = [...prevState.images, processedImage];
+            const newHistory = [
+              ...prevState.uploadHistory,
+              {
+                name: processedImage.name,
+                timestamp: processedImage.timestamp,
+                index: updatedImages.length - 1,
+              },
+            ];
+            return {
+              ...prevState,
+              images: updatedImages,
+              uploadHistory: newHistory,
+              currentImageIndex:
+                prevState.images.length === 0 ? 0 : prevState.currentImageIndex,
+              imageFilename:
+                prevState.images.length === 0
+                  ? processedImage.name
+                  : prevState.imageFilename,
+              originalScatterData:
+                prevState.images.length === 0
+                  ? processedImage.originalCoords
+                  : prevState.originalScatterData,
+              scatterData:
+                prevState.images.length === 0
+                  ? processedImage.coords
+                  : prevState.scatterData,
+              imageSet:
+                prevState.images.length === 0
+                  ? processedImage.imageSets
+                  : prevState.imageSet,
+              currentImageURL:
+                prevState.images.length === 0
+                  ? processedImage.imageSets.original
+                  : prevState.currentImageURL,
+              needsScaling:
+                prevState.images.length === 0 ? true : prevState.needsScaling,
+              dataFetched:
+                prevState.images.length === 0 ? true : prevState.dataFetched,
+              selectedPoint:
+                prevState.images.length === 0 ? null : prevState.selectedPoint,
+            };
+          });
+        })
+      ).then(() => {
         this.setState({
           loading: false,
           dataLoading: false,
@@ -222,7 +246,6 @@ export class MainView extends Component<MainProps, MainState> {
   // This loads the image when the currentImageURL changes
   private readonly loadImage = (): void => {
     if (this.state.currentImageURL) {
-
       const img = new Image();
 
       img.onload = () => {
@@ -802,7 +825,7 @@ export class MainView extends Component<MainProps, MainState> {
               onToggleEditMode={this.handleToggleEditMode}
               onResetZoom={this.handleResetZoom}
             />
-            <div style={{overflow: 'auto', height: '100%'}}>
+            <div style={{ overflow: "auto", height: "100%" }}>
               <SVGViewer
                 dataFetched={this.state.dataFetched}
                 loading={this.state.loading}
