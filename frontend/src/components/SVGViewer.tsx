@@ -264,14 +264,12 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
       svg
         .selectAll<SVGCircleElement, Point>("circle")
         .attr("fill", (d: Point) => {
-          const id = d.id ?? d3.select(svg.node()).attr("data-id");
-          return this.props.selectedPoint && id == this.props.selectedPoint.id
+          return this.props.selectedPoint && d.id === this.props.selectedPoint.id
             ? "yellow"
             : "red";
         })
         .attr("stroke-width", (d: Point) => {
-          const id = d.id ?? d3.select(svg.node()).attr("data-id");
-          return this.props.selectedPoint && id == this.props.selectedPoint.id
+          return this.props.selectedPoint && d.id === this.props.selectedPoint.id
             ? 2
             : 1;
         });
@@ -283,22 +281,35 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
     d: Point
   ): void => {
     event.sourceEvent.stopPropagation();
-    d3.select(event.sourceEvent.target.parentNode)
-      .raise()
-      .attr("stroke", "black");
-    this.props.onPointSelect(d);
+    
+    // Get the actual group element that was clicked
+    const clickedGroup = d3.select(event.sourceEvent.target.parentNode);
+    const clickedData = clickedGroup.datum() as Point;
+    
+    clickedGroup.raise().attr("stroke", "black");
+    this.props.onPointSelect(clickedData);
+    
+    // Update visual selection by finding the correct group and updating its circle
     const svg = d3.select(this.svgRef.current);
     const scatterPlotGroup = svg.select<SVGGElement>(".scatter-points");
-    scatterPlotGroup
-      .selectAll<SVGCircleElement, Point>("circle")
-      .attr("fill", (p: Point) => (p.id === d.id ? "yellow" : "red"))
-      .attr("stroke-width", (p: Point) => (p.id === d.id ? 2 : 1));
+    scatterPlotGroup.selectAll<SVGGElement, Point>("g").each((pointData, i, nodes) => {
+      const group = d3.select(nodes[i]);
+      const circle = group.select("circle");
+      if (pointData.id === clickedData.id) {
+        circle.attr("fill", "yellow").attr("stroke-width", 2);
+      } else {
+        circle.attr("fill", "red").attr("stroke-width", 1);
+      }
+    });
   };
 
   private readonly dragged = (
-    event: d3.D3DragEvent<SVGGElement, Point, Point>,
-    d: Point
+    event: d3.D3DragEvent<SVGGElement, Point, Point>
   ): void => {
+    // Get the actual group element that was clicked
+    const clickedGroup = d3.select(event.sourceEvent.target.parentNode);
+    const clickedData = clickedGroup.datum() as Point;
+    
     const point = d3.pointer(event, this.svgRef.current);
     const transform = d3.zoomTransform(this.svgRef.current!);
 
@@ -320,7 +331,7 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
     // Update originalScatterData (image space)
     const updatedoriginalScatterData = this.props.originalScatterData.map(
       (p: Point) =>
-        p.id === d.id
+        p.id === clickedData.id
           ? { ...p, x: newImgX, y: newImgY }
           : p
     );
@@ -340,9 +351,8 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
     this.props.onScatterDataUpdate(updatedScatterData, updatedoriginalScatterData);
 
     // Update the dragged point visually
-    const group = d3.select(event.sourceEvent.target.parentNode);
-    group.select("circle").attr("cx", x).attr("cy", y);
-    group.select("text").attr("x", x + 5).attr("y", y - 5);
+    clickedGroup.select("circle").attr("cx", x).attr("cy", y);
+    clickedGroup.select("text").attr("x", x + 5).attr("y", y - 5);
   };
 
   private readonly dragended = (
