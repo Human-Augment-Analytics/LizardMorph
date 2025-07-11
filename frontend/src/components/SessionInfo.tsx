@@ -1,5 +1,6 @@
 import { Component } from "react";
 import { ApiService } from "../services/ApiService";
+import { SessionService } from "../services/SessionService";
 
 interface SessionInfoState {
   sessionInfo: {
@@ -9,6 +10,8 @@ interface SessionInfoState {
   } | null;
   loading: boolean;
   error: string | null;
+  isCached: boolean;
+  storageType: "cookies" | "sessionStorage";
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -17,6 +20,8 @@ export class SessionInfo extends Component<{}, SessionInfoState> {
     sessionInfo: null,
     loading: true,
     error: null,
+    isCached: false,
+    storageType: SessionService.getStorageType(),
   };
 
   componentDidMount() {
@@ -26,10 +31,18 @@ export class SessionInfo extends Component<{}, SessionInfoState> {
   private async loadSessionInfo() {
     try {
       this.setState({ loading: true, error: null });
+
+      // Check if session is cached
+      const isCached =
+        SessionService.hasActiveSession() &&
+        SessionService.isCachedSessionFresh();
+
       const info = await ApiService.getSessionInfo();
       this.setState({
         sessionInfo: info,
         loading: false,
+        isCached,
+        storageType: SessionService.getStorageType(),
       });
     } catch (error) {
       this.setState({
@@ -42,7 +55,7 @@ export class SessionInfo extends Component<{}, SessionInfoState> {
     }
   }
   render() {
-    const { sessionInfo, loading, error } = this.state;
+    const { sessionInfo, loading, error, isCached, storageType } = this.state;
 
     if (loading) {
       return (
@@ -81,18 +94,52 @@ export class SessionInfo extends Component<{}, SessionInfoState> {
           fontSize: "12px",
           color: "#666",
           borderBottom: "1px solid #e0e0e0",
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
         }}
       >
-        Session: {sessionInfo?.session_id_short || "Unknown"} | Files:{" "}
-        {sessionInfo?.file_count || 0} | Started:{" "}
-        {sessionInfo?.created_at
-          ? new Date(
-              sessionInfo.created_at.replace(
-                /(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/,
-                "$1-$2-$3T$4:$5:$6"
-              )
-            ).toLocaleString()
-          : "Unknown"}
+        <span>
+          Session: {sessionInfo?.session_id_short ?? "Unknown"} | Files:{" "}
+          {sessionInfo?.file_count ?? 0} | Started:{" "}
+          {sessionInfo?.created_at
+            ? new Date(
+                sessionInfo.created_at.replace(
+                  /(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/,
+                  "$1-$2-$3T$4:$5:$6"
+                )
+              ).toLocaleString()
+            : "Unknown"}{" "}
+          | Storage: {storageType}
+        </span>
+        {isCached && (
+          <span
+            style={{
+              backgroundColor: "#4caf50",
+              color: "white",
+              padding: "2px 6px",
+              borderRadius: "3px",
+              fontSize: "10px",
+              fontWeight: "bold",
+            }}
+          >
+            CACHED
+          </span>
+        )}
+        {storageType === "cookies" && (
+          <span
+            style={{
+              backgroundColor: "#2196f3",
+              color: "white",
+              padding: "2px 6px",
+              borderRadius: "3px",
+              fontSize: "10px",
+              fontWeight: "bold",
+            }}
+          >
+            PERSISTENT
+          </span>
+        )}
       </div>
     );
   }
