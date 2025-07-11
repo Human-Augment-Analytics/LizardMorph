@@ -15,7 +15,7 @@ gcloud projects create lizard-xray
 ### Expose the environment variables (change the bucket name)
 ```
 export PROJECT_ID=$(gcloud config get-value project)
-export PROEJCT_NUMBER=$(gcloud projects describe $PROJECT_ID --format="value(projectNumber)")
+export PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format="value(projectNumber)")
 export BUCKET_NAME=lizard-x-ray
 ```
 

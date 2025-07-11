@@ -278,7 +278,7 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
 
   private readonly dragstarted = (
     event: d3.D3DragEvent<SVGGElement, Point, Point>,
-    d: Point
+    _d: Point
   ): void => {
     event.sourceEvent.stopPropagation();
     
