@@ -33,14 +33,18 @@ class SessionManager:
             os.makedirs(directory)
             logger.info(f"Created directory: {directory}")
 
-    def create_session(self) -> str:
+    def create_session(self, session_id: str = None) -> str:
         """
         Create a new session with a unique session ID.
 
         Returns:
             str: Unique session ID
         """
-        session_id = str(uuid.uuid4())
+        if session_id is None:
+            session_id = str(uuid.uuid4())
+        else:
+            session_id = session_id
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         session_data = {
