@@ -83,7 +83,7 @@ export class ImageVersionControls extends Component<ImageVersionControlsProps> {
           onClick={onToggleEditMode}
           style={{
             padding: '8px 16px',
-            backgroundColor: isEditMode ? '#ff4444' : '#4CAF50',
+            backgroundColor: isEditMode ? '#ffc107' : '#4CAF50',
             color: 'white',
             border: 'none',
             borderRadius: '4px',
@@ -93,7 +93,7 @@ export class ImageVersionControls extends Component<ImageVersionControlsProps> {
             marginLeft: '16px',
           }}
         >
-          {isEditMode ? 'Exit' : 'Edit Points'}
+          {isEditMode ? 'Save Points' : 'Edit Points'}
         </button>
         <button
           onClick={onResetZoom}

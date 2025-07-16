@@ -10,7 +10,7 @@ export class MainViewStyles {
   static readonly mainContentArea: CSSProperties = {
     display: "flex",
     flex: 1,
-    overflow: "hidden",
+    overflow: "visible",
   };
 
   static readonly svgContainer: CSSProperties = {

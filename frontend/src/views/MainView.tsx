@@ -39,7 +39,7 @@ interface MainState {
   zoomTransform: d3.ZoomTransform;
   isEditMode: boolean;
   sessionReady: boolean;
-  onPointSelect: (point: Point) => void;
+  onPointSelect: (point: Point | null) => void;
   onScatterDataUpdate: (
     scatterData: Point[],
     originalScatterData: Point[]
@@ -332,7 +332,6 @@ export class MainView extends Component<MainProps, MainState> {
         })); // Always scale from original coordinates
         this.setState((prevState) => {
           const scaledData = prevState.originalScatterData.map((point) => {
-            // Check if the point already has x and y values before scaling
             if (typeof point.x === "number" && typeof point.y === "number") {
               return {
                 ...point,
@@ -453,7 +452,7 @@ export class MainView extends Component<MainProps, MainState> {
   };
 
   // Handle point selection from the table without affecting zoom
-  private readonly handlePointSelect = (point: Point): void => {
+  private readonly handlePointSelect = (point: Point | null): void => {
     this.setState({ selectedPoint: point });
   };
 
@@ -520,7 +519,7 @@ export class MainView extends Component<MainProps, MainState> {
           imageIndex === this.state.currentImageIndex
             ? {
                 imageUrl: this.state.currentImageURL!,
-                coords: this.state.originalScatterData, // Use original coordinates instead of scaled ones
+                coords: this.state.originalScatterData,
                 width: this.state.imageWidth,
                 height: this.state.imageHeight,
               }
@@ -595,20 +594,13 @@ export class MainView extends Component<MainProps, MainState> {
   // Handle changing to a different image in the set
   private readonly changeCurrentImage = (index: number): void => {
     this.setState((prevState) => {
-      if (index < 0 || index >= prevState.images.length) return prevState; // Save current data to the current image before switching
+      if (index < 0 || index >= prevState.images.length) return prevState;
       const updatedImages = [...prevState.images];
-      if (
-        prevState.currentImageIndex !== index &&
-        prevState.images.length > 0
-      ) {
-        // Save both current scatter data (display) and original coordinates
-        updatedImages[prevState.currentImageIndex].coords =
-          prevState.scatterData;
-        updatedImages[prevState.currentImageIndex].originalCoords =
-          prevState.originalScatterData;
-      }
+      // Always save the current state of landmarks for the current image
+      updatedImages[prevState.currentImageIndex].coords = prevState.scatterData;
+      updatedImages[prevState.currentImageIndex].originalCoords = prevState.originalScatterData;
 
-      // Set new current image
+      // Load the last-saved state for the new image
       const newImage = updatedImages[index];
       return {
         ...prevState,
@@ -678,7 +670,6 @@ export class MainView extends Component<MainProps, MainState> {
       // If not loaded, process it
       const result = await ApiService.processExistingImage(filename);
       const imageSets = await ApiService.fetchImageSet(filename);
-
       const coords = result.coords.map((coord: Point, index: number) => ({
         ...coord,
         id: index + 1,
