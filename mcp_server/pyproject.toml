@@ -1,7 +1,21 @@
 [project]
-name = "mcp-server"
+name = "lizardmorph-mcp-server"
 version = "0.1.0"
-description = "Add your description here"
+description = "MCP server for LizardMorph image processing and landmark prediction"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "mcp>=1.0.0",
+    "opencv-python>=4.8.0",
+    "numpy>=1.24.0",
+    "dlib>=19.24.0",
+    "pillow>=10.0.0",
+    "aiofiles>=23.2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+lizardmorph-mcp-server = "main:main"

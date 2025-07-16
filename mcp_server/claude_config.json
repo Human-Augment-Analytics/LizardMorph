@@ -1,0 +1,13 @@
+{
+    "mcpServers": {
+        "lizardmorph": {
+            "command": "python",
+            "args": [
+                "C:/src/Git/LizardMorph/mcp_server/main.py"
+            ],
+            "env": {
+                "PREDICTOR_FILE": "C:/src/Git/LizardMorph/backend/better_predictor_auto.dat"
+            }
+        }
+    }
+}
