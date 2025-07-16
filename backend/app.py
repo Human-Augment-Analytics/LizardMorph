@@ -106,7 +106,7 @@ def get_session_folders(session_id):
     session_data = session_manager.get_session(session_id)
     if not session_data:
         # Create session if it doesn't exist
-        session_id = session_manager.create_session()
+        session_id = session_manager.create_session(session_id)
         session_data = session_manager.get_session(session_id)
 
     return session_data
@@ -153,7 +153,8 @@ def cleanup_on_startup():
 def start_session():
     """Start a new session and return the session ID."""
     try:
-        session_id = session_manager.create_session()
+        session_id = get_session_id()
+        session_id = session_manager.create_session(session_id)
         session["session_id"] = session_id
 
         logger.info(f"Started new session: {session_id}")
