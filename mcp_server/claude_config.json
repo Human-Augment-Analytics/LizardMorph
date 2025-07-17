@@ -8,11 +8,10 @@
                 "-i",
                 "--name",
                 "lizardmorph-mcp-temp",
+                "-p",
+                "8080:8080",
                 "mcp_server-lizardmorph-mcp"
-            ],
-            "env": {
-                "PREDICTOR_FILE": "/app/better_predictor_auto.dat"
-            }
+            ]
         }
     }
 }

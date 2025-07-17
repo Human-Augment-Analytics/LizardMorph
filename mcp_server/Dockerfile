@@ -39,23 +39,29 @@ RUN pip install --no-cache-dir \
     "dlib>=19.24.0" \
     "pillow>=10.0.0"
 
-# Copy application files
-COPY main.py ./
-COPY utils.py ./
-COPY better_predictor_auto.dat ./
+# Verify MCP installation
+RUN python -c "from mcp.types import TextContent, CallToolResult; tc = TextContent(type='text', text='test'); result = CallToolResult(content=[tc], isError=False); print('MCP types working correctly')"
 
-# Create outputs directory for web server
-RUN mkdir -p /app/outputs
+# Copy application files
+COPY --chown=mcpuser:mcpuser main.py ./
+COPY --chown=mcpuser:mcpuser utils.py ./
+COPY --chown=mcpuser:mcpuser better_predictor_auto.dat ./
+
+# Create non-root user for security and set up directories
+RUN useradd -m -u 1000 mcpuser && \
+    mkdir -p /app/outputs && \
+    chown -R mcpuser:mcpuser /app
+
+# Copy application files with proper ownership
+COPY --chown=mcpuser:mcpuser main.py ./
+COPY --chown=mcpuser:mcpuser utils.py ./
+COPY --chown=mcpuser:mcpuser better_predictor_auto.dat ./
 
 # Set environment variables
 ENV PREDICTOR_FILE=/app/better_predictor_auto.dat
 ENV WEB_PORT=8080
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
-
-# Create non-root user for security
-RUN useradd -m -u 1000 mcpuser && \
-    chown -R mcpuser:mcpuser /app
 
 USER mcpuser
 

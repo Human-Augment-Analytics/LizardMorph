@@ -1,9 +1,11 @@
+#!/usr/bin/env python3
+
+import sys
 import asyncio
 import base64
 import io
 import json
 import os
-import sys
 import tempfile
 import threading
 import time
@@ -11,6 +13,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import socketserver
+
+print("[SCRIPT] Script started", file=sys.stderr, flush=True)
 
 import cv2
 import dlib
@@ -23,11 +27,16 @@ from mcp.types import (
 )
 from PIL import Image
 
+print("[SCRIPT] MCP imports completed", file=sys.stderr, flush=True)
+
 # Import utils from the same directory
 try:
+    print("[SCRIPT] Importing utils...", file=sys.stderr, flush=True)
     import utils
+
+    print("[SCRIPT] Utils imported successfully", file=sys.stderr, flush=True)
 except ImportError as e:
-    print(f"Error importing utils: {e}")
+    print(f"[ERROR] Error importing utils: {e}", file=sys.stderr, flush=True)
     sys.exit(1)
 
 # Configuration
@@ -36,8 +45,11 @@ PREDICTOR_FILE = os.getenv(
     str(Path(__file__).parent / "better_predictor_auto.dat"),
 )
 WEB_PORT = int(os.getenv("WEB_PORT", "8080"))
-# Use local outputs directory for Windows
-OUTPUT_DIR = str(Path(__file__).parent / "outputs")
+# Use Docker-compatible path if running in Docker, otherwise use local path
+if os.path.exists("/app"):
+    OUTPUT_DIR = "/app/outputs"
+else:
+    OUTPUT_DIR = str(Path(__file__).parent / "outputs")
 
 
 class ImageHTTPRequestHandler(SimpleHTTPRequestHandler):
@@ -62,11 +74,16 @@ def start_web_server():
     """Start the HTTP server in a separate thread."""
     try:
         os.makedirs(OUTPUT_DIR, exist_ok=True)
-        with socketserver.TCPServer(("", WEB_PORT), ImageHTTPRequestHandler) as httpd:
-            print(f"Web server serving images at http://localhost:{WEB_PORT}")
+        # Use 0.0.0.0 to bind to all interfaces in Docker
+        server_address = ("0.0.0.0", WEB_PORT)
+        with socketserver.TCPServer(server_address, ImageHTTPRequestHandler) as httpd:
+            print(
+                f"Web server serving images at http://0.0.0.0:{WEB_PORT}",
+                file=sys.stderr,
+            )
             httpd.serve_forever()
     except Exception as e:
-        print(f"Failed to start web server: {e}")
+        print(f"Failed to start web server: {e}", file=sys.stderr)
 
 
 class LizardMorphProcessor:
@@ -100,7 +117,10 @@ class LizardMorphProcessor:
                 # Limit landmarks to first 50 to prevent response length issues
                 if len(landmarks) > 50:
                     landmarks = landmarks[:50]
-                    print(f"Truncated landmarks to 50 (was {len(landmarks)})")
+                    print(
+                        f"Truncated landmarks to 50 (was {len(landmarks)})",
+                        file=sys.stderr,
+                    )
 
                 # Get image info
                 image = Image.open(temp_image_path)
@@ -144,7 +164,7 @@ class LizardMorphProcessor:
             for i, part in enumerate(root.findall(".//part")):
                 # Limit to first 100 landmarks to prevent response length issues
                 if i >= 100:
-                    print(f"Truncated landmarks at 100 (found more)")
+                    print(f"Truncated landmarks at 100 (found more)", file=sys.stderr)
                     break
 
                 name = part.get("name")
@@ -159,9 +179,9 @@ class LizardMorphProcessor:
                     }
                 )
             landmarks.sort(key=lambda l: l["id"])
-            print(f"Parsed {len(landmarks)} landmarks")
+            print(f"Parsed {len(landmarks)} landmarks", file=sys.stderr)
         except Exception as e:
-            print(f"Error parsing XML: {e}")
+            print(f"Error parsing XML: {e}", file=sys.stderr)
         return landmarks
 
     def _create_and_save_annotated_image(
@@ -257,30 +277,51 @@ class LizardMorphProcessor:
 
             # Return the URL (assuming the server is accessible)
             image_url = f"http://localhost:{WEB_PORT}/{output_filename}"
-            print(f"Saved annotated image: {output_path}")
-            print(f"Available at: {image_url}")
+            print(f"Saved annotated image: {output_path}", file=sys.stderr)
+            print(f"Available at: {image_url}", file=sys.stderr)
 
             return image_url
 
         except Exception as e:
-            print(f"Error creating annotated image: {e}")
+            print(f"Error creating annotated image: {e}", file=sys.stderr)
             return ""
 
 
 # Initialize processor
 try:
+    print(f"[INIT] Initializing LizardMorph processor...", file=sys.stderr, flush=True)
+    print(f"[INIT] Predictor file path: {PREDICTOR_FILE}", file=sys.stderr, flush=True)
+    print(
+        f"[INIT] Predictor file exists: {os.path.exists(PREDICTOR_FILE)}",
+        file=sys.stderr,
+        flush=True,
+    )
+    print(f"[INIT] Output directory: {OUTPUT_DIR}", file=sys.stderr, flush=True)
+    print(f"[INIT] Web port: {WEB_PORT}", file=sys.stderr, flush=True)
+
     processor = LizardMorphProcessor(PREDICTOR_FILE)
-    print(f"LizardMorph MCP Server initialized")
+    print(
+        f"[INIT] LizardMorph MCP Server initialized successfully",
+        file=sys.stderr,
+        flush=True,
+    )
 except Exception as e:
-    print(f"Failed to initialize: {e}")
+    print(f"[ERROR] Failed to initialize: {e}", file=sys.stderr, flush=True)
+    import traceback
+
+    traceback.print_exc()
     sys.exit(1)
 
 # Start web server in background thread
+print("[WEB] Starting web server thread...", file=sys.stderr, flush=True)
 web_thread = threading.Thread(target=start_web_server, daemon=True)
 web_thread.start()
+print("[WEB] Web server thread started", file=sys.stderr, flush=True)
 
 # Create MCP server
+print("[MCP] Creating MCP server...", file=sys.stderr, flush=True)
 server = Server("lizardmorph-mcp-server")
+print("[MCP] MCP server created", file=sys.stderr, flush=True)
 
 
 @server.list_tools()
@@ -319,124 +360,127 @@ async def handle_list_tools():
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict):
     """Handle tool calls."""
+    print(f"[TOOL] Tool called: {name}", file=sys.stderr, flush=True)
 
-    if name == "process_lizard_image":
-        try:
-            image_b64 = arguments.get("image", "")
-            image_name = arguments.get("image_name", "lizard")
-
-            if not image_b64:
-                error_text = TextContent(type="text", text="Error: No image provided")
-                return CallToolResult(content=[error_text], isError=True)
-
-            # Clean base64
-            if image_b64.startswith("data:"):
-                image_b64 = image_b64.split(",")[1]
-
+    try:
+        if name == "process_lizard_image":
             try:
-                image_data = base64.b64decode(image_b64)
+                image_b64 = arguments.get("image", "")
+                image_name = arguments.get("image_name", "lizard")
+
+                if not image_b64:
+                    error_content = TextContent(
+                        type="text", text="Error: No image provided"
+                    )
+                    return CallToolResult(content=[error_content], isError=True)
+
+                # Clean base64
+                if image_b64.startswith("data:"):
+                    image_b64 = image_b64.split(",")[1]
+
+                try:
+                    image_data = base64.b64decode(image_b64)
+                except Exception as e:
+                    error_content = TextContent(
+                        type="text", text=f"Error decoding image: {str(e)}"
+                    )
+                    return CallToolResult(content=[error_content], isError=True)
+
+                # Process image
+                result = processor.process_image(image_data, image_name)
+
+                if result["success"]:
+                    response_text = f"Processed {image_name}: {result['num_landmarks']} landmarks detected"
+                    if result.get("image_url"):
+                        response_text += f" | View: {result['image_url']}"
+
+                    success_content = TextContent(type="text", text=response_text)
+                    return CallToolResult(content=[success_content], isError=False)
+                else:
+                    error_msg = str(result.get("error", "Unknown error"))
+                    if len(error_msg) > 500:
+                        error_msg = error_msg[:500] + "... (truncated)"
+
+                    error_content = TextContent(
+                        type="text", text=f"Processing failed: {error_msg}"
+                    )
+                    return CallToolResult(content=[error_content], isError=True)
+
             except Exception as e:
-                decode_error_text = TextContent(
-                    type="text", text=f"Error decoding image: {str(e)}"
-                )
-                return CallToolResult(content=[decode_error_text], isError=True)
-
-            # Process image
-            result = processor.process_image(image_data, image_name)
-
-            # Debug: Check response size
-            print(
-                f"Processing result keys: {list(result.keys()) if result else 'None'}"
-            )
-            if result.get("landmarks"):
-                print(f"Number of landmarks: {len(result['landmarks'])}")
-                # Don't print first landmark to avoid potential large data in logs
-                print(
-                    f"Landmark keys: {list(result['landmarks'][0].keys()) if result['landmarks'] else 'None'}"
-                )
-
-            if result["success"]:
-                # Create ultra-minimal response to avoid length issues
-                response_text = f"✅ Processed {image_name}: {result['num_landmarks']} landmarks detected"
-
-                if result.get("image_url"):
-                    response_text += f" | View: {result['image_url']}"
-
-                # Debug: Check response length
-                print(f"Response length: {len(response_text)} characters")
-                print(f"Final response: {response_text}")
-
-                text_content = TextContent(type="text", text=response_text)
-                return CallToolResult(content=[text_content], isError=False)
-            else:
-                # Ensure error message is not too long
-                error_msg = str(result.get("error", "Unknown error"))
+                error_msg = str(e)
                 if len(error_msg) > 500:
                     error_msg = error_msg[:500] + "... (truncated)"
 
-                error_text = TextContent(
-                    type="text", text=f"❌ Processing failed: {error_msg}"
+                error_content = TextContent(
+                    type="text", text=f"Unexpected error: {error_msg}"
                 )
-                return CallToolResult(content=[error_text], isError=True)
+                return CallToolResult(content=[error_content], isError=True)
 
-        except Exception as e:
-            # Ensure exception message is not too long
-            error_msg = str(e)
-            if len(error_msg) > 500:
-                error_msg = error_msg[:500] + "... (truncated)"
+        elif name == "health_check":
+            try:
+                print("[HEALTH] Starting health check...", file=sys.stderr, flush=True)
+                predictor_status = (
+                    "Available" if os.path.exists(PREDICTOR_FILE) else "Missing"
+                )
+                web_status = f"Running on port {WEB_PORT}"
+                status_text = f"Predictor: {predictor_status}, Web: {web_status}"
 
-            error_text = TextContent(type="text", text=f"Unexpected error: {error_msg}")
-            return CallToolResult(content=[error_text], isError=True)
+                text_content = TextContent(type="text", text=status_text)
+                result = CallToolResult(content=[text_content], isError=False)
+                print(
+                    f"[HEALTH] Health check successful: {status_text}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                return result
+            except Exception as e:
+                print(f"[ERROR] Health check failed: {e}", file=sys.stderr, flush=True)
+                error_content = TextContent(
+                    type="text", text=f"Health check error: {str(e)}"
+                )
+                return CallToolResult(content=[error_content], isError=True)
 
-    elif name == "health_check":
-        try:
-            predictor_status = (
-                "✅ Available" if os.path.exists(PREDICTOR_FILE) else "❌ Missing"
-            )
-            web_status = f"✅ Running on port {WEB_PORT}"
-
-            status_text = f"Predictor: {predictor_status}, Web: {web_status}"
-
-            status_text_content = TextContent(type="text", text=status_text)
-            return CallToolResult(content=[status_text_content], isError=False)
-        except Exception as e:
-            health_error_text = TextContent(
-                type="text", text=f"Health check error: {str(e)}"
-            )
-            return CallToolResult(content=[health_error_text], isError=True)
-
-    elif name == "list_processed_images":
-        try:
-            if os.path.exists(OUTPUT_DIR):
-                images = [
-                    f
-                    for f in os.listdir(OUTPUT_DIR)
-                    if f.endswith((".jpg", ".jpeg", ".png"))
-                ]
-                if images:
-                    image_list = "\n".join(
-                        [
-                            f"- {img} - http://localhost:{WEB_PORT}/{img}"
-                            for img in sorted(images)
-                        ]
-                    )
-                    response = f"# Processed Images\n\n{image_list}"
+        elif name == "list_processed_images":
+            try:
+                if os.path.exists(OUTPUT_DIR):
+                    images = [
+                        f
+                        for f in os.listdir(OUTPUT_DIR)
+                        if f.endswith((".jpg", ".jpeg", ".png"))
+                    ]
+                    if images:
+                        image_list = "\n".join(
+                            [
+                                f"- {img} - http://localhost:{WEB_PORT}/{img}"
+                                for img in sorted(images)
+                            ]
+                        )
+                        response = f"# Processed Images\n\n{image_list}"
+                    else:
+                        response = "No processed images found."
                 else:
-                    response = "No processed images found."
-            else:
-                response = "Output directory not found."
+                    response = "Output directory not found."
 
-            response_text_content = TextContent(type="text", text=response)
-            return CallToolResult(content=[response_text_content], isError=False)
-        except Exception as e:
-            list_error_text = TextContent(
-                type="text", text=f"Error listing images: {str(e)}"
-            )
-            return CallToolResult(content=[list_error_text], isError=True)
+                success_content = TextContent(type="text", text=response)
+                return CallToolResult(content=[success_content], isError=False)
+            except Exception as e:
+                error_content = TextContent(
+                    type="text", text=f"Error listing images: {str(e)}"
+                )
+                return CallToolResult(content=[error_content], isError=True)
 
-    else:
-        unknown_tool_text = TextContent(type="text", text="Unknown tool")
-        return CallToolResult(content=[unknown_tool_text], isError=True)
+        else:
+            error_content = TextContent(type="text", text="Unknown tool")
+            return CallToolResult(content=[error_content], isError=True)
+
+    except Exception as e:
+        print(
+            f"[FATAL] Unexpected error in handle_call_tool: {e}",
+            file=sys.stderr,
+            flush=True,
+        )
+        error_content = TextContent(type="text", text=f"Server error: {str(e)}")
+        return CallToolResult(content=[error_content], isError=True)
 
 
 @server.list_prompts()
@@ -463,11 +507,38 @@ async def main():
     """Run the MCP server."""
     from mcp.server.stdio import stdio_server
 
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream, write_stream, server.create_initialization_options()
-        )
+    print("[MAIN] Starting MCP server main function...", file=sys.stderr, flush=True)
+    print(f"[MAIN] Server name: lizardmorph-mcp-server", file=sys.stderr, flush=True)
+
+    try:
+        print("[MAIN] Creating stdio server...", file=sys.stderr, flush=True)
+        async with stdio_server() as (read_stream, write_stream):
+            print("[MAIN] MCP server connected to stdio", file=sys.stderr, flush=True)
+            print(
+                "[MAIN] Server running and ready to handle requests...",
+                file=sys.stderr,
+                flush=True,
+            )
+            await server.run(
+                read_stream, write_stream, server.create_initialization_options()
+            )
+    except Exception as e:
+        print(f"[ERROR] Error in main server loop: {e}", file=sys.stderr, flush=True)
+        import traceback
+
+        traceback.print_exc()
+        raise
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    print("[START] Starting asyncio main...", file=sys.stderr, flush=True)
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("[STOP] Server stopped by user", file=sys.stderr, flush=True)
+    except Exception as e:
+        print(f"[FATAL] Fatal error: {e}", file=sys.stderr, flush=True)
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
