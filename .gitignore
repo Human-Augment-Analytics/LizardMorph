@@ -44,3 +44,4 @@ Thumbs.db
 
 # env files
 .env*
+mcp_server/better_predictor_auto.dat
