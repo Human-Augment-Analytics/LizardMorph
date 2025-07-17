@@ -1,0 +1,17 @@
+services:
+  lizardmorph-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lizardmorph-mcp-server
+    environment:
+      - PREDICTOR_FILE=/app/better_predictor_auto.dat
+    volumes:
+      # Mount any output directories if needed
+      - ./outputs:/app/outputs
+    # If you need to expose ports for debugging
+    # ports:
+    #   - "8000:8000"
+    restart: unless-stopped
+    stdin_open: true
+    tty: true

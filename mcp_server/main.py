@@ -22,23 +22,21 @@ from mcp.types import (
 )
 from PIL import Image
 
-# Add the backend directory to the path to import utils
-backend_dir = Path(__file__).parent.parent / "backend"
-sys.path.insert(0, str(backend_dir))
-
+# Import utils from the same directory
 try:
     import utils
 except ImportError as e:
     print(f"Error importing utils: {e}")
-    print(f"Backend directory: {backend_dir}")
     print(f"Current working directory: {os.getcwd()}")
+    print(f"Python path: {sys.path}")
     sys.exit(1)
 
 app = Server("lizardmorph-mcp-server")
 
 # Configuration
 PREDICTOR_FILE = os.getenv(
-    "PREDICTOR_FILE", str(backend_dir / "better_predictor_auto.dat")
+    "PREDICTOR_FILE",
+    str(Path(__file__).parent / "better_predictor_auto.dat"),
 )
 TEMP_DIR = tempfile.gettempdir()
 
