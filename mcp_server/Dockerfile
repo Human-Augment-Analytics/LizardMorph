@@ -33,7 +33,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install Python dependencies
 RUN pip install --no-cache-dir \
-    "mcp==1.0.0" \
+    "mcp==1.11.0" \
     "numpy>=1.24.0" \
     "opencv-python-headless>=4.8.0" \
     "dlib>=19.24.0" \

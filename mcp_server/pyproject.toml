@@ -5,7 +5,7 @@ description = "MCP server for LizardMorph image processing and landmark predicti
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=1.11.0",
     "opencv-python>=4.8.0",
     "numpy>=1.24.0",
     "dlib>=19.24.0",
