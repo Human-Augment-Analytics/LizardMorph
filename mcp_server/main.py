@@ -1,6 +1,5 @@
 import asyncio
 import base64
-import io
 import json
 import os
 import sys
@@ -15,10 +14,14 @@ from mcp.server import Server
 from mcp.types import (
     Tool,
     TextContent,
-    ImageContent,
-    EmbeddedResource,
     CallToolResult,
-    ListToolsResult,
+    GetPromptResult,
+    Prompt,
+    PromptArgument,
+    PromptMessage,
+    Role,
+    ReadResourceResult,
+    Resource,
 )
 from PIL import Image
 
@@ -30,8 +33,6 @@ except ImportError as e:
     print(f"Current working directory: {os.getcwd()}")
     print(f"Python path: {sys.path}")
     sys.exit(1)
-
-app = Server("lizardmorph-mcp-server")
 
 # Configuration
 PREDICTOR_FILE = os.getenv(
@@ -52,7 +53,7 @@ class LizardMorphProcessor:
         Process an image and return landmark predictions.
 
         Args:
-            image_data: Base64 encoded image data
+            image_data: Raw image data bytes
 
         Returns:
             Dictionary containing landmarks and metadata
@@ -148,46 +149,48 @@ except Exception as e:
     sys.exit(1)
 
 
-@app.list_tools()
-async def list_tools() -> ListToolsResult:
+# Create the MCP server
+server = Server("lizardmorph-mcp-server")
+
+
+@server.list_tools()
+async def handle_list_tools() -> list[Tool]:
     """List available tools."""
-    return ListToolsResult(
-        tools=[
-            Tool(
-                name="process_lizard_image",
-                description="Process lizard X-ray images to detect anatomical landmarks using machine learning",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "image": {
-                            "type": "string",
-                            "description": "Base64 encoded image data (JPEG, PNG, etc.)",
-                        },
-                        "image_name": {
-                            "type": "string",
-                            "description": "Optional name for the image",
-                            "default": "uploaded_image",
-                        },
+    return [
+        Tool(
+            name="process_lizard_image",
+            description="Process lizard X-ray images to detect anatomical landmarks using machine learning",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "image": {
+                        "type": "string",
+                        "description": "Base64 encoded image data (JPEG, PNG, etc.)",
                     },
-                    "required": ["image"],
+                    "image_name": {
+                        "type": "string",
+                        "description": "Optional name for the image",
+                        "default": "uploaded_image",
+                    },
                 },
-            ),
-            Tool(
-                name="get_predictor_info",
-                description="Get information about the current predictor model",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="health_check",
-                description="Check if the MCP server is running properly",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-        ]
-    )
+                "required": ["image"],
+            },
+        ),
+        Tool(
+            name="get_predictor_info",
+            description="Get information about the current predictor model",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="health_check",
+            description="Check if the MCP server is running properly",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+    ]
 
 
-@app.call_tool()
-async def call_tool(name: str, arguments: dict) -> CallToolResult:
+@server.call_tool()
+async def handle_call_tool(name: str, arguments: dict) -> CallToolResult:
     """Handle tool calls."""
 
     if name == "process_lizard_image":
@@ -332,12 +335,41 @@ This model is trained to detect anatomical landmarks on lizard X-ray images. It 
         )
 
 
+@server.list_prompts()
+async def handle_list_prompts() -> list[Prompt]:
+    """List available prompts."""
+    return []
+
+
+@server.get_prompt()
+async def handle_get_prompt(
+    name: str, arguments: dict | None = None
+) -> GetPromptResult:
+    """Get a prompt."""
+    raise ValueError(f"Unknown prompt: {name}")
+
+
+@server.list_resources()
+async def handle_list_resources() -> list[Resource]:
+    """List available resources."""
+    return []
+
+
+@server.read_resource()
+async def handle_read_resource(uri: str) -> ReadResourceResult:
+    """Read a resource."""
+    raise ValueError(f"Unknown resource: {uri}")
+
+
 async def main():
     """Run the MCP server."""
+    # Use stdin/stdout for MCP communication
     from mcp.server.stdio import stdio_server
 
     async with stdio_server() as (read_stream, write_stream):
-        await app.run(read_stream, write_stream, app.create_initialization_options())
+        await server.run(
+            read_stream, write_stream, server.create_initialization_options()
+        )
 
 
 if __name__ == "__main__":

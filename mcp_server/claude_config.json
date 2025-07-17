@@ -1,12 +1,17 @@
 {
     "mcpServers": {
         "lizardmorph": {
-            "command": "python",
+            "command": "docker",
             "args": [
-                "C:/src/Git/LizardMorph/mcp_server/main.py"
+                "run",
+                "--rm",
+                "-i",
+                "--name",
+                "lizardmorph-mcp-temp",
+                "mcp_server-lizardmorph-mcp"
             ],
             "env": {
-                "PREDICTOR_FILE": "C:/src/Git/LizardMorph/backend/better_predictor_auto.dat"
+                "PREDICTOR_FILE": "/app/better_predictor_auto.dat"
             }
         }
     }

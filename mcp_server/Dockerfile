@@ -20,30 +20,40 @@ RUN apt-get update && apt-get install -y \
     libavcodec-dev \
     libavformat-dev \
     libswscale-dev \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
     gfortran \
     git \
     wget \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements/dependencies
-COPY pyproject.toml ./
-COPY README.md ./
+# Install Python dependencies
+RUN pip install --no-cache-dir \
+    "mcp==1.0.0" \
+    "numpy>=1.24.0" \
+    "opencv-python-headless>=4.8.0" \
+    "dlib>=19.24.0" \
+    "pillow>=10.0.0"
+
+# Copy application files
 COPY main.py ./
 COPY utils.py ./
 COPY better_predictor_auto.dat ./
 
-# Install Python dependencies directly from pyproject.toml
-RUN pip install --no-cache-dir \
-    "aiofiles>=23.2.0" \
-    "dlib>=19.24.0" \
-    "mcp>=1.0.0" \
-    "numpy>=1.24.0" \
-    "opencv-python>=4.8.0" \
-    "pillow>=10.0.0"
-
 # Set environment variables
 ENV PREDICTOR_FILE=/app/better_predictor_auto.dat
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# Create non-root user for security
+RUN useradd -m -u 1000 mcpuser && \
+    chown -R mcpuser:mcpuser /app
+
+USER mcpuser
 
 # Run the MCP server
 CMD ["python", "main.py"]

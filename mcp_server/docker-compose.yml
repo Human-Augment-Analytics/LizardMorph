@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   lizardmorph-mcp:
     build:
@@ -6,12 +8,15 @@ services:
     container_name: lizardmorph-mcp-server
     environment:
       - PREDICTOR_FILE=/app/better_predictor_auto.dat
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
     volumes:
       # Mount any output directories if needed
       - ./outputs:/app/outputs
-    # If you need to expose ports for debugging
-    # ports:
-    #   - "8000:8000"
+      # Mount the predictor file explicitly to ensure it's available
+      - ./better_predictor_auto.dat:/app/better_predictor_auto.dat:ro
     restart: unless-stopped
     stdin_open: true
     tty: true
+    # Use init to properly handle signals
+    init: true
