@@ -1,4 +1,4 @@
-# Dockerfile for LizardMorph MCP Server
+# Dockerfile for LizardMorph MCP Server with Web Interface
 FROM python:3.11-slim
 
 # Set working directory
@@ -44,8 +44,12 @@ COPY main.py ./
 COPY utils.py ./
 COPY better_predictor_auto.dat ./
 
+# Create outputs directory for web server
+RUN mkdir -p /app/outputs
+
 # Set environment variables
 ENV PREDICTOR_FILE=/app/better_predictor_auto.dat
+ENV WEB_PORT=8080
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
@@ -54,6 +58,9 @@ RUN useradd -m -u 1000 mcpuser && \
     chown -R mcpuser:mcpuser /app
 
 USER mcpuser
+
+# Expose web server port
+EXPOSE 8080
 
 # Run the MCP server
 CMD ["python", "main.py"]

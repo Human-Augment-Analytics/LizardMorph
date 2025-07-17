@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   lizardmorph-mcp:
     build:
@@ -8,13 +6,17 @@ services:
     container_name: lizardmorph-mcp-server
     environment:
       - PREDICTOR_FILE=/app/better_predictor_auto.dat
+      - WEB_PORT=8080
       - PYTHONPATH=/app
       - PYTHONUNBUFFERED=1
     volumes:
-      # Mount any output directories if needed
+      # Mount outputs directory for web-accessible images
       - ./outputs:/app/outputs
       # Mount the predictor file explicitly to ensure it's available
       - ./better_predictor_auto.dat:/app/better_predictor_auto.dat:ro
+    ports:
+      # Expose web server port for image access
+      - "8080:8080"
     restart: unless-stopped
     stdin_open: true
     tty: true
