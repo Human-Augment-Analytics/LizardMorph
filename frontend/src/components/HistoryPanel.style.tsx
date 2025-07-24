@@ -58,4 +58,32 @@ export class HistoryPanelStyles {
     textAlign: "center",
     color: "#666",
   };
+
+  static readonly progressContainer: CSSProperties = {
+    marginTop: "8px",
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+  };
+
+  static readonly progressBar: CSSProperties = {
+    flex: 1,
+    height: "6px",
+    backgroundColor: "#e0e0e0",
+    borderRadius: "3px",
+    overflow: "hidden",
+  };
+
+  static readonly progressFill: CSSProperties = {
+    height: "100%",
+    backgroundColor: "#4CAF50",
+    transition: "width 0.3s ease",
+  };
+
+  static readonly progressText: CSSProperties = {
+    fontSize: "0.7em",
+    color: "#666",
+    minWidth: "30px",
+    textAlign: "right",
+  };
 }
