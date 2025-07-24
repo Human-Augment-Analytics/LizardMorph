@@ -39,6 +39,7 @@ interface MainState {
   zoomTransform: d3.ZoomTransform;
   isEditMode: boolean;
   sessionReady: boolean;
+  uploadProgress: { [key: string]: number };
   onPointSelect: (point: Point | null) => void;
   onScatterDataUpdate: (
     scatterData: Point[],
@@ -79,6 +80,7 @@ export class MainView extends Component<MainProps, MainState> {
     zoomTransform: d3.zoomIdentity,
     isEditMode: false,
     sessionReady: false,
+    uploadProgress: {},
     onPointSelect: () => {},
     onScatterDataUpdate: () => {},
   };
@@ -164,13 +166,58 @@ export class MainView extends Component<MainProps, MainState> {
     if (!files || files.length === 0) return;
 
     this.setState({ loading: true, dataLoading: true, dataError: null });
+    
+    // Initialize progress for all files and add them to history
+    const initialProgress: { [key: string]: number } = {};
+    const newHistoryItems: UploadHistoryItem[] = [];
+    
+    Array.from(files).forEach(file => {
+      initialProgress[file.name] = 0;
+      newHistoryItems.push({
+        name: file.name,
+        timestamp: "Uploading...",
+        index: -1,
+      });
+    });
+    
+    this.setState((prevState) => ({
+      uploadProgress: initialProgress,
+      uploadHistory: [...prevState.uploadHistory, ...newHistoryItems],
+    }));
+
     try {
       Promise.all(
         Array.from(files).map(async (file) => {
+          // Update progress to 25% when starting upload
+          this.setState((prevState) => ({
+            uploadProgress: {
+              ...prevState.uploadProgress,
+              [file.name]: 25,
+            },
+          }));
+
           // Upload the file (replace with your actual upload logic)
           const [result] = await ApiService.uploadMultipleImages([file]);
+          
+          // Update progress to 50% after upload
+          this.setState((prevState) => ({
+            uploadProgress: {
+              ...prevState.uploadProgress,
+              [file.name]: 50,
+            },
+          }));
+
           // Process the uploaded image immediately
           const imageSets = await ApiService.fetchImageSet(result.name);
+          
+          // Update progress to 75% after fetching image set
+          this.setState((prevState) => ({
+            uploadProgress: {
+              ...prevState.uploadProgress,
+              [file.name]: 75,
+            },
+          }));
+
           const coords = result.coords.map((coord, index: number) => ({
             ...coord,
             id: index + 1,
@@ -184,21 +231,32 @@ export class MainView extends Component<MainProps, MainState> {
             timestamp: new Date().toLocaleString(),
           };
 
+          // Update progress to 100% when processing is complete
+          this.setState((prevState) => ({
+            uploadProgress: {
+              ...prevState.uploadProgress,
+              [file.name]: 100,
+            },
+          }));
+
           // Update state for each processed image as it finishes
           this.setState((prevState) => {
             const updatedImages = [...prevState.images, processedImage];
-            const newHistory = [
-              ...prevState.uploadHistory,
-              {
-                name: processedImage.name,
-                timestamp: processedImage.timestamp,
-                index: updatedImages.length - 1,
-              },
-            ];
+            
+            // Update the history item for this file
+            const updatedHistory = prevState.uploadHistory.map(item => 
+              item.name === file.name 
+                ? {
+                    name: processedImage.name,
+                    timestamp: processedImage.timestamp,
+                    index: updatedImages.length - 1,
+                  }
+                : item
+            );
             return {
               ...prevState,
               images: updatedImages,
-              uploadHistory: newHistory,
+              uploadHistory: updatedHistory,
               currentImageIndex:
                 prevState.images.length === 0 ? 0 : prevState.currentImageIndex,
               imageFilename:
@@ -234,12 +292,14 @@ export class MainView extends Component<MainProps, MainState> {
         this.setState({
           loading: false,
           dataLoading: false,
+          uploadProgress: {}, // Clear progress after completion
         });
       });
     } catch (err) {
       console.error("Upload error:", err);
       this.setState({
         dataError: err instanceof Error ? err : new Error("Upload failed"),
+        uploadProgress: {}, // Clear progress on error
       });
     }
   };
@@ -784,6 +844,7 @@ export class MainView extends Component<MainProps, MainState> {
           <HistoryPanel
             uploadHistory={this.state.uploadHistory}
             currentImageIndex={this.state.currentImageIndex}
+            uploadProgress={this.state.uploadProgress}
             onSelectImage={this.changeCurrentImage}
             onLoadFromUploads={this.loadImageFromUploads}
           />
