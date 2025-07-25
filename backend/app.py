@@ -89,16 +89,26 @@ CPU_USAGE = Gauge('cpu_usage_percent', 'CPU usage percentage')
 MEMORY_USAGE = Gauge('memory_usage_percent', 'Memory usage percentage')
 DISK_USAGE = Gauge('disk_usage_percent', 'Disk usage percentage')
 
-# Background thread to update system metrics
+# Background thread to update system metrics with memory optimization
 def update_system_metrics():
     while True:
         try:
-            CPU_USAGE.set(psutil.cpu_percent())
-            MEMORY_USAGE.set(psutil.virtual_memory().percent)
-            DISK_USAGE.set(psutil.disk_usage('/').percent)
+            # Use psutil with memory optimization
+            cpu_percent = psutil.cpu_percent(interval=None)
+            memory = psutil.virtual_memory()
+            disk = psutil.disk_usage('/')
+            
+            CPU_USAGE.set(cpu_percent)
+            MEMORY_USAGE.set(memory.percent)
+            DISK_USAGE.set(disk.percent)
+            
+            # Force garbage collection after metrics update
+            import gc
+            gc.collect()
+            
         except Exception as e:
             print(f"Error updating system metrics: {e}")
-        time.sleep(10)
+        time.sleep(30)  # Reduced frequency to save memory
 
 # Start system metrics collection
 metrics_thread = threading.Thread(target=update_system_metrics, daemon=True)
@@ -189,18 +199,39 @@ def get_disk_usage():
 def get_system_info():
     """Get comprehensive system information"""
     try:
+        memory = psutil.virtual_memory()
         return {
             'cpu_percent': get_cpu_usage(),
             'memory_percent': get_memory_usage(),
             'disk_percent': get_disk_usage(),
-            'memory_available_gb': round(psutil.virtual_memory().available / (1024**3), 2),
-            'memory_total_gb': round(psutil.virtual_memory().total / (1024**3), 2),
+            'memory_available_gb': round(memory.available / (1024**3), 2),
+            'memory_total_gb': round(memory.total / (1024**3), 2),
+            'memory_used_gb': round(memory.used / (1024**3), 2),
             'cpu_count': psutil.cpu_count(),
             'load_average': psutil.getloadavg()
         }
     except Exception as e:
         logger.error(f"Error getting system info: {e}")
         return {}
+
+def cleanup_memory():
+    """Force memory cleanup"""
+    try:
+        import gc
+        gc.collect()
+        
+        # Get memory info before and after cleanup
+        memory_before = psutil.virtual_memory()
+        gc.collect()
+        memory_after = psutil.virtual_memory()
+        
+        freed_mb = (memory_before.used - memory_after.used) / (1024 * 1024)
+        logger.info(f"Memory cleanup freed {freed_mb:.2f} MB")
+        
+        return freed_mb
+    except Exception as e:
+        logger.error(f"Error during memory cleanup: {e}")
+        return 0
 
 
 def get_session_id():
@@ -386,61 +417,72 @@ def upload():
 
                 image.save(image_path)
 
-                xray_preprocessing.process_single_image(image_path, processed_path)
-                visual_individual_performance.invert_single_image(
-                    image_path, inverted_path
-                )
+                # Process images with memory cleanup
+                try:
+                    xray_preprocessing.process_single_image(image_path, processed_path)
+                    visual_individual_performance.invert_single_image(
+                        image_path, inverted_path
+                    )
 
-                # Generate the prediction XML in the session outputs folder
-                xml_output_path = os.path.join(
-                    session_data["outputs_folder"], f"output_{unique_name}.xml"
-                )
-                utils.predictions_to_xml_single(
-                    predictor_file, image_path, xml_output_path
-                )
+                    # Generate the prediction XML in the session outputs folder
+                    xml_output_path = os.path.join(
+                        session_data["outputs_folder"], f"output_{unique_name}.xml"
+                    )
+                    utils.predictions_to_xml_single(
+                        predictor_file, image_path, xml_output_path
+                    )
 
-                # Generate CSV and TPS output files in the session outputs folder
-                csv_output_path = os.path.join(
-                    session_data["outputs_folder"], f"output_{unique_name}.csv"
-                )
-                tps_output_path = os.path.join(
-                    session_data["outputs_folder"], f"output_{unique_name}.tps"
-                )
-                utils.dlib_xml_to_pandas(xml_output_path)
-                utils.dlib_xml_to_tps(xml_output_path)
+                    # Generate CSV and TPS output files in the session outputs folder
+                    csv_output_path = os.path.join(
+                        session_data["outputs_folder"], f"output_{unique_name}.csv"
+                    )
+                    tps_output_path = os.path.join(
+                        session_data["outputs_folder"], f"output_{unique_name}.tps"
+                    )
+                    utils.dlib_xml_to_pandas(xml_output_path)
+                    utils.dlib_xml_to_tps(xml_output_path)
 
-                # Create export directory and store files there
-                export_dir = export_handler.create_export_directory(unique_name)
+                    # Create export directory and store files there
+                    export_dir = export_handler.create_export_directory(unique_name)
 
-                # Copy original files to export directory
-                export_handler.copy_file_to_export(image_path, export_dir)
-                export_handler.copy_file_to_export(
-                    processed_path, export_dir, f"processed_{unique_name}"
-                )
-                export_handler.copy_file_to_export(
-                    inverted_path, export_dir, f"inverted_{unique_name}"
-                )
-                export_handler.copy_file_to_export(
-                    xml_output_path, export_dir, f"{os.path.basename(xml_output_path)}"
-                )
-                export_handler.copy_file_to_export(
-                    csv_output_path, export_dir, f"{os.path.basename(csv_output_path)}"
-                )
-                export_handler.copy_file_to_export(
-                    tps_output_path, export_dir, f"{os.path.basename(tps_output_path)}"
-                )
+                    # Copy original files to export directory
+                    export_handler.copy_file_to_export(image_path, export_dir)
+                    export_handler.copy_file_to_export(
+                        processed_path, export_dir, f"processed_{unique_name}"
+                    )
+                    export_handler.copy_file_to_export(
+                        inverted_path, export_dir, f"inverted_{unique_name}"
+                    )
+                    export_handler.copy_file_to_export(
+                        xml_output_path, export_dir, f"{os.path.basename(xml_output_path)}"
+                    )
+                    export_handler.copy_file_to_export(
+                        csv_output_path, export_dir, f"{os.path.basename(csv_output_path)}"
+                    )
+                    export_handler.copy_file_to_export(
+                        tps_output_path, export_dir, f"{os.path.basename(tps_output_path)}"
+                    )
 
-                # Parse XML for frontend
-                data = visual_individual_performance.parse_xml_for_frontend(
-                    xml_output_path
-                )
-                data["name"] = unique_name
-                data["session_id"] = session_id
-                all_data.append(data)
+                    # Parse XML for frontend
+                    data = visual_individual_performance.parse_xml_for_frontend(
+                        xml_output_path
+                    )
+                    data["name"] = unique_name
+                    data["session_id"] = session_id
+                    all_data.append(data)
 
-                logger.info(
-                    f"Processed image: {unique_name} for session: {session_id[:8]}"
-                )
+                    logger.info(
+                        f"Processed image: {unique_name} for session: {session_id[:8]}"
+                    )
+                    
+                    # Force garbage collection after each image
+                    import gc
+                    gc.collect()
+                    
+                except Exception as img_error:
+                    logger.error(f"Error processing image {unique_name}: {str(img_error)}")
+                    # Continue with next image instead of failing completely
+                    continue
 
         return jsonify(all_data)
 
@@ -482,12 +524,37 @@ def get_input_image():
                 image_data[key] = ""
                 continue
 
-            with open(path, "rb") as f:
-                image_data[key] = b64encode(f.read()).decode("utf-8")
+            # Read file in chunks to reduce memory usage
+            try:
+                with open(path, "rb") as f:
+                    # Read in chunks to avoid loading entire file into memory at once
+                    chunk_size = 8192  # 8KB chunks
+                    chunks = []
+                    while True:
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
+                        chunks.append(chunk)
+                    
+                    # Combine chunks and encode
+                    file_data = b''.join(chunks)
+                    image_data[key] = b64encode(file_data).decode("utf-8")
+                    
+                    # Clear chunks to free memory
+                    del chunks
+                    del file_data
+                    
+            except Exception as read_error:
+                logger.error(f"Error reading image {path}: {str(read_error)}")
+                image_data[key] = ""
 
         # Check if we have at least the original image
         if not image_data["image3"]:
             return jsonify({"error": "Original image not found"}), 404
+
+        # Force garbage collection after processing
+        import gc
+        gc.collect()
 
         return jsonify(image_data)
 
@@ -1068,6 +1135,7 @@ def memory_usage():
             "memory_percent": memory_percent,
             "memory_available_gb": round(memory.available / (1024**3), 2),
             "memory_total_gb": round(memory.total / (1024**3), 2),
+            "memory_used_gb": round(memory.used / (1024**3), 2),
             "timestamp": time.time()
         }), 200
     except Exception as e:
@@ -1075,6 +1143,30 @@ def memory_usage():
         return jsonify({
             "success": False,
             "error": f"Failed to get memory usage: {str(e)}"
+        }), 500
+
+@app.route("/system/memory/cleanup", methods=["POST"])
+@cross_origin()
+@track_metrics
+@localhost_only
+def memory_cleanup():
+    """Force memory cleanup"""
+    try:
+        freed_mb = cleanup_memory()
+        memory = psutil.virtual_memory()
+        return jsonify({
+            "success": True,
+            "freed_mb": freed_mb,
+            "memory_percent": memory.percent,
+            "memory_available_gb": round(memory.available / (1024**3), 2),
+            "memory_used_gb": round(memory.used / (1024**3), 2),
+            "timestamp": time.time()
+        }), 200
+    except Exception as e:
+        logger.error(f"Error during memory cleanup: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": f"Failed to cleanup memory: {str(e)}"
         }), 500
 
 @app.route("/clear_history", methods=["POST"])
@@ -1093,6 +1185,17 @@ def clear_history():
 
         if result["success"]:
             logger.info(f"Session history cleared for session: {session_id[:8]}")
+            
+            # Force memory cleanup after clearing history
+            freed_mb = cleanup_memory()
+            logger.info(f"Memory cleanup after history clear freed {freed_mb:.2f} MB")
+            
+            # Add memory cleanup info to response
+            result["memory_cleanup"] = {
+                "freed_mb": freed_mb,
+                "memory_percent": get_memory_usage()
+            }
+            
             return jsonify(result), 200
         else:
             logger.error(
