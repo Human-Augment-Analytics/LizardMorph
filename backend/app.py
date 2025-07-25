@@ -5,6 +5,10 @@ from export_handler import ExportHandler
 from session_manager import SessionManager
 
 import os
+import hmac
+import hashlib
+import subprocess
+import json
 from flask import Flask, jsonify, request, send_from_directory, send_file, session
 from flask_cors import CORS, cross_origin
 from base64 import b64encode
@@ -22,6 +26,12 @@ load_dotenv()
 frontend_dir = os.getenv("FRONTEND_DIR", "../frontend/dist")
 predictor_file = os.getenv("PREDICTOR_FILE", "./better_predictor_auto.dat")
 session_dir = os.getenv("SESSION_DIR", "sessions")
+
+# Webhook configuration
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "your-webhook-secret-here")
+REPO_NAME = os.getenv("REPO_NAME", "LizardMorph")
+MAIN_BRANCH = os.getenv("MAIN_BRANCH", "main")
+VERIFY_SIGNATURE = os.getenv("VERIFY_SIGNATURE", "true").lower() == "true"
 
 # Configure logging
 logging.basicConfig(
@@ -1214,6 +1224,136 @@ def clear_history():
             ),
             500,
         )
+
+
+def verify_webhook_signature(payload, signature):
+    """Verify GitHub webhook signature"""
+    if not signature or not WEBHOOK_SECRET or WEBHOOK_SECRET == "your-webhook-secret-here":
+        return False
+    
+    expected_signature = 'sha256=' + hmac.new(
+        WEBHOOK_SECRET.encode('utf-8'),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+    
+    return hmac.compare_digest(signature, expected_signature)
+
+
+@app.route("/webhook", methods=["POST"])
+@cross_origin()
+@track_metrics
+def github_webhook():
+    """GitHub webhook endpoint for auto-deployment"""
+    try:
+        # Get the raw payload
+        payload = request.get_data()
+        
+        # Verify webhook signature if enabled
+        if VERIFY_SIGNATURE:
+            signature = request.headers.get('X-Hub-Signature-256', '')
+            if not verify_webhook_signature(payload, signature):
+                logger.warning("Invalid webhook signature")
+                return jsonify({"error": "Invalid signature"}), 401
+        
+        # Parse JSON payload
+        data = request.get_json()
+        
+        # Check if this is a push to main branch
+        if (data.get('ref') == f'refs/heads/{MAIN_BRANCH}' and 
+            data.get('repository', {}).get('name') == REPO_NAME):
+            
+            logger.info(f"Push to {MAIN_BRANCH} branch detected, triggering deployment...")
+            
+            # Trigger deployment in a separate thread to avoid blocking
+            def deploy_async():
+                try:
+                    logger.info("Starting deployment process...")
+                    
+                    # Change to repository directory
+                    repo_path = "/var/www/LizardMorph"
+                    os.chdir(repo_path)
+                    
+                    # Stash any uncommitted changes
+                    if subprocess.run(["git", "diff-index", "--quiet", "HEAD", "--"], capture_output=True).returncode != 0:
+                        logger.info("Stashing uncommitted changes...")
+                        subprocess.run(["git", "stash", "push", "-m", f"Auto-deploy stash {time.time()}"], check=True)
+                    
+                    # Fetch latest changes
+                    logger.info("Fetching latest changes...")
+                    subprocess.run(["git", "fetch", "origin"], check=True)
+                    
+                    # Check if main has new commits
+                    current_branch = subprocess.run(["git", "branch", "--show-current"], capture_output=True, text=True).stdout.strip()
+                    main_commits = subprocess.run(["git", "log", "--oneline", f"{current_branch}..origin/main"], capture_output=True, text=True).stdout.strip()
+                    
+                    if not main_commits:
+                        logger.info("No new commits on main branch")
+                        return
+                    
+                    logger.info(f"Found new commits on main branch")
+                    
+                    # Pull latest changes
+                    logger.info("Pulling latest changes from main branch...")
+                    subprocess.run(["git", "pull", "origin", "main"], check=True)
+                    logger.info("Successfully updated to latest main")
+                    
+                    # Rebuild frontend if it exists
+                    frontend_path = os.path.join(repo_path, "frontend")
+                    if os.path.exists(frontend_path) and os.path.exists(os.path.join(frontend_path, "package.json")):
+                        logger.info("Rebuilding frontend...")
+                        os.chdir(frontend_path)
+                        subprocess.run(["npm", "install", "--production"], check=True)
+                        subprocess.run(["npm", "run", "build"], check=True)
+                        logger.info("Frontend build completed")
+                        os.chdir(repo_path)
+                    
+                    # Restart backend service
+                    logger.info("Restarting backend service...")
+                    try:
+                        # Try systemctl first (if service exists)
+                        subprocess.run(["systemctl", "restart", "lizardmorph-backend"], check=True)
+                        logger.info("Backend service restarted via systemctl")
+                    except subprocess.CalledProcessError:
+                        # Fallback: restart the process manually
+                        logger.info("Systemctl failed, restarting backend manually...")
+                        # Kill existing gunicorn processes
+                        subprocess.run(["pkill", "-f", "gunicorn.*app:app"], check=False)
+                        # Start new backend process
+                        backend_dir = os.path.join(repo_path, "backend")
+                        os.chdir(backend_dir)
+                        subprocess.Popen([
+                            "gunicorn", "-c", "../gunicorn.conf.py", "app:app"
+                        ], cwd=backend_dir)
+                        logger.info("Backend service restarted manually")
+                        os.chdir(repo_path)
+                    
+                    # Reload nginx
+                    logger.info("Reloading nginx...")
+                    subprocess.run(["nginx", "-s", "reload"], check=True)
+                    logger.info("Nginx reloaded")
+                    
+                    logger.info("Deployment completed successfully!")
+                    
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"Deployment failed: {e}")
+                except Exception as e:
+                    logger.error(f"Deployment error: {str(e)}")
+            
+            # Start deployment in background thread
+            thread = threading.Thread(target=deploy_async)
+            thread.daemon = True
+            thread.start()
+            
+            return jsonify({"status": "success", "message": "Deployment triggered"}), 200
+            
+        else:
+            logger.info(f"Push event received but not to {MAIN_BRANCH} branch, ignoring")
+            return jsonify({"status": "ignored", "message": "Not a push to main branch"}), 200
+            
+    except Exception as e:
+        logger.error(f"Error processing webhook: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Webhook processing error: {str(e)}"}), 500
 
 
 # Make sure your app runs on the correct host and port if started directly
