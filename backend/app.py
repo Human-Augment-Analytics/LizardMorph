@@ -5,14 +5,17 @@ from export_handler import ExportHandler
 from session_manager import SessionManager
 
 import os
-from flask import Flask, jsonify, request, send_from_directory, send_file, session, render_template
+from flask import Flask, jsonify, request, send_from_directory, send_file, session
 from flask_cors import CORS, cross_origin
 from base64 import b64encode
 import time
 import logging
 import shutil
 from dotenv import load_dotenv
-from flask import Blueprint
+import psutil
+import threading
+import time
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 
 # Load ENV variables
 load_dotenv()
@@ -26,13 +29,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 logger.info(predictor_file);
-app = Flask(
-    __name__,
-    static_folder=frontend_dir,  # Specify the static folder explicitly
-    static_url_path="",
-    template_folder=frontend_dir,  # This makes static files available at root URL
-)
-api_bp = Blueprint('api', __name__, url_prefix='/api')
+app = Flask(__name__)
 
 # Configure Flask session
 app.secret_key = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
@@ -84,6 +81,157 @@ for folder in [
 # Initialize the export handler and session manager
 export_handler = ExportHandler(OUTPUTS_FOLDER)
 session_manager = SessionManager(SESSIONS_FOLDER)
+
+# Initialize Prometheus metrics
+REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP requests', ['method', 'endpoint', 'status'])
+REQUEST_LATENCY = Histogram('http_request_duration_seconds', 'HTTP request latency', ['method', 'endpoint'])
+CPU_USAGE = Gauge('cpu_usage_percent', 'CPU usage percentage')
+MEMORY_USAGE = Gauge('memory_usage_percent', 'Memory usage percentage')
+DISK_USAGE = Gauge('disk_usage_percent', 'Disk usage percentage')
+
+# Background thread to update system metrics with memory optimization
+def update_system_metrics():
+    while True:
+        try:
+            # Use psutil with memory optimization
+            cpu_percent = psutil.cpu_percent(interval=None)
+            memory = psutil.virtual_memory()
+            disk = psutil.disk_usage('/')
+            
+            CPU_USAGE.set(cpu_percent)
+            MEMORY_USAGE.set(memory.percent)
+            DISK_USAGE.set(disk.percent)
+            
+            # Force garbage collection after metrics update
+            import gc
+            gc.collect()
+            
+        except Exception as e:
+            print(f"Error updating system metrics: {e}")
+        time.sleep(30)  # Reduced frequency to save memory
+
+# Start system metrics collection
+metrics_thread = threading.Thread(target=update_system_metrics, daemon=True)
+metrics_thread.start()
+
+# Prometheus metrics endpoint
+@app.route('/metrics')
+def metrics():
+    return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
+
+# System metrics endpoint
+@app.route('/system/metrics')
+def system_metrics():
+    return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
+
+# Decorator to track metrics for all endpoints
+def track_metrics(f):
+    def wrapper(*args, **kwargs):
+        from flask import request
+        start_time = time.time()
+        try:
+            response = f(*args, **kwargs)
+            status = response[1] if isinstance(response, tuple) else 200
+            REQUEST_COUNT.labels(method=request.method, endpoint=request.endpoint, status=status).inc()
+            REQUEST_LATENCY.labels(method=request.method, endpoint=request.endpoint).observe(time.time() - start_time)
+            return response
+        except Exception as e:
+            REQUEST_COUNT.labels(method=request.method, endpoint=request.endpoint, status=500).inc()
+            raise e
+    wrapper.__name__ = f.__name__
+    return wrapper
+
+# Decorator to restrict system endpoints to localhost only
+def localhost_only(f):
+    def wrapper(*args, **kwargs):
+        from flask import request, jsonify
+        
+        # Get the real client IP considering proxies
+        client_ip = request.remote_addr
+        
+        # Check various headers for the real client IP
+        x_forwarded_for = request.headers.get('X-Forwarded-For', '')
+        x_real_ip = request.headers.get('X-Real-IP', '')
+        
+        # If we have forwarded headers, use the first IP
+        if x_forwarded_for:
+            client_ip = x_forwarded_for.split(',')[0].strip()
+        elif x_real_ip:
+            client_ip = x_real_ip
+        
+        # Only allow localhost IPs
+        allowed_ips = ['127.0.0.1', 'localhost', '::1']
+        
+        if client_ip not in allowed_ips:
+            return jsonify({"error": "Access denied - localhost only"}), 403
+        
+        return f(*args, **kwargs)
+    wrapper.__name__ = f.__name__
+    return wrapper
+
+# System monitoring functions
+def get_cpu_usage():
+    """Get current CPU usage percentage"""
+    try:
+        return psutil.cpu_percent(interval=1)
+    except Exception as e:
+        logger.error(f"Error getting CPU usage: {e}")
+        return 0
+
+def get_memory_usage():
+    """Get current memory usage percentage"""
+    try:
+        memory = psutil.virtual_memory()
+        return memory.percent
+    except Exception as e:
+        logger.error(f"Error getting memory usage: {e}")
+        return 0
+
+def get_disk_usage():
+    """Get current disk usage percentage"""
+    try:
+        disk = psutil.disk_usage('/')
+        return (disk.used / disk.total) * 100
+    except Exception as e:
+        logger.error(f"Error getting disk usage: {e}")
+        return 0
+
+def get_system_info():
+    """Get comprehensive system information"""
+    try:
+        memory = psutil.virtual_memory()
+        return {
+            'cpu_percent': get_cpu_usage(),
+            'memory_percent': get_memory_usage(),
+            'disk_percent': get_disk_usage(),
+            'memory_available_gb': round(memory.available / (1024**3), 2),
+            'memory_total_gb': round(memory.total / (1024**3), 2),
+            'memory_used_gb': round(memory.used / (1024**3), 2),
+            'cpu_count': psutil.cpu_count(),
+            'load_average': psutil.getloadavg()
+        }
+    except Exception as e:
+        logger.error(f"Error getting system info: {e}")
+        return {}
+
+def cleanup_memory():
+    """Force memory cleanup"""
+    try:
+        import gc
+        gc.collect()
+        
+        # Get memory info before and after cleanup
+        memory_before = psutil.virtual_memory()
+        gc.collect()
+        memory_after = psutil.virtual_memory()
+        
+        freed_mb = (memory_before.used - memory_after.used) / (1024 * 1024)
+        logger.info(f"Memory cleanup freed {freed_mb:.2f} MB")
+        
+        return freed_mb
+    except Exception as e:
+        logger.error(f"Error during memory cleanup: {e}")
+        return 0
 
 
 def get_session_id():
@@ -148,8 +296,9 @@ def cleanup_on_startup():
 # cleanup_on_startup()
 
 
-@api_bp.route("/session/start", methods=["POST"])
+@app.route("/session/start", methods=["POST"])
 @cross_origin()
+@track_metrics
 def start_session():
     """Start a new session and return the session ID."""
     try:
@@ -178,8 +327,9 @@ def start_session():
         )
 
 
-@api_bp.route("/session/info", methods=["GET"])
+@app.route("/session/info", methods=["GET"])
 @cross_origin()
+@track_metrics
 def get_session_info():
     """Get information about the current session."""
     try:
@@ -220,8 +370,9 @@ def get_session_info():
         )
 
 
-@api_bp.route("/session/list", methods=["GET"])
+@app.route("/session/list", methods=["GET"])
 @cross_origin()
+@track_metrics
 def list_sessions():
     """List all available sessions."""
     try:
@@ -237,7 +388,8 @@ def list_sessions():
         )
 
 
-@api_bp.route("/data", methods=["POST", "OPTIONS"])
+@app.route("/data", methods=["POST", "OPTIONS"])
+@track_metrics
 def upload():
     if request.method == "OPTIONS":
         return "", 204
@@ -265,61 +417,72 @@ def upload():
 
                 image.save(image_path)
 
-                xray_preprocessing.process_single_image(image_path, processed_path)
-                visual_individual_performance.invert_single_image(
-                    image_path, inverted_path
-                )
+                # Process images with memory cleanup
+                try:
+                    xray_preprocessing.process_single_image(image_path, processed_path)
+                    visual_individual_performance.invert_single_image(
+                        image_path, inverted_path
+                    )
 
-                # Generate the prediction XML in the session outputs folder
-                xml_output_path = os.path.join(
-                    session_data["outputs_folder"], f"output_{unique_name}.xml"
-                )
-                utils.predictions_to_xml_single(
-                    predictor_file, image_path, xml_output_path
-                )
+                    # Generate the prediction XML in the session outputs folder
+                    xml_output_path = os.path.join(
+                        session_data["outputs_folder"], f"output_{unique_name}.xml"
+                    )
+                    utils.predictions_to_xml_single(
+                        predictor_file, image_path, xml_output_path
+                    )
 
-                # Generate CSV and TPS output files in the session outputs folder
-                csv_output_path = os.path.join(
-                    session_data["outputs_folder"], f"output_{unique_name}.csv"
-                )
-                tps_output_path = os.path.join(
-                    session_data["outputs_folder"], f"output_{unique_name}.tps"
-                )
-                utils.dlib_xml_to_pandas(xml_output_path)
-                utils.dlib_xml_to_tps(xml_output_path)
+                    # Generate CSV and TPS output files in the session outputs folder
+                    csv_output_path = os.path.join(
+                        session_data["outputs_folder"], f"output_{unique_name}.csv"
+                    )
+                    tps_output_path = os.path.join(
+                        session_data["outputs_folder"], f"output_{unique_name}.tps"
+                    )
+                    utils.dlib_xml_to_pandas(xml_output_path)
+                    utils.dlib_xml_to_tps(xml_output_path)
 
-                # Create export directory and store files there
-                export_dir = export_handler.create_export_directory(unique_name)
+                    # Create export directory and store files there
+                    export_dir = export_handler.create_export_directory(unique_name)
 
-                # Copy original files to export directory
-                export_handler.copy_file_to_export(image_path, export_dir)
-                export_handler.copy_file_to_export(
-                    processed_path, export_dir, f"processed_{unique_name}"
-                )
-                export_handler.copy_file_to_export(
-                    inverted_path, export_dir, f"inverted_{unique_name}"
-                )
-                export_handler.copy_file_to_export(
-                    xml_output_path, export_dir, f"{os.path.basename(xml_output_path)}"
-                )
-                export_handler.copy_file_to_export(
-                    csv_output_path, export_dir, f"{os.path.basename(csv_output_path)}"
-                )
-                export_handler.copy_file_to_export(
-                    tps_output_path, export_dir, f"{os.path.basename(tps_output_path)}"
-                )
+                    # Copy original files to export directory
+                    export_handler.copy_file_to_export(image_path, export_dir)
+                    export_handler.copy_file_to_export(
+                        processed_path, export_dir, f"processed_{unique_name}"
+                    )
+                    export_handler.copy_file_to_export(
+                        inverted_path, export_dir, f"inverted_{unique_name}"
+                    )
+                    export_handler.copy_file_to_export(
+                        xml_output_path, export_dir, f"{os.path.basename(xml_output_path)}"
+                    )
+                    export_handler.copy_file_to_export(
+                        csv_output_path, export_dir, f"{os.path.basename(csv_output_path)}"
+                    )
+                    export_handler.copy_file_to_export(
+                        tps_output_path, export_dir, f"{os.path.basename(tps_output_path)}"
+                    )
 
-                # Parse XML for frontend
-                data = visual_individual_performance.parse_xml_for_frontend(
-                    xml_output_path
-                )
-                data["name"] = unique_name
-                data["session_id"] = session_id
-                all_data.append(data)
+                    # Parse XML for frontend
+                    data = visual_individual_performance.parse_xml_for_frontend(
+                        xml_output_path
+                    )
+                    data["name"] = unique_name
+                    data["session_id"] = session_id
+                    all_data.append(data)
 
-                logger.info(
-                    f"Processed image: {unique_name} for session: {session_id[:8]}"
-                )
+                    logger.info(
+                        f"Processed image: {unique_name} for session: {session_id[:8]}"
+                    )
+                    
+                    # Force garbage collection after each image
+                    import gc
+                    gc.collect()
+                    
+                except Exception as img_error:
+                    logger.error(f"Error processing image {unique_name}: {str(img_error)}")
+                    # Continue with next image instead of failing completely
+                    continue
 
         return jsonify(all_data)
 
@@ -328,8 +491,9 @@ def upload():
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route("/image", methods=["POST"])
+@app.route("/image", methods=["POST"])
 @cross_origin()
+@track_metrics
 def get_input_image():
     image_filename = request.args.get("image_filename")
     if not image_filename:
@@ -360,12 +524,37 @@ def get_input_image():
                 image_data[key] = ""
                 continue
 
-            with open(path, "rb") as f:
-                image_data[key] = b64encode(f.read()).decode("utf-8")
+            # Read file in chunks to reduce memory usage
+            try:
+                with open(path, "rb") as f:
+                    # Read in chunks to avoid loading entire file into memory at once
+                    chunk_size = 8192  # 8KB chunks
+                    chunks = []
+                    while True:
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
+                        chunks.append(chunk)
+                    
+                    # Combine chunks and encode
+                    file_data = b''.join(chunks)
+                    image_data[key] = b64encode(file_data).decode("utf-8")
+                    
+                    # Clear chunks to free memory
+                    del chunks
+                    del file_data
+                    
+            except Exception as read_error:
+                logger.error(f"Error reading image {path}: {str(read_error)}")
+                image_data[key] = ""
 
         # Check if we have at least the original image
         if not image_data["image3"]:
             return jsonify({"error": "Original image not found"}), 404
+
+        # Force garbage collection after processing
+        import gc
+        gc.collect()
 
         return jsonify(image_data)
 
@@ -374,8 +563,9 @@ def get_input_image():
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route("/endpoint", methods=["POST"])
+@app.route("/endpoint", methods=["POST"])
 @cross_origin()
+@track_metrics
 def process_scatter_data():
     data = request.json
     if not data:
@@ -487,7 +677,8 @@ def process_scatter_data():
         )
 
 
-@api_bp.route("/images/<session_id_short>/<path:filename>")
+@app.route("/images/<session_id_short>/<path:filename>")
+@track_metrics
 def serve_session_image(session_id_short, filename):
     """Serve images from session-specific folders."""
     try:
@@ -511,7 +702,8 @@ def serve_session_image(session_id_short, filename):
         return jsonify({"error": "Image not found"}), 404
 
 
-@api_bp.route("/images/<path:filename>")
+@app.route("/images/<path:filename>")
+@track_metrics
 def serve_image(filename):
     """Serve images from the current session or global folder."""
     try:
@@ -534,8 +726,9 @@ def serve_image(filename):
 
 
 # New endpoint to list all files in the session upload folder
-@api_bp.route("/list_uploads", methods=["GET"])
+@app.route("/list_uploads", methods=["GET"])
 @cross_origin()
+@track_metrics
 def list_uploads():
     try:
         session_id = get_session_id()
@@ -566,8 +759,9 @@ def list_uploads():
 
 
 # Endpoint to process an existing image from the session uploads folder
-@api_bp.route("/process_existing", methods=["POST"])
+@app.route("/process_existing", methods=["POST"])
 @cross_origin()
+@track_metrics
 def process_existing():
     try:
         filename = request.args.get("filename")
@@ -661,8 +855,9 @@ def process_existing():
 
 
 # New endpoint to save annotations (updated landmark points)
-@api_bp.route("/save_annotations", methods=["POST"])
+@app.route("/save_annotations", methods=["POST"])
 @cross_origin()
+@track_metrics
 def save_annotations():
     try:
         data = request.json
@@ -856,8 +1051,9 @@ def save_annotations():
 
 
 # New endpoint to create zip from all export directories
-@api_bp.route("/download_all", methods=["GET"])
+@app.route("/download_all", methods=["GET"])
 @cross_origin()
+@track_metrics
 def download_all_exports():
     try:
         # Get all export directories
@@ -885,8 +1081,97 @@ def download_all_exports():
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route("/clear_history", methods=["POST"])
+@app.route("/system/status", methods=["GET"])
 @cross_origin()
+@track_metrics
+@localhost_only
+def system_status():
+    """Get current system status including CPU, memory, and disk usage"""
+    try:
+        system_info = get_system_info()
+        return jsonify({
+            "success": True,
+            "timestamp": time.time(),
+            "system": system_info
+        }), 200
+    except Exception as e:
+        logger.error(f"Error getting system status: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": f"Failed to get system status: {str(e)}"
+        }), 500
+
+@app.route("/system/cpu", methods=["GET"])
+@cross_origin()
+@track_metrics
+@localhost_only
+def cpu_usage():
+    """Get current CPU usage"""
+    try:
+        cpu_percent = get_cpu_usage()
+        return jsonify({
+            "success": True,
+            "cpu_percent": cpu_percent,
+            "timestamp": time.time()
+        }), 200
+    except Exception as e:
+        logger.error(f"Error getting CPU usage: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": f"Failed to get CPU usage: {str(e)}"
+        }), 500
+
+@app.route("/system/memory", methods=["GET"])
+@cross_origin()
+@track_metrics
+@localhost_only
+def memory_usage():
+    """Get current memory usage"""
+    try:
+        memory_percent = get_memory_usage()
+        memory = psutil.virtual_memory()
+        return jsonify({
+            "success": True,
+            "memory_percent": memory_percent,
+            "memory_available_gb": round(memory.available / (1024**3), 2),
+            "memory_total_gb": round(memory.total / (1024**3), 2),
+            "memory_used_gb": round(memory.used / (1024**3), 2),
+            "timestamp": time.time()
+        }), 200
+    except Exception as e:
+        logger.error(f"Error getting memory usage: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": f"Failed to get memory usage: {str(e)}"
+        }), 500
+
+@app.route("/system/memory/cleanup", methods=["POST"])
+@cross_origin()
+@track_metrics
+@localhost_only
+def memory_cleanup():
+    """Force memory cleanup"""
+    try:
+        freed_mb = cleanup_memory()
+        memory = psutil.virtual_memory()
+        return jsonify({
+            "success": True,
+            "freed_mb": freed_mb,
+            "memory_percent": memory.percent,
+            "memory_available_gb": round(memory.available / (1024**3), 2),
+            "memory_used_gb": round(memory.used / (1024**3), 2),
+            "timestamp": time.time()
+        }), 200
+    except Exception as e:
+        logger.error(f"Error during memory cleanup: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": f"Failed to cleanup memory: {str(e)}"
+        }), 500
+
+@app.route("/clear_history", methods=["POST"])
+@cross_origin()
+@track_metrics
 def clear_history():
     """
     Clear all files and history data for the current session.
@@ -900,6 +1185,17 @@ def clear_history():
 
         if result["success"]:
             logger.info(f"Session history cleared for session: {session_id[:8]}")
+            
+            # Force memory cleanup after clearing history
+            freed_mb = cleanup_memory()
+            logger.info(f"Memory cleanup after history clear freed {freed_mb:.2f} MB")
+            
+            # Add memory cleanup info to response
+            result["memory_cleanup"] = {
+                "freed_mb": freed_mb,
+                "memory_percent": get_memory_usage()
+            }
+            
             return jsonify(result), 200
         else:
             logger.error(
@@ -919,22 +1215,6 @@ def clear_history():
             500,
         )
 
-
-@app.route("/favicon.ico")
-def favicon():
-    return send_from_directory(
-        os.path.join(app.root_path, "../frontend/dist"),
-        "favicon.ico",
-        mimetype="image/vnd.microsoft.icon",
-    )
-
-
-@app.route("/")
-def index():
-        # return "The URL for this page is {}".format(url_for("index"))
-        return render_template('index.html')
-
-app.register_blueprint(api_bp)
 
 # Make sure your app runs on the correct host and port if started directly
 if __name__ == "__main__":
