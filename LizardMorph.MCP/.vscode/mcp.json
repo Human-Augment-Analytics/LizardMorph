@@ -1,0 +1,14 @@
+{
+    "servers": {
+        "LizardMorph.MCP": {
+            "type": "stdio",
+            "command": "dotnet",
+            "args": [
+                "run",
+                "--project",
+                ".\\\\LizardMorph.MCP.csproj"
+            ]
+        }
+    },
+    "inputs": []
+}
