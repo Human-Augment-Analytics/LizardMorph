@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using LizardMorph.MCP.Tools;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -11,6 +12,6 @@ builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
 builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()
-    .WithTools<RandomNumberTools>();
+    .WithTools<LizardMorphTools>();
 
 await builder.Build().RunAsync();

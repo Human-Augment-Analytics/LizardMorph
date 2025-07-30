@@ -1,10 +1,133 @@
-# MCP Server
+# LizardMorph MCP Server
 
-This README was created using the C# MCP server project template. It demonstrates how you can easily create an MCP server using C# and publish it as a NuGet package.
+A Model Context Protocol (MCP) server for processing lizard X-ray images and generating TPS (Thin Plate Spline) files for morphological analysis. This server provides batch image processing capabilities using the same algorithms as the LizardMorph web application.
 
-See [aka.ms/nuget/mcp/guide](https://aka.ms/nuget/mcp/guide) for the full guide.
+## Features
 
-Please note that this template is currently in an early preview stage. If you have feedback, please take a [brief survey](http://aka.ms/dotnet-mcp-template-survey).
+- **Batch Image Processing**: Process entire folders of lizard X-ray images
+- **TPS File Generation**: Generate TPS files with landmark predictions for morphological analysis
+- **Status Checking**: Verify Python dependencies and server health
+- **File Management**: List and manage processed files
+
+## Tools Available
+
+### 1. `ProcessImagesFolder`
+Process a folder of lizard X-ray images and generate TPS files with landmark predictions.
+
+**Parameters:**
+- `imagesFolder` (required): Full path to the folder containing images to process
+- `predictorFile` (optional): Full path to the predictor .dat file (defaults to ./better_predictor_auto.dat)
+- `outputDirectory` (optional): Full path to the output directory (defaults to ./output)
+- `pythonExecutable` (optional): Python executable path (defaults to 'python')
+
+### 2. `CheckStatus`
+Check server status and verify Python dependencies for LizardMorph image processing.
+
+**Parameters:**
+- `pythonExecutable` (optional): Python executable path (defaults to 'python')
+
+### 3. `ListProcessedImages`
+List all processed images and TPS files available in an output directory.
+
+**Parameters:**
+- `outputDirectory` (optional): Path to the output directory to scan (defaults to ./output)
+
+## Prerequisites
+
+### Python Dependencies
+The server requires Python with the following packages:
+- `numpy`: For numerical operations
+- `opencv-python`: For image processing
+- `dlib`: For landmark detection
+- `pandas`: For data manipulation
+
+Install them using:
+```bash
+pip install numpy opencv-python dlib pandas
+```
+
+### Predictor File
+You need a trained dlib predictor file (`.dat` format) for landmark detection. The default expected location is `./better_predictor_auto.dat` relative to where the server is run.
+
+## Installation and Setup
+
+### From NuGet (when published)
+```bash
+dotnet tool install --global LizardMorph.MCP
+```
+
+### Local Development
+1. Clone the repository
+2. Navigate to the LizardMorph.MCP directory
+3. Build the project: `dotnet build`
+4. Run locally: `dotnet run`
+
+## Usage Examples
+
+### Processing a Folder of Images
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ProcessImagesFolder",
+    "arguments": {
+      "imagesFolder": "/path/to/your/images",
+      "predictorFile": "/path/to/better_predictor_auto.dat",
+      "outputDirectory": "/path/to/output"
+    }
+  }
+}
+```
+
+### Checking Server Status
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "CheckStatus",
+    "arguments": {}
+  }
+}
+```
+
+### Listing Processed Files
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ListProcessedImages",
+    "arguments": {
+      "outputDirectory": "/path/to/output"
+    }
+  }
+}
+```
+
+## Output Files
+
+For each processed image, the server generates:
+- **XML file**: Contains detailed landmark coordinates in dlib format
+- **TPS file**: Thin Plate Spline format for morphological analysis software
+- **CSV file**: Comma-separated values format for data analysis
+
+## Supported Image Formats
+
+- JPEG (.jpg, .jpeg)
+- PNG (.png)
+- TIFF (.tif, .tiff)
+- BMP (.bmp)
+
+## Error Handling
+
+The server provides detailed error messages for common issues:
+- Missing Python dependencies
+- Invalid file paths
+- Unsupported image formats
+- Processing failures
+
+## Contributing
+
+This MCP server is part of the larger LizardMorph project. For contributions and issues, please refer to the main project repository.
 
 ## Checklist before publishing to NuGet.org
 
