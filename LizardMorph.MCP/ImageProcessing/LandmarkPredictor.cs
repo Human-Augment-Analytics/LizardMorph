@@ -1,6 +1,5 @@
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
-using System.Numerics;
 using MathNet.Numerics.Statistics;
 
 namespace LizardMorph.MCP.ImageProcessing

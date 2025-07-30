@@ -1,7 +1,6 @@
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
-using System.Numerics;
 
 namespace LizardMorph.MCP.ImageProcessing
 {
@@ -37,7 +36,7 @@ namespace LizardMorph.MCP.ImageProcessing
         {
             var newWidth = (int)(image.Width * scale);
             var newHeight = (int)(image.Height * scale);
-            
+
             var resized = image.Clone();
             resized.Mutate(x => x.Resize(newWidth, newHeight));
             return resized;
@@ -58,13 +57,13 @@ namespace LizardMorph.MCP.ImageProcessing
         public static Image<Rgb24> PreprocessImage(Image<Rgb24> image)
         {
             var processed = image.Clone();
-            
+
             // Apply averaging filter (equivalent to cv2.filter2D with averaging kernel)
             ApplyAverageFilter(processed);
-            
+
             // Apply bilateral filter approximation
             ApplyBilateralFilter(processed, 41f, 21f);
-            
+
             return processed;
         }
     }
