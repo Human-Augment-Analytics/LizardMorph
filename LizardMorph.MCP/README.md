@@ -1,13 +1,17 @@
 # LizardMorph MCP Server
 
-A Model Context Protocol (MCP) server for processing lizard X-ray images and generating TPS (Thin Plate Spline) files for morphological analysis. This server provides batch image processing capabilities using the same algorithms as the LizardMorph web application.
+A Model Context Protocol (MCP) server for processing lizard X-ray images and generating TPS (Thin Plate Spline) files for morphological analysis. This server uses **DlibDotNet** for direct .dat file support and provides both batch and single image processing capabilities.
 
 ## Features
 
+- **Native .NET Implementation**: Built with C# and DlibDotNet for optimal performance
+- **Direct Dlib Model Support**: Works directly with .dat predictor files without Python dependencies
 - **Batch Image Processing**: Process entire folders of lizard X-ray images
+- **Single Image Processing**: Process individual images
 - **TPS File Generation**: Generate TPS files with landmark predictions for morphological analysis
-- **Status Checking**: Verify Python dependencies and server health
+- **Status Checking**: Verify .NET dependencies and server health
 - **File Management**: List and manage processed files
+- **Model Validation**: Requires valid .dat predictor model files for processing
 
 ## Tools Available
 
@@ -18,15 +22,21 @@ Process a folder of lizard X-ray images and generate TPS files with landmark pre
 - `imagesFolder` (required): Full path to the folder containing images to process
 - `predictorFile` (optional): Full path to the predictor .dat file (defaults to ./better_predictor_auto.dat)
 - `outputDirectory` (optional): Full path to the output directory (defaults to ./output)
-- `pythonExecutable` (optional): Python executable path (defaults to 'python')
 
-### 2. `CheckStatus`
-Check server status and verify Python dependencies for LizardMorph image processing.
+### 2. `ProcessSingleImage`
+Process a single lizard X-ray image and generate TPS file with landmark predictions.
 
 **Parameters:**
-- `pythonExecutable` (optional): Python executable path (defaults to 'python')
+- `imagePath` (required): Full path to the image file to process
+- `predictorFile` (optional): Full path to the predictor .dat file (defaults to ./better_predictor_auto.dat)
+- `outputDirectory` (optional): Full path to the output directory (defaults to ./output)
 
-### 3. `ListProcessedImages`
+### 3. `CheckStatus`
+Check server status and verify .NET dependencies for LizardMorph image processing.
+
+**Parameters:** None
+
+### 4. `ListProcessedImages`
 List all processed images and TPS files available in an output directory.
 
 **Parameters:**
@@ -34,20 +44,16 @@ List all processed images and TPS files available in an output directory.
 
 ## Prerequisites
 
-### Python Dependencies
-The server requires Python with the following packages:
-- `numpy`: For numerical operations
-- `opencv-python`: For image processing
-- `dlib`: For landmark detection
-- `pandas`: For data manipulation
+### .NET Dependencies
+The server requires .NET 8.0 runtime and the following NuGet packages (automatically managed):
+- `DlibDotNet`: For landmark detection using native dlib models
+- `SixLabors.ImageSharp`: For image processing
+- `MathNet.Numerics`: For statistical operations
 
-Install them using:
-```bash
-pip install numpy opencv-python dlib pandas
-```
-
-### Predictor File
+### Predictor Model File
 You need a trained dlib predictor file (`.dat` format) for landmark detection. The default expected location is `./better_predictor_auto.dat` relative to where the server is run.
+
+**Note**: A valid predictor model file is required for processing. The server will return an error if no valid model is available.
 
 ## Installation and Setup
 
@@ -72,6 +78,21 @@ dotnet tool install --global LizardMorph.MCP
     "name": "ProcessImagesFolder",
     "arguments": {
       "imagesFolder": "/path/to/your/images",
+      "predictorFile": "/path/to/better_predictor_auto.dat",
+      "outputDirectory": "/path/to/output"
+    }
+  }
+}
+```
+
+### Processing a Single Image
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ProcessSingleImage",
+    "arguments": {
+      "imagePath": "/path/to/your/image.jpg",
       "predictorFile": "/path/to/better_predictor_auto.dat",
       "outputDirectory": "/path/to/output"
     }
@@ -106,9 +127,16 @@ dotnet tool install --global LizardMorph.MCP
 ## Output Files
 
 For each processed image, the server generates:
-- **XML file**: Contains detailed landmark coordinates in dlib format
+- **XML file**: Contains detailed landmark coordinates in structured format
 - **TPS file**: Thin Plate Spline format for morphological analysis software
-- **CSV file**: Comma-separated values format for data analysis
+
+## Architecture
+
+The server is built with a native .NET implementation that provides:
+- **Multi-scale Processing**: Uses multiple image scales and computes median landmarks for improved accuracy
+- **DlibDotNet Integration**: Direct integration with dlib models without external dependencies
+- **ImageSharp Processing**: Advanced image preprocessing including bilateral filtering approximation
+- **Strict Model Validation**: Ensures valid predictor models are loaded before processing
 
 ## Supported Image Formats
 
@@ -120,10 +148,11 @@ For each processed image, the server generates:
 ## Error Handling
 
 The server provides detailed error messages for common issues:
-- Missing Python dependencies
+- Missing .NET dependencies
 - Invalid file paths
 - Unsupported image formats
 - Processing failures
+- Missing or invalid predictor model files
 
 ## Contributing
 
@@ -161,7 +190,13 @@ To test this MCP server from source code (locally) without using a built MCP ser
 
 ## Testing the MCP Server
 
-Once configured, you can ask Copilot Chat for a random number, for example, `Give me 3 random numbers`. It should prompt you to use the `get_random_number` tool on the `LizardMorph.MCP` MCP server and show you the results.
+Once configured, you can test the server by:
+
+1. **Check Status**: Ask Copilot to check the server status to verify it's working correctly
+2. **Process Images**: Use the ProcessSingleImage or ProcessImagesFolder tools to test image processing
+3. **List Files**: Use ListProcessedImages to see generated output files
+
+Example: "Process the image in my sample_image folder using the LizardMorph MCP server"
 
 ## Publishing to NuGet.org
 

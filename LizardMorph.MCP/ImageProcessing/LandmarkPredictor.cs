@@ -32,7 +32,7 @@ namespace LizardMorph.MCP.ImageProcessing
         }
 
         /// <summary>
-        /// Predict landmarks using dlib model if available, otherwise fallback to dummy predictions
+        /// Predict landmarks using dlib model - requires a valid model to be loaded
         /// </summary>
         public ShapeDetectionResult PredictLandmarks(Image<Rgb24> image, Rectangle rect)
         {
@@ -43,80 +43,10 @@ namespace LizardMorph.MCP.ImageProcessing
             }
             else
             {
-                // Fallback to dummy landmarks for demonstration
-                return GenerateDummyLandmarks(rect);
+                // Throw an error if no valid model is available
+                throw new InvalidOperationException(
+                    $"No valid dlib model loaded. Please ensure a valid .dat predictor file exists at: {_modelPath}");
             }
-        }
-
-        /// <summary>
-        /// Generate dummy landmarks as fallback when no model is available
-        /// </summary>
-        private ShapeDetectionResult GenerateDummyLandmarks(Rectangle rect)
-        {
-            // Try to determine number of landmarks from existing data files if available
-            int numLandmarks = DetermineLandmarkCount();
-
-            var points = new LandmarkPoint[numLandmarks];
-            var random = new Random(42); // Fixed seed for consistent results
-
-            // Generate landmarks distributed across the rectangle
-            // This creates a more realistic distribution than pure random
-            for (int i = 0; i < numLandmarks; i++)
-            {
-                // Create some structure in the landmark placement
-                var normalizedIndex = (float)i / numLandmarks;
-
-                // Create a rough anatomical distribution for lizard landmarks
-                var x = rect.Left + (0.1f + 0.8f * normalizedIndex + random.NextSingle() * 0.1f) * rect.Width;
-                var y = rect.Top + (0.2f + 0.6f * (float)Math.Sin(normalizedIndex * Math.PI) + random.NextSingle() * 0.2f) * rect.Height;
-
-                points[i] = new LandmarkPoint(x, y);
-            }
-
-            return new ShapeDetectionResult(points);
-        }
-
-        /// <summary>
-        /// Try to determine the expected number of landmarks from the model or existing data
-        /// </summary>
-        private int DetermineLandmarkCount()
-        {
-            // Default number of landmarks for lizard anatomy
-            const int defaultLandmarks = 42; // Typical for lizard morphological studies
-
-            // If we have a dlib model, we could test it to get the actual landmark count
-            if (_dlibPredictor != null)
-            {
-                // For now, return default - in a real implementation, 
-                // you could create a small test image and count the returned landmarks
-                return defaultLandmarks;
-            }
-
-            // Try to infer from existing XML files in the same directory
-            var modelDir = Path.GetDirectoryName(_modelPath);
-            if (!string.IsNullOrEmpty(modelDir))
-            {
-                var xmlFiles = Directory.GetFiles(modelDir, "*.xml");
-                if (xmlFiles.Length > 0)
-                {
-                    try
-                    {
-                        // Parse a sample XML file to get landmark count
-                        var sampleXml = System.Xml.Linq.XDocument.Load(xmlFiles[0]);
-                        var parts = sampleXml.Descendants("part");
-                        if (parts.Any())
-                        {
-                            return parts.Count();
-                        }
-                    }
-                    catch
-                    {
-                        // Ignore parsing errors, use default
-                    }
-                }
-            }
-
-            return defaultLandmarks;
         }
 
         /// <summary>
@@ -173,7 +103,7 @@ namespace LizardMorph.MCP.ImageProcessing
             {
                 return $"No dlib model found or failed to load.\n" +
                        $"Model path: {_modelPath}\n" +
-                       $"Using dummy landmarks for demonstration.\n" +
+                       $"Error: A valid .dat file is required for processing.\n" +
                        $"Note: Ensure the .dat file exists and is a valid dlib shape predictor model.";
             }
         }

@@ -143,22 +143,22 @@ namespace LizardMorph.MCP.Tools
                         }
                         else
                         {
-                            status.AppendLine("⚠️ Dlib Model: .dat file found but failed to load");
+                            status.AppendLine("✗ Dlib Model: .dat file found but failed to load");
                             status.AppendLine($"  Path: {defaultPredictorPath}");
-                            status.AppendLine("  Using dummy landmarks for demonstration");
+                            status.AppendLine("  Error: Processing will fail without a valid model");
                         }
                     }
                     catch (Exception ex)
                     {
-                        status.AppendLine($"⚠️ Dlib Model: Error loading - {ex.Message}");
-                        status.AppendLine("  Using dummy landmarks for demonstration");
+                        status.AppendLine($"✗ Dlib Model: Error loading - {ex.Message}");
+                        status.AppendLine("  Error: Processing will fail without a valid model");
                     }
                 }
                 else
                 {
-                    status.AppendLine("⚠️ Predictor Model: No .dat file found");
+                    status.AppendLine("✗ Predictor Model: No .dat file found");
                     status.AppendLine($"  Expected: {defaultPredictorPath}");
-                    status.AppendLine("  Will use dummy landmarks for demonstration");
+                    status.AppendLine("  Error: Processing will fail without a valid model");
                 }
 
                 // Check file system access
@@ -183,7 +183,7 @@ namespace LizardMorph.MCP.Tools
                 status.AppendLine("DlibDotNet Integration:");
                 status.AppendLine("✓ Using DlibDotNet for direct .dat file support");
                 status.AppendLine("✓ No conversion needed - works directly with dlib models");
-                status.AppendLine("✓ Real-time landmark prediction when .dat file is available");
+                status.AppendLine("⚠️ Requires valid .dat predictor model for landmark prediction");
                 status.AppendLine();
                 status.AppendLine("Server ready for image processing!");
             }
