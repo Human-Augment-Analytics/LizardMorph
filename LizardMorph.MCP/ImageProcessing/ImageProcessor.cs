@@ -1,6 +1,9 @@
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.Drawing.Processing;
+using SixLabors.Fonts;
+using SixLabors.ImageSharp.Drawing;
 
 namespace LizardMorph.MCP.ImageProcessing
 {
@@ -65,6 +68,95 @@ namespace LizardMorph.MCP.ImageProcessing
             ApplyBilateralFilter(processed, 41f, 21f);
 
             return processed;
+        }
+
+        /// <summary>
+        /// Create an image with landmarks overlaid as colored circles
+        /// </summary>
+        public static Image<Rgb24> DrawLandmarksOnImage(Image<Rgb24> originalImage, LandmarkPoint[] landmarks, int pointRadius = 3)
+        {
+            var imageWithLandmarks = originalImage.Clone();
+
+            imageWithLandmarks.Mutate(x =>
+            {
+                // Define colors for different landmarks (cycling through colors)
+                var colors = new[]
+                {
+                    Color.Red,
+                    Color.Blue,
+                    Color.Green,
+                    Color.Yellow,
+                    Color.Orange,
+                    Color.Purple,
+                    Color.Cyan,
+                    Color.Magenta,
+                    Color.Lime,
+                    Color.Pink
+                };
+
+                for (int i = 0; i < landmarks.Length; i++)
+                {
+                    var landmark = landmarks[i];
+                    var color = colors[i % colors.Length];
+
+                    // Draw filled circle for the landmark using a simple approach
+                    var ellipse = new EllipsePolygon(new PointF(landmark.X, landmark.Y), pointRadius);
+                    x.Fill(color, ellipse);
+
+                    // Draw a smaller white center for better visibility
+                    if (pointRadius > 2)
+                    {
+                        var innerEllipse = new EllipsePolygon(new PointF(landmark.X, landmark.Y), pointRadius - 1);
+                        x.Fill(Color.White, innerEllipse);
+                    }
+                }
+            });
+
+            return imageWithLandmarks;
+        }
+
+        /// <summary>
+        /// Create an image with landmarks overlaid and numbered
+        /// </summary>
+        public static Image<Rgb24> DrawNumberedLandmarksOnImage(Image<Rgb24> originalImage, LandmarkPoint[] landmarks, int pointRadius = 5)
+        {
+            var imageWithLandmarks = originalImage.Clone();
+
+            imageWithLandmarks.Mutate(x =>
+            {
+                // Use a simple approach for font
+                Font font;
+                try
+                {
+                    font = SystemFonts.CreateFont("Arial", 12, FontStyle.Bold);
+                }
+                catch
+                {
+                    // Use default system font as fallback
+                    font = SystemFonts.CreateFont(SystemFonts.Families.First().Name, 12);
+                }
+
+                for (int i = 0; i < landmarks.Length; i++)
+                {
+                    var landmark = landmarks[i];
+
+                    // Draw filled circle for the landmark
+                    var ellipse = new EllipsePolygon(new PointF(landmark.X, landmark.Y), pointRadius);
+                    x.Fill(Color.Red, ellipse);
+
+                    // Draw white border around the circle
+                    x.Draw(Color.White, 2, ellipse);
+
+                    // Draw the landmark number
+                    var text = (i + 1).ToString();
+                    var textPosition = new PointF(landmark.X + pointRadius + 2, landmark.Y - 6);
+
+                    // Draw text with white color for visibility
+                    x.DrawText(text, font, Color.White, textPosition);
+                }
+            });
+
+            return imageWithLandmarks;
         }
     }
 }
