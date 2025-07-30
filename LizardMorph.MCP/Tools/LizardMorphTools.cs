@@ -130,38 +130,34 @@ namespace LizardMorph.MCP.Tools
 
                 // Check model availability
                 var defaultPredictorPath = "./better_predictor_auto.dat";
-                var onnxPredictorPath = "./better_predictor_auto.onnx";
-                
-                if (File.Exists(onnxPredictorPath))
+
+                if (File.Exists(defaultPredictorPath))
                 {
                     try
                     {
                         using var testPredictor = new LandmarkPredictor(defaultPredictorPath);
                         if (testPredictor.IsRealModelLoaded)
                         {
-                            status.AppendLine("✓ ONNX Model: Loaded and ready");
+                            status.AppendLine("✓ Dlib Model: Loaded and ready");
                             status.AppendLine($"  {testPredictor.GetModelInfo()}");
                         }
                         else
                         {
-                            status.AppendLine("✗ ONNX Model: Found but failed to load");
+                            status.AppendLine("⚠️ Dlib Model: .dat file found but failed to load");
+                            status.AppendLine($"  Path: {defaultPredictorPath}");
+                            status.AppendLine("  Using dummy landmarks for demonstration");
                         }
                     }
                     catch (Exception ex)
                     {
-                        status.AppendLine($"✗ ONNX Model: Error loading - {ex.Message}");
+                        status.AppendLine($"⚠️ Dlib Model: Error loading - {ex.Message}");
+                        status.AppendLine("  Using dummy landmarks for demonstration");
                     }
-                }
-                else if (File.Exists(defaultPredictorPath))
-                {
-                    status.AppendLine("⚠️ Predictor Model: .dat file found but no ONNX version");
-                    status.AppendLine($"  Found: {defaultPredictorPath}");
-                    status.AppendLine($"  Missing: {onnxPredictorPath}");
-                    status.AppendLine("  Note: Convert .dat to .onnx for real predictions");
                 }
                 else
                 {
-                    status.AppendLine("⚠️ Predictor Model: No model files found");
+                    status.AppendLine("⚠️ Predictor Model: No .dat file found");
+                    status.AppendLine($"  Expected: {defaultPredictorPath}");
                     status.AppendLine("  Will use dummy landmarks for demonstration");
                 }
 
@@ -184,11 +180,10 @@ namespace LizardMorph.MCP.Tools
                 status.AppendLine($"✓ Memory: {workingSet} MB working set");
 
                 status.AppendLine();
-                status.AppendLine("Model Conversion Instructions:");
-                status.AppendLine("To use real landmark predictions:");
-                status.AppendLine("1. Convert your .dat file to ONNX format");
-                status.AppendLine("2. Place the .onnx file next to your .dat file");
-                status.AppendLine("3. Server will automatically use the ONNX model");
+                status.AppendLine("DlibDotNet Integration:");
+                status.AppendLine("✓ Using DlibDotNet for direct .dat file support");
+                status.AppendLine("✓ No conversion needed - works directly with dlib models");
+                status.AppendLine("✓ Real-time landmark prediction when .dat file is available");
                 status.AppendLine();
                 status.AppendLine("Server ready for image processing!");
             }
