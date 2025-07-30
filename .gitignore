@@ -45,3 +45,8 @@ Thumbs.db
 # env files
 .env*
 mcp_server/better_predictor_auto.dat
+LizardMorph.MCP/sample_image/
+LizardMorph.MCP/output/
+LizardMorph.MCP/bin
+LizardMorph.MCP/obj
+LizardMorph.MCP/better_predictor_auto.dat
