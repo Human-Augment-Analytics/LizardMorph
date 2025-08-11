@@ -5,6 +5,7 @@ import type { Point } from "../models/Point";
 import type { ImageSet } from "../models/ImageSet";
 import type { ProcessedImage } from "../models/ProcessedImage";
 import type { UploadHistoryItem } from "../models/UploadHistoryItem";
+import type { LizardViewType } from "../components/LandingPage";
 
 import { Header } from "../components/Header";
 import { NavigationControls } from "../components/NavigationControls";
@@ -47,8 +48,9 @@ interface MainState {
   ) => void;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-interface MainProps {}
+interface MainProps {
+  selectedViewType: LizardViewType;
+}
 
 export class MainView extends Component<MainProps, MainState> {
   readonly svgRef = createRef<SVGSVGElement>();
@@ -197,7 +199,7 @@ export class MainView extends Component<MainProps, MainState> {
           }));
 
           // Upload the file (replace with your actual upload logic)
-          const [result] = await ApiService.uploadMultipleImages([file]);
+          const [result] = await ApiService.uploadMultipleImages([file], this.props.selectedViewType);
           
           // Update progress to 50% after upload
           this.setState((prevState) => ({
@@ -728,7 +730,7 @@ export class MainView extends Component<MainProps, MainState> {
       }
 
       // If not loaded, process it
-      const result = await ApiService.processExistingImage(filename);
+      const result = await ApiService.processExistingImage(filename, this.props.selectedViewType);
       const imageSets = await ApiService.fetchImageSet(filename);
       const coords = result.coords.map((coord: Point, index: number) => ({
         ...coord,
@@ -835,9 +837,11 @@ export class MainView extends Component<MainProps, MainState> {
           loading={this.state.loading}
           dataFetched={this.state.dataFetched}
           dataError={this.state.dataError}
+          selectedViewType={this.props.selectedViewType}
           onUpload={this.handleUpload}
           onExportAll={this.handleScatterData}
           onClearHistory={this.handleClearHistory}
+          onBackToSelection={() => window.location.href = '/'}
         />
         <div style={MainViewStyles.mainContentArea}>
           {" "}
