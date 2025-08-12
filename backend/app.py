@@ -24,8 +24,24 @@ from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTEN
 # Load ENV variables
 load_dotenv()
 frontend_dir = os.getenv("FRONTEND_DIR", "../frontend/dist")
-predictor_file = os.getenv("PREDICTOR_FILE", "./better_predictor_auto.dat")
 session_dir = os.getenv("SESSION_DIR", "sessions")
+
+# Model files for different view types
+DORSAL_PREDICTOR_FILE = os.getenv("DORSAL_PREDICTOR_FILE", "./better_predictor_auto.dat")
+LATERAL_PREDICTOR_FILE = os.getenv("LATERAL_PREDICTOR_FILE", "./lateral_predictor_auto.dat")
+TOEPADS_PREDICTOR_FILE = os.getenv("TOEPADS_PREDICTOR_FILE", "./toepads_predictor_auto.dat")
+CUSTOM_PREDICTOR_FILE = os.getenv("CUSTOM_PREDICTOR_FILE", "./custom_predictor_auto.dat")
+
+# Detector files for different view types (dlib fhog object detectors)
+DORSAL_DETECTOR_FILE = os.getenv("DORSAL_DETECTOR_FILE", None)
+LATERAL_DETECTOR_FILE = os.getenv("LATERAL_DETECTOR_FILE", None)
+TOEPADS_DETECTOR_FILE = os.getenv("TOEPADS_DETECTOR_FILE", None)
+CUSTOM_DETECTOR_FILE = os.getenv("CUSTOM_DETECTOR_FILE", None)
+
+
+
+# Default predictor file (fallback)
+predictor_file = os.getenv("PREDICTOR_FILE", "./better_predictor_auto.dat")
 
 # Webhook configuration
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "your-webhook-secret-here")
@@ -38,7 +54,17 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
-logger.info(predictor_file);
+logger.info(f"Default predictor file: {predictor_file}")
+logger.info(f"Dorsal predictor file: {DORSAL_PREDICTOR_FILE}")
+logger.info(f"Lateral predictor file: {LATERAL_PREDICTOR_FILE}")
+logger.info(f"Toepads predictor file: {TOEPADS_PREDICTOR_FILE}")
+logger.info(f"Custom predictor file: {CUSTOM_PREDICTOR_FILE}")
+logger.info(f"Dorsal detector file: {DORSAL_DETECTOR_FILE}")
+logger.info(f"Lateral detector file: {LATERAL_DETECTOR_FILE}")
+logger.info(f"Toepads detector file: {TOEPADS_DETECTOR_FILE}")
+logger.info(f"Custom detector file: {CUSTOM_DETECTOR_FILE}")
+
+
 app = Flask(__name__)
 
 # Configure Flask session
@@ -270,6 +296,43 @@ def get_session_folders(session_id):
     return session_data
 
 
+def get_view_type_config(view_type):
+    """
+    Get the appropriate predictor file and detector file based on view type.
+    
+    Args:
+        view_type (str): The view type (dorsal, lateral, toepads, custom)
+        
+    Returns:
+        tuple: (predictor_file_path, detector_file_path)
+    """
+    view_type = view_type.lower() if view_type else "dorsal"
+    
+    if view_type == "dorsal":
+        predictor_file = DORSAL_PREDICTOR_FILE
+        detector_file = DORSAL_DETECTOR_FILE
+    elif view_type == "lateral":
+        predictor_file = LATERAL_PREDICTOR_FILE
+        detector_file = LATERAL_DETECTOR_FILE
+    elif view_type == "toepads":
+        predictor_file = TOEPADS_PREDICTOR_FILE
+        detector_file = TOEPADS_DETECTOR_FILE
+    elif view_type == "custom":
+        predictor_file = CUSTOM_PREDICTOR_FILE
+        detector_file = CUSTOM_DETECTOR_FILE
+    else:
+        # Default to dorsal if unknown view type
+        logger.warning(f"Unknown view type '{view_type}', using dorsal configuration")
+        predictor_file = DORSAL_PREDICTOR_FILE
+        detector_file = DORSAL_DETECTOR_FILE
+    
+    logger.info(f"View type '{view_type}' configured with:")
+    logger.info(f"  - Predictor file: {predictor_file}")
+    logger.info(f"  - Detector file: {detector_file}")
+    
+    return predictor_file, detector_file
+
+
 def cleanup_on_startup():
     """
     Optional cleanup function that can be called on app startup
@@ -409,6 +472,12 @@ def upload():
         session_id = get_session_id()
         session_data = get_session_folders(session_id)
 
+        # Get view type from form data
+        view_type = request.form.get("view_type", "dorsal")
+        predictor_file_path, detector_file_path = get_view_type_config(view_type)
+        
+        logger.info(f"Processing images with view type: {view_type}, predictor: {predictor_file_path}, detector: {detector_file_path}")
+
         images = request.files.getlist("image")
         all_data = []
 
@@ -438,9 +507,16 @@ def upload():
                     xml_output_path = os.path.join(
                         session_data["outputs_folder"], f"output_{unique_name}.xml"
                     )
-                    utils.predictions_to_xml_single(
-                        predictor_file, image_path, xml_output_path
-                    )
+                    logger.info(f"Generating XML predictions for {unique_name} using predictor: {predictor_file_path}")
+                    # Use detector-based prediction if detector is available, otherwise use original function
+                    if detector_file_path and os.path.exists(detector_file_path):
+                        utils.predictions_to_xml_single_with_detector(
+                            predictor_file_path, image_path, xml_output_path, detector_file_path
+                        )
+                    else:
+                        utils.predictions_to_xml_single(
+                            predictor_file_path, image_path, xml_output_path
+                        )
 
                     # Generate CSV and TPS output files in the session outputs folder
                     csv_output_path = os.path.join(
@@ -477,8 +553,10 @@ def upload():
                     data = visual_individual_performance.parse_xml_for_frontend(
                         xml_output_path
                     )
+                    
                     data["name"] = unique_name
                     data["session_id"] = session_id
+                    data["view_type"] = view_type
                     all_data.append(data)
 
                     logger.info(
@@ -583,11 +661,15 @@ def process_scatter_data():
 
     coords = data.get("coords")
     name = data.get("name")
+    view_type = data.get("view_type", "dorsal")
 
     if not coords or not name:
         return jsonify({"error": "Missing required data: coords or name"}), 400
 
     try:
+        # Get view type configuration
+        predictor_file_path, detector_file_path = get_view_type_config(view_type)
+        
         # Get session-specific folders
         session_id = get_session_id()
         session_data = get_session_folders(session_id)
@@ -778,6 +860,10 @@ def process_existing():
         if not filename:
             return jsonify({"error": "filename parameter is required"}), 400
 
+        # Get view type from query parameters
+        view_type = request.args.get("view_type", "dorsal")
+        predictor_file_path, detector_file_path = get_view_type_config(view_type)
+        
         # Get session-specific folders
         session_id = get_session_id()
         session_data = get_session_folders(session_id)
@@ -814,9 +900,15 @@ def process_existing():
 
         # Generate XML if it doesn't exist
         if not os.path.exists(xml_path):
-            utils.predictions_to_xml_single(
-                predictor_file, image_path, xml_path
-            )
+            # Use detector-based prediction if detector is available, otherwise use original function
+            if detector_file_path and os.path.exists(detector_file_path):
+                utils.predictions_to_xml_single_with_detector(
+                    predictor_file_path, image_path, xml_path, detector_file_path
+                )
+            else:
+                utils.predictions_to_xml_single(
+                    predictor_file_path, image_path, xml_path
+                )
             utils.dlib_xml_to_pandas(xml_path)
             utils.dlib_xml_to_tps(xml_path)
 
@@ -850,12 +942,14 @@ def process_existing():
 
         # Parse XML for frontend
         data = visual_individual_performance.parse_xml_for_frontend(xml_path)
+        
         data["name"] = filename
         data["export_dir"] = export_dir
         data["session_id"] = session_id
+        data["view_type"] = view_type
 
         logger.info(
-            f"Processed existing image: {filename} for session: {session_id[:8]}"
+            f"Processed existing image: {filename} for session: {session_id[:8]} with view type: {view_type}"
         )
         return jsonify(data)
 
@@ -876,9 +970,13 @@ def save_annotations():
 
         coords = data.get("coords")
         name = data.get("name")
+        view_type = data.get("view_type", "dorsal")
 
         if not coords or not name:
             return jsonify({"error": "Missing required data: coords or name"}), 400
+
+        # Get view type configuration
+        predictor_file_path, detector_file_path = get_view_type_config(view_type)
 
         # Get session-specific folders
         session_id = get_session_id()
@@ -931,8 +1029,10 @@ def save_annotations():
                                 if "x" in point and "y" in point:
                                     part = ET.SubElement(box, "part")
                                     part.set("name", str(i))
-                                    part.set("x", str(int(float(point["x"]))))
-                                    part.set("y", str(int(float(point["y"]))))
+                                    x_coord = float(point["x"])
+                                    y_coord = float(point["y"])
+                                    part.set("x", str(int(x_coord)))
+                                    part.set("y", str(int(y_coord)))
 
                 # Save the updated XML
                 utils.pretty_xml(root, xml_path)
