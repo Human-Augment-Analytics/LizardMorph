@@ -31,7 +31,19 @@ class SessionManager:
         """Create directory if it doesn't exist."""
         if not os.path.exists(directory):
             os.makedirs(directory)
-            logger.info(f"Created directory: {directory}")
+            # Set proper ownership to www-data (only if we have permission)
+            try:
+                import pwd
+                import grp
+                uid = pwd.getpwnam('www-data').pw_uid
+                gid = grp.getgrnam('www-data').gr_gid
+                os.chown(directory, uid, gid)
+                logger.info(f"Created directory with www-data ownership: {directory}")
+            except (ImportError, KeyError, OSError, PermissionError) as e:
+                # If we can't change ownership, that's okay - the directory will inherit
+                # the group permissions from the parent directory
+                logger.info(f"Created directory (ownership unchanged): {directory}")
+                logger.debug(f"Ownership change failed: {e}")
 
     def create_session(self, session_id: str = None) -> str:
         """
