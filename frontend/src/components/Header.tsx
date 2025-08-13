@@ -6,9 +6,11 @@ interface HeaderProps {
   loading: boolean;
   dataFetched: boolean;
   dataError: Error | null;
+  selectedViewType: string;
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onExportAll: () => void;
   onClearHistory: () => void;
+  onBackToSelection: () => void;
 }
 
 export class Header extends Component<HeaderProps> {
@@ -101,15 +103,21 @@ export class Header extends Component<HeaderProps> {
             </button>
           </div>
 
-          <div style={HeaderStyles.titleContainer}>
-            <img
-              src="/android-chrome-192x192.png"
-              alt="Lizard Logo"
-              style={HeaderStyles.logo}
-            />
-            <h2 style={HeaderStyles.title}>
-              Lizard Anolis X-Ray Auto-Annotator
-            </h2>
+          <div 
+            style={{ ...HeaderStyles.titleContainer, cursor: 'pointer', flexDirection: 'column' as const }}
+            onClick={this.props.onBackToSelection}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ ...HeaderStyles.logo, fontSize: '40px', marginRight: '12px' }}>
+                {this.props.selectedViewType === 'lateral' ? '🦖' : '🦎'}
+              </div>
+              <h2 style={HeaderStyles.title}>
+                Lizard Anolis X-Ray Auto-Annotator
+              </h2>
+            </div>
+            <p style={HeaderStyles.viewType}>
+              View Type: {this.props.selectedViewType ? this.props.selectedViewType.charAt(0).toUpperCase() + this.props.selectedViewType.slice(1) : ''}
+            </p>
           </div>
 
           <div style={HeaderStyles.rightSpacer}></div>

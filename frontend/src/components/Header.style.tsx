@@ -51,9 +51,10 @@ export class HeaderStyles {
     justifyContent: "space-between",
     alignItems: "center",
     maxWidth: "1200px",
-    margin: "15px auto 0",
+    margin: "15px 0 0 15px",
     padding: "0 20px",
     marginRight: "340px",
+    gap: "60px",
   };
 
   static readonly buttonContainer: CSSProperties = {
@@ -138,6 +139,15 @@ export class HeaderStyles {
   static readonly title: CSSProperties = {
     margin: 0,
     whiteSpace: "nowrap",
+  };
+
+  static readonly viewType: CSSProperties = {
+    margin: "8px 0 0 0",
+    fontSize: "0.9em",
+    color: "#666",
+    fontWeight: "500",
+    textTransform: "capitalize",
+    letterSpacing: "0.5px",
   };
 
   static readonly rightSpacer: CSSProperties = {

@@ -12,11 +12,12 @@ export class ApiService {
     await SessionService.initializeSession();
   }
 
-  static async uploadMultipleImages(files: File[]): Promise<AnnotationsData[]> {
+  static async uploadMultipleImages(files: File[], viewType: string): Promise<AnnotationsData[]> {
     const formData = new FormData();
     files.forEach((file) => {
       formData.append("image", file);
     });
+    formData.append("view_type", viewType);
     const res = await fetch(`${API_URL}/data`, {
       method: "POST",
       headers: {
@@ -76,10 +77,11 @@ export class ApiService {
   }
 
   static async processExistingImage(
-    filename: string
+    filename: string,
+    viewType: string
   ): Promise<AnnotationsData> {
     const res = await fetch(
-      `${API_URL}/process_existing?filename=${encodeURIComponent(filename)}`,
+      `${API_URL}/process_existing?filename=${encodeURIComponent(filename)}&view_type=${encodeURIComponent(viewType)}`,
       {
         method: "POST",
         headers: {
