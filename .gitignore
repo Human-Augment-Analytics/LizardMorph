@@ -1,7 +1,12 @@
 # Git
 .git
 
-backend/better_predictor_auto.dat
+backend/*.dat
+backend/test/
+backend/landmark_visualizations/
+test.xml
+images/
+*svm
 
 # Node.js
 frontend/node_modules
