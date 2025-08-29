@@ -33,6 +33,23 @@ interface SVGViewerProps {
 export class SVGViewer extends Component<SVGViewerProps, object> {
   readonly svgRef = createRef<SVGSVGElement>();
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
+  
+  // Performance optimization: Cache scale functions and dimensions
+  private cachedScales: {
+    scaleXToImg: d3.ScaleLinear<number, number> | null;
+    scaleYToImg: d3.ScaleLinear<number, number> | null;
+    scaleXDisplay: d3.ScaleLinear<number, number> | null;
+    scaleYDisplay: d3.ScaleLinear<number, number> | null;
+    svgWidth: number;
+    svgHeight: number;
+  } = {
+    scaleXToImg: null,
+    scaleYToImg: null,
+    scaleXDisplay: null,
+    scaleYDisplay: null,
+    svgWidth: 0,
+    svgHeight: 0,
+  };
 
   componentDidUpdate(prevProps: SVGViewerProps) {
     if (
@@ -70,6 +87,12 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
       svg.call(this.zoomRef.current.transform, this.props.zoomTransform);
     }
   }
+
+  // Handle right-click to toggle edit mode
+  private handleContextMenu = (event: React.MouseEvent): void => {
+    event.preventDefault(); // Prevent default context menu
+    this.props.onToggleEditMode();
+  };
 
   private readonly renderSVG = (): void => {
     if (
@@ -170,7 +193,9 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
         .selectAll("g")
         .data(this.props.scatterData)
         .enter()
-        .append("g");
+        .append("g")
+        .attr("data-landmark-id", (d: Point) => d.id) // Add unique identifier to each group
+        .attr("class", "landmark-group");
 
       pointGroups.each((d, i, nodes) => {
         const g = d3.select(nodes[i]);
@@ -204,7 +229,8 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
           .attr("font-size", "10px")
           .attr("fill", "white")
           .attr("stroke", "black")
-          .attr("stroke-width", "0.5px");
+          .attr("stroke-width", "0.5px")
+          .style("pointer-events", "none"); // Prevent text from interfering with drag
       });
 
       // Add drag behavior only if in edit mode
@@ -278,14 +304,41 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
 
   private readonly dragstarted = (
     event: d3.D3DragEvent<SVGGElement, Point, Point>,
-    _d: Point
+    d: Point
   ): void => {
     event.sourceEvent.stopPropagation();
     
-    // Get the actual group element that was clicked
-    const clickedGroup = d3.select(event.sourceEvent.target.parentNode);
-    const clickedData = clickedGroup.datum() as Point;
+    // Only allow drag if this landmark is already selected (yellow) or if no landmark is currently selected
+    const isCurrentlySelected = this.props.selectedPoint && this.props.selectedPoint.id === d.id;
+    const noLandmarkSelected = !this.props.selectedPoint;
     
+    if (!isCurrentlySelected && !noLandmarkSelected) {
+      // If clicking on a non-selected landmark while another is selected, just select it without starting drag
+      this.props.onPointSelect(d);
+      
+      // Update visual selection
+      const svg = d3.select(this.svgRef.current);
+      const scatterPlotGroup = svg.select<SVGGElement>(".scatter-points");
+      scatterPlotGroup.selectAll<SVGGElement, Point>("g").each((pointData, i, nodes) => {
+        const group = d3.select(nodes[i]);
+        const circle = group.select("circle");
+        if (pointData.id === d.id) {
+          circle.attr("fill", "yellow").attr("stroke-width", 2);
+        } else {
+          circle.attr("fill", "red").attr("stroke-width", 1);
+        }
+      });
+      return; // Don't start dragging
+    }
+    
+    this.isDragging = true;
+    this.draggedLandmarkId = d.id; // Store the landmark ID being dragged
+    
+    // Use the data directly from the drag event instead of DOM traversal
+    const clickedData = d;
+    
+    // Find the group element for this landmark
+    const clickedGroup = d3.select(event.sourceEvent.target.parentNode as Element);
     clickedGroup.raise().attr("stroke", "black");
     this.props.onPointSelect(clickedData);
     
@@ -306,9 +359,19 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
   private readonly dragged = (
     event: d3.D3DragEvent<SVGGElement, Point, Point>
   ): void => {
-    // Get the actual group element that was clicked
-    const clickedGroup = d3.select(event.sourceEvent.target.parentNode);
-    const clickedData = clickedGroup.datum() as Point;
+    // Only allow dragging if we're actually dragging (isDragging is true)
+    if (!this.isDragging || !this.draggedLandmarkId) return;
+    
+    // Performance optimization: Update cached scales if needed
+    this.updateCachedScales();
+    
+    // Use the stored landmark ID to ensure we're dragging the correct landmark
+    const clickedData = this.getLandmarkData(this.draggedLandmarkId);
+    if (!clickedData) return;
+    
+    // Find the group element for this landmark
+    const clickedGroup = d3.select(this.svgRef.current)
+      .select(`g[data-landmark-id="${this.draggedLandmarkId}"]`);
     
     const point = d3.pointer(event, this.svgRef.current);
     const transform = d3.zoomTransform(this.svgRef.current!);
@@ -317,42 +380,47 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
     const x = (point[0] - transform.x) / transform.k;
     const y = (point[1] - transform.y) / transform.k;
 
-    // Get SVG and image dimensions
-    const svg = d3.select(this.svgRef.current!);
-    const width = +svg.attr("width");
-    const height = +svg.attr("height");
+    // Use cached scale functions for better performance
+    if (this.cachedScales.scaleXToImg && this.cachedScales.scaleYToImg) {
+      const newImgX = this.cachedScales.scaleXToImg(x);
+      const newImgY = this.cachedScales.scaleYToImg(y);
 
-    // Calculate new image-space coordinates
-    const scaleXToImg = d3.scaleLinear().domain([0, width]).range([0, this.props.imageWidth]);
-    const scaleYToImg = d3.scaleLinear().domain([0, height]).range([0, this.props.imageHeight]);
-    const newImgX = scaleXToImg(x);
-    const newImgY = scaleYToImg(y);
+      // Performance optimization: Only update the visual position immediately
+      // Don't update parent component on every drag event
+      clickedGroup.select("circle").attr("cx", x).attr("cy", y);
+      clickedGroup.select("text").attr("x", x + 5).attr("y", y - 5);
 
-    // Update originalScatterData (image space)
-    const updatedoriginalScatterData = this.props.originalScatterData.map(
-      (p: Point) =>
-        p.id === clickedData.id
-          ? { ...p, x: newImgX, y: newImgY }
-          : p
-    );
+      // Performance optimization: Throttle parent component updates
+      if (this.dragUpdateTimeout) {
+        clearTimeout(this.dragUpdateTimeout);
+      }
 
-    // Re-scale for display
-    const scaleXDisplay = d3.scaleLinear().domain([0, this.props.imageWidth]).range([0, width]);
-    const scaleYDisplay = d3.scaleLinear().domain([0, this.props.imageHeight]).range([0, height]);
-    const updatedScatterData = updatedoriginalScatterData.map(
-      (p: Point) => ({
-        ...p,
-        x: scaleXDisplay(p.x),
-        y: scaleYDisplay(p.y),
-      })
-    );
+      this.dragUpdateTimeout = window.setTimeout(() => {
+        if (!this.isDragging) return;
+        
+        // Update originalScatterData (image space)
+        const updatedoriginalScatterData = this.props.originalScatterData.map(
+          (p: Point) =>
+            p.id === clickedData.id
+              ? { ...p, x: newImgX, y: newImgY }
+              : p
+        );
 
-    // Update the display and image-space coordinates in parent
-    this.props.onScatterDataUpdate(updatedScatterData, updatedoriginalScatterData);
+        // Re-scale for display using cached functions
+        if (this.cachedScales.scaleXDisplay && this.cachedScales.scaleYDisplay) {
+          const updatedScatterData = updatedoriginalScatterData.map(
+            (p: Point) => ({
+              ...p,
+              x: this.cachedScales.scaleXDisplay!(p.x),
+              y: this.cachedScales.scaleYDisplay!(p.y),
+            })
+          );
 
-    // Update the dragged point visually
-    clickedGroup.select("circle").attr("cx", x).attr("cy", y);
-    clickedGroup.select("text").attr("x", x + 5).attr("y", y - 5);
+          // Update the display and image-space coordinates in parent
+          this.props.onScatterDataUpdate(updatedScatterData, updatedoriginalScatterData);
+        }
+      }, 16); // ~60fps throttling
+    }
   };
 
   private readonly dragended = (
@@ -390,6 +458,36 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
     }
   };
 
+  // Performance optimization: Throttle drag updates
+  private dragUpdateTimeout: number | null = null;
+  private isDragging = false;
+  private draggedLandmarkId: number | null = null; // Track which landmark is being dragged
+
+  // Performance optimization: Update cached scales when dimensions change
+  private updateCachedScales = (): void => {
+    if (!this.svgRef.current) return;
+    
+    const svg = d3.select(this.svgRef.current);
+    const width = +svg.attr("width");
+    const height = +svg.attr("height");
+    
+    // Only update if dimensions changed
+    if (width !== this.cachedScales.svgWidth || height !== this.cachedScales.svgHeight) {
+      this.cachedScales.svgWidth = width;
+      this.cachedScales.svgHeight = height;
+      
+      this.cachedScales.scaleXToImg = d3.scaleLinear().domain([0, width]).range([0, this.props.imageWidth]);
+      this.cachedScales.scaleYToImg = d3.scaleLinear().domain([0, height]).range([0, this.props.imageHeight]);
+      this.cachedScales.scaleXDisplay = d3.scaleLinear().domain([0, this.props.imageWidth]).range([0, width]);
+      this.cachedScales.scaleYDisplay = d3.scaleLinear().domain([0, this.props.imageHeight]).range([0, height]);
+    }
+  };
+
+  // Helper function to get landmark data by ID
+  private getLandmarkData = (landmarkId: number): Point | null => {
+    return this.props.scatterData.find(point => point.id === landmarkId) || null;
+  };
+
   render() {
     const { dataFetched, loading, dataLoading, dataError } = this.props;
 
@@ -404,12 +502,50 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
           </div>
         )}
 
+        {/* Mode indicator */}
+        {dataFetched && (
+          <div style={{
+            position: 'absolute',
+            top: '10px',
+            right: '10px',
+            background: this.props.isEditMode ? '#ff6b6b' : '#4ecdc4',
+            color: 'white',
+            padding: '4px 8px',
+            borderRadius: '4px',
+            fontSize: '12px',
+            fontWeight: 'bold',
+            zIndex: 1000,
+            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+          }}>
+            {this.props.isEditMode ? 'EDIT MODE' : 'VIEW MODE'}
+          </div>
+        )}
+
+        {/* Right-click hint */}
+        {dataFetched && (
+          <div style={{
+            position: 'absolute',
+            bottom: '10px',
+            left: '10px',
+            background: 'rgba(0,0,0,0.7)',
+            color: 'white',
+            padding: '6px 10px',
+            borderRadius: '4px',
+            fontSize: '11px',
+            zIndex: 1000,
+            opacity: 0.8
+          }}>
+            Right-click to toggle edit/view mode
+          </div>
+        )}
+
         <svg
           ref={this.svgRef}
           style={{
             ...SVGViewerStyles.svg,
             ...(dataFetched ? SVGViewerStyles.svgWithData : {}),
           }}
+          onContextMenu={this.handleContextMenu}
         />
 
         {dataLoading && dataFetched && (
