@@ -187,9 +187,9 @@ export class MainView extends Component<MainProps, MainState> {
       uploadHistory: [...prevState.uploadHistory, ...newHistoryItems],
     }));
 
-    try {
-      Promise.all(
-        Array.from(files).map(async (file) => {
+    Promise.all(
+      Array.from(files).map(async (file) => {
+        try {
           // Update progress to 25% when starting upload
           this.setState((prevState) => ({
             uploadProgress: {
@@ -199,7 +199,19 @@ export class MainView extends Component<MainProps, MainState> {
           }));
 
           // Upload the file (replace with your actual upload logic)
-          const [result] = await ApiService.uploadMultipleImages([file], this.props.selectedViewType);
+          const results = await ApiService.uploadMultipleImages([file], this.props.selectedViewType);
+          
+          // Check if we got a valid result
+          if (!results || results.length === 0) {
+            throw new Error(`Failed to process image: ${file.name}`);
+          }
+          
+          const result = results[0];
+          
+          // Validate result has required properties
+          if (!result || !result.name) {
+            throw new Error(`Invalid result for image: ${file.name}`);
+          }
           
           // Update progress to 50% after upload
           this.setState((prevState) => ({
@@ -220,6 +232,11 @@ export class MainView extends Component<MainProps, MainState> {
             },
           }));
 
+          // Validate coords exist
+          if (!result.coords || !Array.isArray(result.coords)) {
+            throw new Error(`No coordinates found for image: ${file.name}`);
+          }
+          
           const coords = result.coords.map((coord, index: number) => ({
             ...coord,
             id: index + 1,
@@ -289,21 +306,34 @@ export class MainView extends Component<MainProps, MainState> {
                 prevState.images.length === 0 ? null : prevState.selectedPoint,
             };
           });
-        })
-      ).then(() => {
-        this.setState({
-          loading: false,
-          dataLoading: false,
-          uploadProgress: {}, // Clear progress after completion
-        });
+        } catch (err) {
+          console.error(`Error processing ${file.name}:`, err);
+          // Update progress to show error state
+          this.setState((prevState) => ({
+            uploadProgress: {
+              ...prevState.uploadProgress,
+              [file.name]: -1, // Use -1 to indicate error state
+            },
+          }));
+          // Re-throw the error so Promise.all can handle it
+          throw err;
+        }
+      })
+    ).then(() => {
+      this.setState({
+        loading: false,
+        dataLoading: false,
+        uploadProgress: {}, // Clear progress after completion
       });
-    } catch (err) {
+    }).catch((err) => {
       console.error("Upload error:", err);
       this.setState({
         dataError: err instanceof Error ? err : new Error("Upload failed"),
         uploadProgress: {}, // Clear progress on error
+        loading: false,
+        dataLoading: false,
       });
-    }
+    });
   };
   // This loads the image when the currentImageURL changes
   private readonly loadImage = (): void => {

@@ -66,17 +66,25 @@ export class HistoryPanel extends Component<HistoryPanelProps> {
                         </div>
                         {isUploading && (
                           <div style={HistoryPanelStyles.progressContainer}>
-                            <div style={HistoryPanelStyles.progressBar}>
-                              <div 
-                                style={{
-                                  ...HistoryPanelStyles.progressFill,
-                                  width: `${progress}%`,
-                                }}
-                              />
-                            </div>
-                            <span style={HistoryPanelStyles.progressText}>
-                              {progress}%
-                            </span>
+                            {progress === -1 ? (
+                              <div style={{ color: "red", fontSize: "0.8em" }}>
+                                Error processing image
+                              </div>
+                            ) : (
+                              <>
+                                <div style={HistoryPanelStyles.progressBar}>
+                                  <div 
+                                    style={{
+                                      ...HistoryPanelStyles.progressFill,
+                                      width: `${progress}%`,
+                                    }}
+                                  />
+                                </div>
+                                <span style={HistoryPanelStyles.progressText}>
+                                  {progress}%
+                                </span>
+                              </>
+                            )}
                           </div>
                         )}
                       </td>
