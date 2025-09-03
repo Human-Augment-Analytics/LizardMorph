@@ -199,12 +199,19 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
 
       pointGroups.each((d, i, nodes) => {
         const g = d3.select(nodes[i]);
+        
+        // Get browser zoom level to compensate landmark sizes
+        const browserZoom = window.devicePixelRatio || 1;
+        const compensatedRadius = 5 / browserZoom;
+        const compensatedFontSize = 12 / browserZoom;
+        const compensatedStrokeWidth = 1.5 / browserZoom;
+        const compensatedTextOffset = 7 / browserZoom;
 
         // Add the point
         g.append("circle")
           .attr("cx", d.x)
           .attr("cy", d.y)
-          .attr("r", 3)
+          .attr("r", compensatedRadius)
           .attr(
             "fill",
             this.props.selectedPoint && d.id === this.props.selectedPoint.id
@@ -215,23 +222,26 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
           .attr(
             "stroke-width",
             this.props.selectedPoint && d.id === this.props.selectedPoint.id
-              ? 2
-              : 1
+              ? compensatedStrokeWidth * 2
+              : compensatedStrokeWidth
           )
           .attr("data-id", d.id)
           .style("cursor", "pointer");
 
         // Add the number label
         g.append("text")
-          .attr("x", d.x + 5)
-          .attr("y", d.y - 5)
+          .attr("x", d.x + compensatedTextOffset)
+          .attr("y", d.y - compensatedTextOffset)
           .text(d.id)
-          .attr("font-size", "10px")
+          .attr("font-size", `${compensatedFontSize}px`)
           .attr("fill", "white")
           .attr("stroke", "black")
-          .attr("stroke-width", "0.5px")
+          .attr("stroke-width", `${compensatedStrokeWidth * 0.5}px`)
           .style("pointer-events", "none"); // Prevent text from interfering with drag
       });
+
+      // Set data-landmark-id on the groups for proper drag selection
+      pointGroups.attr("data-landmark-id", (d: Point) => d.id);
 
       // Add drag behavior only if in edit mode
       if (this.props.isEditMode) {
@@ -287,6 +297,9 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
   private readonly updatePointSelection = (): void => {
     if (this.svgRef.current && this.props.scatterData.length > 0) {
       const svg = d3.select(this.svgRef.current);
+      const browserZoom = window.devicePixelRatio || 1;
+      const compensatedStrokeWidth = 1.5 / browserZoom;
+      
       svg
         .selectAll<SVGCircleElement, Point>("circle")
         .attr("fill", (d: Point) => {
@@ -296,8 +309,8 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
         })
         .attr("stroke-width", (d: Point) => {
           return this.props.selectedPoint && d.id === this.props.selectedPoint.id
-            ? 2
-            : 1;
+            ? compensatedStrokeWidth * 2
+            : compensatedStrokeWidth;
         });
     }
   };
@@ -314,22 +327,29 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
     
     if (!isCurrentlySelected && !noLandmarkSelected) {
       // If clicking on a non-selected landmark while another is selected, just select it without starting drag
-      this.props.onPointSelect(d);
+      this.handlePointClick(d);
       
       // Update visual selection
       const svg = d3.select(this.svgRef.current);
       const scatterPlotGroup = svg.select<SVGGElement>(".scatter-points");
+      const browserZoom = window.devicePixelRatio || 1;
+      const compensatedStrokeWidth = 1.5 / browserZoom;
+      
       scatterPlotGroup.selectAll<SVGGElement, Point>("g").each((pointData, i, nodes) => {
         const group = d3.select(nodes[i]);
         const circle = group.select("circle");
         if (pointData.id === d.id) {
-          circle.attr("fill", "yellow").attr("stroke-width", 2);
+          circle.attr("fill", "yellow").attr("stroke-width", compensatedStrokeWidth * 2);
         } else {
-          circle.attr("fill", "red").attr("stroke-width", 1);
+          circle.attr("fill", "red").attr("stroke-width", compensatedStrokeWidth);
         }
       });
       return; // Don't start dragging
     }
+    
+    // Store the starting position to distinguish between clicks and drags
+    const point = d3.pointer(event, this.svgRef.current);
+    this.dragStartPosition = { x: point[0], y: point[1] };
     
     this.isDragging = true;
     this.draggedLandmarkId = d.id; // Store the landmark ID being dragged
@@ -340,18 +360,21 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
     // Find the group element for this landmark
     const clickedGroup = d3.select(event.sourceEvent.target.parentNode as Element);
     clickedGroup.raise().attr("stroke", "black");
-    this.props.onPointSelect(clickedData);
+    this.handlePointClick(clickedData);
     
     // Update visual selection by finding the correct group and updating its circle
     const svg = d3.select(this.svgRef.current);
     const scatterPlotGroup = svg.select<SVGGElement>(".scatter-points");
+    const browserZoom = window.devicePixelRatio || 1;
+    const compensatedStrokeWidth = 1.5 / browserZoom;
+    
     scatterPlotGroup.selectAll<SVGGElement, Point>("g").each((pointData, i, nodes) => {
       const group = d3.select(nodes[i]);
       const circle = group.select("circle");
       if (pointData.id === clickedData.id) {
-        circle.attr("fill", "yellow").attr("stroke-width", 2);
+        circle.attr("fill", "yellow").attr("stroke-width", compensatedStrokeWidth * 2);
       } else {
-        circle.attr("fill", "red").attr("stroke-width", 1);
+        circle.attr("fill", "red").attr("stroke-width", compensatedStrokeWidth);
       }
     });
   };
@@ -360,7 +383,19 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
     event: d3.D3DragEvent<SVGGElement, Point, Point>
   ): void => {
     // Only allow dragging if we're actually dragging (isDragging is true)
-    if (!this.isDragging || !this.draggedLandmarkId) return;
+    if (!this.isDragging || !this.draggedLandmarkId || !this.dragStartPosition) return;
+    
+    // Check if we've moved enough to consider this a drag (not just a click)
+    const currentPoint = d3.pointer(event, this.svgRef.current);
+    const distance = Math.sqrt(
+      Math.pow(currentPoint[0] - this.dragStartPosition.x, 2) + 
+      Math.pow(currentPoint[1] - this.dragStartPosition.y, 2)
+    );
+    
+    if (distance < this.CLICK_THRESHOLD) {
+      // Haven't moved enough to consider this a drag, just a click
+      return;
+    }
     
     // Performance optimization: Update cached scales if needed
     this.updateCachedScales();
@@ -388,7 +423,9 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
       // Performance optimization: Only update the visual position immediately
       // Don't update parent component on every drag event
       clickedGroup.select("circle").attr("cx", x).attr("cy", y);
-      clickedGroup.select("text").attr("x", x + 5).attr("y", y - 5);
+      const browserZoom = window.devicePixelRatio || 1;
+      const compensatedTextOffset = 7 / browserZoom;
+      clickedGroup.select("text").attr("x", x + compensatedTextOffset).attr("y", y - compensatedTextOffset);
 
       // Performance optimization: Throttle parent component updates
       if (this.dragUpdateTimeout) {
@@ -428,6 +465,17 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
   ): void => {
     event.sourceEvent.stopPropagation();
     d3.select(event.sourceEvent.target.parentNode).attr("stroke", "black");
+    
+    // Reset drag state
+    this.isDragging = false;
+    this.draggedLandmarkId = null;
+    this.dragStartPosition = null;
+    
+    // Clear any pending drag updates
+    if (this.dragUpdateTimeout) {
+      clearTimeout(this.dragUpdateTimeout);
+      this.dragUpdateTimeout = null;
+    }
   };
 
   // Add or remove drag behavior on points depending on edit mode
@@ -462,6 +510,8 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
   private dragUpdateTimeout: number | null = null;
   private isDragging = false;
   private draggedLandmarkId: number | null = null; // Track which landmark is being dragged
+  private dragStartPosition: { x: number; y: number } | null = null; // Track drag start position
+  private readonly CLICK_THRESHOLD = 5; // Minimum pixel movement to consider as dragging
 
   // Performance optimization: Update cached scales when dimensions change
   private updateCachedScales = (): void => {
@@ -488,6 +538,14 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
     return this.props.scatterData.find(point => point.id === landmarkId) || null;
   };
 
+  // Handle pure clicks (no dragging) to ensure proper point selection
+  private handlePointClick = (point: Point): void => {
+    // Only update selection if the point is different from currently selected
+    if (!this.props.selectedPoint || this.props.selectedPoint.id !== point.id) {
+      this.props.onPointSelect(point);
+    }
+  };
+
   render() {
     const { dataFetched, loading, dataLoading, dataError } = this.props;
 
@@ -499,25 +557,6 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
             <p style={SVGViewerStyles.placeholderSubtext}>
               The images will appear here
             </p>
-          </div>
-        )}
-
-        {/* Mode indicator */}
-        {dataFetched && (
-          <div style={{
-            position: 'absolute',
-            top: '10px',
-            right: '10px',
-            background: this.props.isEditMode ? '#ff6b6b' : '#4ecdc4',
-            color: 'white',
-            padding: '4px 8px',
-            borderRadius: '4px',
-            fontSize: '12px',
-            fontWeight: 'bold',
-            zIndex: 1000,
-            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-          }}>
-            {this.props.isEditMode ? 'EDIT MODE' : 'VIEW MODE'}
           </div>
         )}
 
