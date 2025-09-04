@@ -32,6 +32,7 @@ interface SVGViewerProps {
 
 interface SVGViewerState {
   hintDismissed: boolean;
+  landmarkSize: number;
 }
 
 interface PositionHistory {
@@ -44,7 +45,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
   
   state: SVGViewerState = {
-    hintDismissed: false
+    hintDismissed: false,
+    landmarkSize: 3
   };
   
   // Performance optimization: Cache scale functions and dimensions
@@ -229,33 +231,31 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         const g = d3.select(nodes[i]);
 
         // Add the point
+        const size = this.state.landmarkSize;
+        const fontSize = Math.max(8, size * 3);
+        const textOffset = size + 2;
+        
         g.append("circle")
           .attr("cx", d.x)
           .attr("cy", d.y)
-          .attr("r", 3)
+          .attr("r", size)
           .attr(
             "fill",
             this.props.selectedPoint && d.id === this.props.selectedPoint.id
               ? "yellow"
               : "red"
           )
-          .attr("stroke", "black")
-          .attr(
-            "stroke-width",
-            this.props.selectedPoint && d.id === this.props.selectedPoint.id
-              ? 2
-              : 1
-          )
+          .attr("stroke", "none")
           .attr("data-id", d.id)
           .attr("opacity", this.isTransparentMode ? 0.3 : 1.0)
           .style("cursor", "pointer");
 
         // Add the number label
         g.append("text")
-          .attr("x", d.x + 5)
-          .attr("y", d.y - 5)
+          .attr("x", d.x + textOffset)
+          .attr("y", d.y - textOffset)
           .text(d.id)
-          .attr("font-size", "10px")
+          .attr("font-size", `${fontSize}px`)
           .attr("fill", "white")
           .attr("stroke", "black")
           .attr("stroke-width", "0.5px")
@@ -327,11 +327,6 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
             ? "yellow"
             : "red";
         })
-        .attr("stroke-width", (d: Point) => {
-          return this.props.selectedPoint && d.id === this.props.selectedPoint.id
-            ? 2
-            : 1;
-        })
         .attr("opacity", this.isTransparentMode ? 0.3 : 1.0);
       
       // Update text opacity as well
@@ -362,9 +357,9 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         const group = d3.select(nodes[i]);
         const circle = group.select("circle");
         if (pointData.id === d.id) {
-          circle.attr("fill", "yellow").attr("stroke-width", 2);
+          circle.attr("fill", "yellow");
         } else {
-          circle.attr("fill", "red").attr("stroke-width", 1);
+          circle.attr("fill", "red");
         }
       });
       return; // Don't start dragging
@@ -395,9 +390,9 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       const group = d3.select(nodes[i]);
       const circle = group.select("circle");
       if (pointData.id === clickedData.id) {
-        circle.attr("fill", "yellow").attr("stroke-width", 2);
+        circle.attr("fill", "yellow");
       } else {
-        circle.attr("fill", "red").attr("stroke-width", 1);
+        circle.attr("fill", "red");
       }
     });
   };
@@ -593,6 +588,37 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       .attr("y", (d: Point) => d.y - 5);
   };
 
+  // Update landmark sizes
+  private updateLandmarkSizes = (): void => {
+    if (!this.svgRef.current) return;
+    
+    const svg = d3.select(this.svgRef.current);
+    const scatterPlotGroup = svg.select<SVGGElement>(".scatter-points");
+    if (scatterPlotGroup.empty()) return;
+    
+    const size = this.state.landmarkSize;
+    const fontSize = Math.max(8, size * 3); // Scale font size with landmark size
+    const textOffset = size + 2;
+    
+    // Update circle sizes
+    scatterPlotGroup.selectAll<SVGCircleElement, Point>("circle")
+      .attr("r", size);
+    
+    // Update text sizes and positions
+    scatterPlotGroup.selectAll<SVGTextElement, Point>("text")
+      .attr("font-size", `${fontSize}px`)
+      .attr("x", (d: Point) => d.x + textOffset)
+      .attr("y", (d: Point) => d.y - textOffset);
+  };
+
+  // Handle landmark size change
+  private handleLandmarkSizeChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
+    const newSize = parseFloat(event.target.value);
+    this.setState({ landmarkSize: newSize }, () => {
+      this.updateLandmarkSizes();
+    });
+  };
+
   // Reset history for new image
   private resetHistory = (): void => {
     this.positionHistory = [];
@@ -683,6 +709,41 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
             <p style={SVGViewerStyles.placeholderSubtext}>
               The images will appear here
             </p>
+          </div>
+        )}
+
+        {/* Landmark size slider */}
+        {dataFetched && (
+          <div style={{
+            position: 'absolute',
+            top: '10px',
+            right: '10px',
+            background: 'rgba(0,0,0,0.8)',
+            color: 'white',
+            padding: '10px',
+            borderRadius: '6px',
+            fontSize: '12px',
+            zIndex: 1000,
+            minWidth: '200px'
+          }}>
+            <div style={{ marginBottom: '8px', fontWeight: 'bold' }}>
+              Landmark Size
+            </div>
+            <input
+              type="range"
+              min="0.5"
+              max="10"
+              step="0.5"
+              value={this.state.landmarkSize}
+              onChange={this.handleLandmarkSizeChange}
+              style={{
+                width: '100%',
+                marginBottom: '4px'
+              }}
+            />
+            <div style={{ textAlign: 'center', fontSize: '10px', opacity: 0.8 }}>
+              {this.state.landmarkSize.toFixed(1)}px
+            </div>
           </div>
         )}
 
