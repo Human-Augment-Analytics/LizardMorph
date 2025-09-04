@@ -34,6 +34,11 @@ interface SVGViewerState {
   hintDismissed: boolean;
 }
 
+interface PositionHistory {
+  scatterData: Point[];
+  originalScatterData: Point[];
+}
+
 export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   readonly svgRef = createRef<SVGSVGElement>();
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
@@ -88,6 +93,11 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     // Update drag behavior if edit mode changed
     if (prevProps.isEditMode !== this.props.isEditMode) {
       this.updateDragBehavior();
+      
+      // Reset history when edit mode starts on a new image
+      if (this.props.isEditMode && this.currentImageId !== this.props.currentImageURL) {
+        this.resetHistory();
+      }
     }
 
     if (prevProps.selectedPoint !== this.props.selectedPoint) {
@@ -360,6 +370,9 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       return; // Don't start dragging
     }
     
+    // Save current state to history before starting drag
+    this.saveToHistory();
+    
     // Store the starting position to distinguish between clicks and drags
     const point = d3.pointer(event, this.svgRef.current);
     this.dragStartPosition = { x: point[0], y: point[1] };
@@ -524,6 +537,68 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   // Transparency mode for landmarks
   private isTransparentMode = false;
 
+  // Undo functionality - per image history
+  private positionHistory: PositionHistory[] = [];
+  private currentImageId: string | null = null;
+  private readonly MAX_HISTORY_SIZE = 10;
+
+  // Save current position state to history
+  private saveToHistory = (): void => {
+    const currentState: PositionHistory = {
+      scatterData: [...this.props.scatterData],
+      originalScatterData: [...this.props.originalScatterData]
+    };
+    
+    this.positionHistory.push(currentState);
+    
+    // Limit history size
+    if (this.positionHistory.length > this.MAX_HISTORY_SIZE) {
+      this.positionHistory.shift();
+    }
+  };
+
+  // Undo last position change
+  private undoLastChange = (): void => {
+    console.log("Attempting undo, history length:", this.positionHistory.length);
+    if (this.positionHistory.length === 0) {
+      return;
+    }
+    
+    const lastState = this.positionHistory.pop();
+    if (lastState) {
+      this.props.onScatterDataUpdate(lastState.scatterData, lastState.originalScatterData);
+      // Force visual update of SVG elements
+      this.updateSVGPositions(lastState.scatterData);
+    }
+  };
+
+  // Update SVG element positions directly
+  private updateSVGPositions = (scatterData: Point[]): void => {
+    if (!this.svgRef.current) return;
+    
+    const svg = d3.select(this.svgRef.current);
+    const scatterPlotGroup = svg.select<SVGGElement>(".scatter-points");
+    if (scatterPlotGroup.empty()) return;
+    
+    // Update circle positions
+    scatterPlotGroup.selectAll<SVGCircleElement, Point>("circle")
+      .data(scatterData, (d: Point) => d.id)
+      .attr("cx", (d: Point) => d.x)
+      .attr("cy", (d: Point) => d.y);
+    
+    // Update text positions
+    scatterPlotGroup.selectAll<SVGTextElement, Point>("text")
+      .data(scatterData, (d: Point) => d.id)
+      .attr("x", (d: Point) => d.x + 5)
+      .attr("y", (d: Point) => d.y - 5);
+  };
+
+  // Reset history for new image
+  private resetHistory = (): void => {
+    this.positionHistory = [];
+    this.currentImageId = this.props.currentImageURL;
+  };
+
   // Toggle transparency mode
   private toggleTransparency = (): void => {
     this.isTransparentMode = !this.isTransparentMode;
@@ -555,6 +630,12 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     if (event.key.toLowerCase() === 't' && !event.ctrlKey && !event.metaKey) {
       event.preventDefault();
       this.toggleTransparency();
+    }
+    
+    // Undo with Ctrl+Z
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      this.undoLastChange();
     }
   };
 
@@ -622,7 +703,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
             alignItems: 'center',
             gap: '8px'
           }}>
-            <span>Right-click: edit/view mode | Press 'T': transparency</span>
+            <span>Right-click: edit/view mode | Press 'T': transparency | Ctrl/Cmd+Z: undo</span>
             <button 
               onClick={() => this.setState({ hintDismissed: true })}
               style={{
