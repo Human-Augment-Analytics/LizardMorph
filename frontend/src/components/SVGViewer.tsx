@@ -30,9 +30,17 @@ interface SVGViewerProps {
   onResetZoom: () => void;
 }
 
-export class SVGViewer extends Component<SVGViewerProps, object> {
+interface SVGViewerState {
+  hintDismissed: boolean;
+}
+
+export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   readonly svgRef = createRef<SVGSVGElement>();
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
+  
+  state: SVGViewerState = {
+    hintDismissed: false
+  };
   
   // Performance optimization: Cache scale functions and dimensions
   private cachedScales: {
@@ -50,6 +58,16 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
     svgWidth: 0,
     svgHeight: 0,
   };
+
+  componentDidMount() {
+    // Add keyboard event listener
+    window.addEventListener('keydown', this.handleKeyDown);
+  }
+
+  componentWillUnmount() {
+    // Remove keyboard event listener
+    window.removeEventListener('keydown', this.handleKeyDown);
+  }
 
   componentDidUpdate(prevProps: SVGViewerProps) {
     if (
@@ -199,19 +217,12 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
 
       pointGroups.each((d, i, nodes) => {
         const g = d3.select(nodes[i]);
-        
-        // Get browser zoom level to compensate landmark sizes
-        const browserZoom = window.devicePixelRatio || 1;
-        const compensatedRadius = 5 / browserZoom;
-        const compensatedFontSize = 12 / browserZoom;
-        const compensatedStrokeWidth = 1.5 / browserZoom;
-        const compensatedTextOffset = 7 / browserZoom;
 
         // Add the point
         g.append("circle")
           .attr("cx", d.x)
           .attr("cy", d.y)
-          .attr("r", compensatedRadius)
+          .attr("r", 3)
           .attr(
             "fill",
             this.props.selectedPoint && d.id === this.props.selectedPoint.id
@@ -222,21 +233,23 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
           .attr(
             "stroke-width",
             this.props.selectedPoint && d.id === this.props.selectedPoint.id
-              ? compensatedStrokeWidth * 2
-              : compensatedStrokeWidth
+              ? 2
+              : 1
           )
           .attr("data-id", d.id)
+          .attr("opacity", this.isTransparentMode ? 0.3 : 1.0)
           .style("cursor", "pointer");
 
         // Add the number label
         g.append("text")
-          .attr("x", d.x + compensatedTextOffset)
-          .attr("y", d.y - compensatedTextOffset)
+          .attr("x", d.x + 5)
+          .attr("y", d.y - 5)
           .text(d.id)
-          .attr("font-size", `${compensatedFontSize}px`)
+          .attr("font-size", "10px")
           .attr("fill", "white")
           .attr("stroke", "black")
-          .attr("stroke-width", `${compensatedStrokeWidth * 0.5}px`)
+          .attr("stroke-width", "0.5px")
+          .attr("opacity", this.isTransparentMode ? 0.6 : 1.0)
           .style("pointer-events", "none"); // Prevent text from interfering with drag
       });
 
@@ -297,9 +310,6 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
   private readonly updatePointSelection = (): void => {
     if (this.svgRef.current && this.props.scatterData.length > 0) {
       const svg = d3.select(this.svgRef.current);
-      const browserZoom = window.devicePixelRatio || 1;
-      const compensatedStrokeWidth = 1.5 / browserZoom;
-      
       svg
         .selectAll<SVGCircleElement, Point>("circle")
         .attr("fill", (d: Point) => {
@@ -309,9 +319,15 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
         })
         .attr("stroke-width", (d: Point) => {
           return this.props.selectedPoint && d.id === this.props.selectedPoint.id
-            ? compensatedStrokeWidth * 2
-            : compensatedStrokeWidth;
-        });
+            ? 2
+            : 1;
+        })
+        .attr("opacity", this.isTransparentMode ? 0.3 : 1.0);
+      
+      // Update text opacity as well
+      svg
+        .selectAll<SVGTextElement, Point>("text")
+        .attr("opacity", this.isTransparentMode ? 0.6 : 1.0);
     }
   };
 
@@ -332,16 +348,13 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
       // Update visual selection
       const svg = d3.select(this.svgRef.current);
       const scatterPlotGroup = svg.select<SVGGElement>(".scatter-points");
-      const browserZoom = window.devicePixelRatio || 1;
-      const compensatedStrokeWidth = 1.5 / browserZoom;
-      
       scatterPlotGroup.selectAll<SVGGElement, Point>("g").each((pointData, i, nodes) => {
         const group = d3.select(nodes[i]);
         const circle = group.select("circle");
         if (pointData.id === d.id) {
-          circle.attr("fill", "yellow").attr("stroke-width", compensatedStrokeWidth * 2);
+          circle.attr("fill", "yellow").attr("stroke-width", 2);
         } else {
-          circle.attr("fill", "red").attr("stroke-width", compensatedStrokeWidth);
+          circle.attr("fill", "red").attr("stroke-width", 1);
         }
       });
       return; // Don't start dragging
@@ -365,16 +378,13 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
     // Update visual selection by finding the correct group and updating its circle
     const svg = d3.select(this.svgRef.current);
     const scatterPlotGroup = svg.select<SVGGElement>(".scatter-points");
-    const browserZoom = window.devicePixelRatio || 1;
-    const compensatedStrokeWidth = 1.5 / browserZoom;
-    
     scatterPlotGroup.selectAll<SVGGElement, Point>("g").each((pointData, i, nodes) => {
       const group = d3.select(nodes[i]);
       const circle = group.select("circle");
       if (pointData.id === clickedData.id) {
-        circle.attr("fill", "yellow").attr("stroke-width", compensatedStrokeWidth * 2);
+        circle.attr("fill", "yellow").attr("stroke-width", 2);
       } else {
-        circle.attr("fill", "red").attr("stroke-width", compensatedStrokeWidth);
+        circle.attr("fill", "red").attr("stroke-width", 1);
       }
     });
   };
@@ -423,9 +433,7 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
       // Performance optimization: Only update the visual position immediately
       // Don't update parent component on every drag event
       clickedGroup.select("circle").attr("cx", x).attr("cy", y);
-      const browserZoom = window.devicePixelRatio || 1;
-      const compensatedTextOffset = 7 / browserZoom;
-      clickedGroup.select("text").attr("x", x + compensatedTextOffset).attr("y", y - compensatedTextOffset);
+      clickedGroup.select("text").attr("x", x + 5).attr("y", y - 5);
 
       // Performance optimization: Throttle parent component updates
       if (this.dragUpdateTimeout) {
@@ -513,6 +521,43 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
   private dragStartPosition: { x: number; y: number } | null = null; // Track drag start position
   private readonly CLICK_THRESHOLD = 5; // Minimum pixel movement to consider as dragging
 
+  // Transparency mode for landmarks
+  private isTransparentMode = false;
+
+  // Toggle transparency mode
+  private toggleTransparency = (): void => {
+    this.isTransparentMode = !this.isTransparentMode;
+    this.updateLandmarkTransparency();
+  };
+
+  // Update landmark transparency
+  private updateLandmarkTransparency = (): void => {
+    if (!this.svgRef.current) return;
+    
+    const svg = d3.select(this.svgRef.current);
+    const scatterPlotGroup = svg.select<SVGGElement>(".scatter-points");
+    if (scatterPlotGroup.empty()) return;
+    
+    const opacity = this.isTransparentMode ? 0.3 : 1.0;
+    
+    // Update circles
+    scatterPlotGroup.selectAll<SVGCircleElement, Point>("circle")
+      .attr("opacity", opacity);
+    
+    // Update text (make it slightly more visible even in transparent mode)
+    scatterPlotGroup.selectAll<SVGTextElement, Point>("text")
+      .attr("opacity", this.isTransparentMode ? 0.6 : 1.0);
+  };
+
+  // Handle keyboard events
+  private handleKeyDown = (event: KeyboardEvent): void => {
+    // Toggle transparency with 'T' key
+    if (event.key.toLowerCase() === 't' && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      this.toggleTransparency();
+    }
+  };
+
   // Performance optimization: Update cached scales when dimensions change
   private updateCachedScales = (): void => {
     if (!this.svgRef.current) return;
@@ -561,9 +606,9 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
         )}
 
         {/* Right-click hint */}
-        {dataFetched && (
+        {dataFetched && !this.state.hintDismissed && (
           <div style={{
-            position: 'absolute',
+            position: 'absolute', 
             bottom: '10px',
             left: '10px',
             background: 'rgba(0,0,0,0.7)',
@@ -572,9 +617,26 @@ export class SVGViewer extends Component<SVGViewerProps, object> {
             borderRadius: '4px',
             fontSize: '11px',
             zIndex: 1000,
-            opacity: 0.8
+            opacity: 0.8,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
           }}>
-            Right-click to toggle edit/view mode
+            <span>Right-click: edit/view mode | Press 'T': transparency</span>
+            <button 
+              onClick={() => this.setState({ hintDismissed: true })}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'white',
+                cursor: 'pointer',
+                padding: '0',
+                fontSize: '14px',
+                opacity: 0.7
+              }}
+            >
+              ×
+            </button>
           </div>
         )}
 
