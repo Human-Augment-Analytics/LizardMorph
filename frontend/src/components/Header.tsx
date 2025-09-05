@@ -35,14 +35,8 @@ export class Header extends Component<HeaderProps> {
             <p style={HeaderStyles.infoBoxParagraph}>
               In Partnership with Dr. Stroud
             </p>
-            <p style={HeaderStyles.infoBoxParagraph}>
-              Author: Mercedes Quintana
-            </p>
-            <p style={HeaderStyles.infoBoxParagraph}>
-              AI Engineer: Anthony Trevino
-            </p>
             <p style={HeaderStyles.infoBoxItalic}>
-              Georgia Institute of Technology - Spring 2025
+              Georgia Institute of Technology
             </p>
             <a
               href="https://github.com/Human-Augment-Analytics/Lizard-CV-Web-App"
