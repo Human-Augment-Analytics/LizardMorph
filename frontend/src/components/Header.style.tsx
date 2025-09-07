@@ -51,7 +51,7 @@ export class HeaderStyles {
     justifyContent: "space-between",
     alignItems: "center",
     maxWidth: "1200px",
-    margin: "15px 0 0 15px",
+    margin: "0 0 0 15px",
     padding: "0 20px",
     marginRight: "340px",
     gap: "60px",
