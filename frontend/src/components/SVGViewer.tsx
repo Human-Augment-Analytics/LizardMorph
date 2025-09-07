@@ -241,11 +241,18 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           .attr("r", size)
           .attr(
             "fill",
+            this.isOutlineMode ? "none" : (
+              this.props.selectedPoint && d.id === this.props.selectedPoint.id
+                ? "yellow"
+                : "red"
+            )
+          )
+          .attr("stroke", this.isOutlineMode ? (
             this.props.selectedPoint && d.id === this.props.selectedPoint.id
               ? "yellow"
               : "red"
-          )
-          .attr("stroke", "none")
+          ) : "none")
+          .attr("stroke-width", this.isOutlineMode ? "0.5" : "0")
           .attr("data-id", d.id)
           .attr("opacity", this.isTransparentMode ? 0.3 : 1.0)
           .style("cursor", "pointer");
@@ -323,10 +330,22 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       svg
         .selectAll<SVGCircleElement, Point>("circle")
         .attr("fill", (d: Point) => {
+          if (this.isOutlineMode) {
+            return "none";
+          }
           return this.props.selectedPoint && d.id === this.props.selectedPoint.id
             ? "yellow"
             : "red";
         })
+        .attr("stroke", (d: Point) => {
+          if (this.isOutlineMode) {
+            return this.props.selectedPoint && d.id === this.props.selectedPoint.id
+              ? "yellow"
+              : "red";
+          }
+          return "none";
+        })
+        .attr("stroke-width", this.isOutlineMode ? "0.5" : "0")
         .attr("opacity", this.isTransparentMode ? 0.3 : 1.0);
       
       // Update text opacity as well
@@ -531,6 +550,9 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
 
   // Transparency mode for landmarks
   private isTransparentMode = false;
+  
+  // Outline mode for landmarks
+  private isOutlineMode = false;
 
   // Undo functionality - per image history
   private positionHistory: PositionHistory[] = [];
@@ -631,6 +653,12 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     this.updateLandmarkTransparency();
   };
 
+  // Toggle outline mode
+  private toggleOutlineMode = (): void => {
+    this.isOutlineMode = !this.isOutlineMode;
+    this.updateLandmarkOutline();
+  };
+
   // Update landmark transparency
   private updateLandmarkTransparency = (): void => {
     if (!this.svgRef.current) return;
@@ -650,12 +678,41 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       .attr("opacity", this.isTransparentMode ? 0.6 : 1.0);
   };
 
+  // Update landmark outline mode
+  private updateLandmarkOutline = (): void => {
+    if (!this.svgRef.current) return;
+    
+    const svg = d3.select(this.svgRef.current);
+    const scatterPlotGroup = svg.select<SVGGElement>(".scatter-points");
+    if (scatterPlotGroup.empty()) return;
+    
+    // Update circles to show only outline when in outline mode
+    scatterPlotGroup.selectAll<SVGCircleElement, Point>("circle")
+      .attr("fill", this.isOutlineMode ? "none" : (d: Point) => {
+        return this.props.selectedPoint && d.id === this.props.selectedPoint.id
+          ? "yellow"
+          : "red";
+      })
+      .attr("stroke", this.isOutlineMode ? (d: Point) => {
+        return this.props.selectedPoint && d.id === this.props.selectedPoint.id
+          ? "yellow"
+          : "red";
+      } : "none")
+      .attr("stroke-width", this.isOutlineMode ? "0.5" : "0");
+  };
+
   // Handle keyboard events
   private handleKeyDown = (event: KeyboardEvent): void => {
     // Toggle transparency with 'T' key
     if (event.key.toLowerCase() === 't' && !event.ctrlKey && !event.metaKey) {
       event.preventDefault();
       this.toggleTransparency();
+    }
+    
+    // Toggle outline mode with 'O' key
+    if (event.key.toLowerCase() === 'o' && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      this.toggleOutlineMode();
     }
     
     // Undo with Ctrl+Z
@@ -764,7 +821,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
             alignItems: 'center',
             gap: '8px'
           }}>
-            <span>Right-click: edit/view mode | Press 'T': transparency | Ctrl/Cmd+Z: undo</span>
+            <span>Right-click: edit/view mode | Press 'T': transparency | Press 'O': outline | Ctrl/Cmd+Z: undo</span>
             <button 
               onClick={() => this.setState({ hintDismissed: true })}
               style={{
@@ -804,3 +861,4 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     );
   }
 }
+
