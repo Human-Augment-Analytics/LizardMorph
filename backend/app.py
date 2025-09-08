@@ -1344,7 +1344,11 @@ def verify_webhook_signature(payload, signature):
 @cross_origin()
 @track_metrics
 def github_webhook():
-    """GitHub webhook endpoint for auto-deployment"""
+    """GitHub webhook endpoint for auto-deployment - PAUSED"""
+    # WEBHOOK PAUSED - Return immediately without processing
+    logger.info("GitHub webhook received but is currently paused")
+    return jsonify({"status": "paused", "message": "Webhook is currently paused"}), 200
+    
     try:
         # Get the raw payload
         payload = request.get_data()

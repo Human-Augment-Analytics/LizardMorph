@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:version": "npm version patch && tsc -b && vite build",
+    "build:timestamp": "tsc -b && vite build --mode production",
     "lint": "eslint .",
     "preview": "vite preview"
   },
