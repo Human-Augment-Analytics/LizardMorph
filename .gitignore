@@ -49,3 +49,11 @@ Thumbs.db
 
 # env files
 .env*
+
+# key & cert files
+*.key
+*.crt
+*.pem
+
+# Monitoring configuration files with sensitive data
+monitoring/web.yml
