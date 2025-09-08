@@ -903,7 +903,6 @@ export class MainView extends Component<MainProps, MainState> {
               dataLoading={this.state.dataLoading}
               onVersionChange={(imageURL: string) => {
                 this.setState({
-                  needsScaling: true,
                   currentImageURL: imageURL,
                 });
               }}
