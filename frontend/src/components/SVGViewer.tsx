@@ -77,13 +77,20 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   }
 
   componentDidUpdate(prevProps: SVGViewerProps) {
+    // Handle image URL changes without full re-render to preserve zoom
+    if (prevProps.currentImageURL !== this.props.currentImageURL && 
+        this.props.currentImageURL && 
+        this.svgRef.current) {
+      this.updateImageSource();
+      return;
+    }
+
     if (
       this.props.currentImageURL &&
       this.props.imageWidth &&
       this.props.imageHeight &&
       this.props.originalScatterData.length > 0 &&
-      (prevProps.currentImageURL !== this.props.currentImageURL ||
-        prevProps.imageWidth !== this.props.imageWidth ||
+      (prevProps.imageWidth !== this.props.imageWidth ||
         prevProps.imageHeight !== this.props.imageHeight ||
         this.props.needsScaling)
     ) {
@@ -122,6 +129,27 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   private handleContextMenu = (event: React.MouseEvent): void => {
     event.preventDefault(); // Prevent default context menu
     this.props.onToggleEditMode();
+  };
+
+  // Update only the image source without re-rendering the entire SVG
+  private updateImageSource = (): void => {
+    if (!this.svgRef.current) return;
+    
+    const svg = d3.select(this.svgRef.current);
+    const imageElement = svg.select(".background-img");
+    
+    if (!imageElement.empty()) {
+      imageElement.attr("href", this.props.currentImageURL);
+    }
+    
+    // Apply the stored zoom transform to preserve zoom state in edit mode
+    if (this.props.zoomTransform && this.props.zoomTransform !== d3.zoomIdentity) {
+      const zoomContainer = svg.select(".zoom-container");
+      if (!zoomContainer.empty()) {
+        const transformString = this.props.zoomTransform.toString();
+        zoomContainer.attr("transform", transformString);
+      }
+    }
   };
 
   private readonly renderSVG = (): void => {
@@ -241,7 +269,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           .attr("r", size)
           .attr(
             "fill",
-            this.isOutlineMode ? "none" : (
+            this.isOutlineMode ? "transparent" : (
               this.props.selectedPoint && d.id === this.props.selectedPoint.id
                 ? "yellow"
                 : "red"
@@ -255,7 +283,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           .attr("stroke-width", this.isOutlineMode ? "0.5" : "0")
           .attr("data-id", d.id)
           .attr("opacity", this.isTransparentMode ? 0.3 : 1.0)
-          .style("cursor", "pointer");
+          .style("cursor", "pointer")
+          .style("pointer-events", "all");
 
         // Add the number label
         g.append("text")
@@ -316,10 +345,15 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       // Always apply the stored transform to preserve zoom state
       if (
         this.props.zoomTransform &&
-        this.props.zoomTransform !== d3.zoomIdentity &&
-        !this.props.isEditMode
+        this.props.zoomTransform !== d3.zoomIdentity
       ) {
-        svg.call(zoom.transform, this.props.zoomTransform);
+        if (!this.props.isEditMode) {
+          // In view mode, use the zoom behavior to apply transform
+          svg.call(zoom.transform, this.props.zoomTransform);
+        } else {
+          // In edit mode, directly apply transform to zoom container
+          zoomContainer.attr("transform", this.props.zoomTransform.toString());
+        }
       }
     }
   };
@@ -331,7 +365,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         .selectAll<SVGCircleElement, Point>("circle")
         .attr("fill", (d: Point) => {
           if (this.isOutlineMode) {
-            return "none";
+            return "transparent";
           }
           return this.props.selectedPoint && d.id === this.props.selectedPoint.id
             ? "yellow"
@@ -376,9 +410,19 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         const group = d3.select(nodes[i]);
         const circle = group.select("circle");
         if (pointData.id === d.id) {
-          circle.attr("fill", "yellow");
+          // Preserve outline mode when updating selection
+          if (this.isOutlineMode) {
+            circle.attr("fill", "transparent").attr("stroke", "yellow");
+          } else {
+            circle.attr("fill", "yellow").attr("stroke", "none");
+          }
         } else {
-          circle.attr("fill", "red");
+          // Preserve outline mode when updating selection
+          if (this.isOutlineMode) {
+            circle.attr("fill", "transparent").attr("stroke", "red");
+          } else {
+            circle.attr("fill", "red").attr("stroke", "none");
+          }
         }
       });
       return; // Don't start dragging
@@ -409,9 +453,19 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       const group = d3.select(nodes[i]);
       const circle = group.select("circle");
       if (pointData.id === clickedData.id) {
-        circle.attr("fill", "yellow");
+        // Preserve outline mode when updating selection
+        if (this.isOutlineMode) {
+          circle.attr("fill", "transparent").attr("stroke", "yellow");
+        } else {
+          circle.attr("fill", "yellow").attr("stroke", "none");
+        }
       } else {
-        circle.attr("fill", "red");
+        // Preserve outline mode when updating selection
+        if (this.isOutlineMode) {
+          circle.attr("fill", "transparent").attr("stroke", "red");
+        } else {
+          circle.attr("fill", "red").attr("stroke", "none");
+        }
       }
     });
   };
@@ -688,7 +742,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     
     // Update circles to show only outline when in outline mode
     scatterPlotGroup.selectAll<SVGCircleElement, Point>("circle")
-      .attr("fill", this.isOutlineMode ? "none" : (d: Point) => {
+      .attr("fill", this.isOutlineMode ? "transparent" : (d: Point) => {
         return this.props.selectedPoint && d.id === this.props.selectedPoint.id
           ? "yellow"
           : "red";
