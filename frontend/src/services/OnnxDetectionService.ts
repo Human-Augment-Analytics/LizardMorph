@@ -162,11 +162,6 @@ export class OnnxDetectionService {
       // Get output tensor (YOLOv5 output format)
       const output = results[this.session!.outputNames[0]];
 
-      console.log('Output names:', this.session!.outputNames);
-      console.log('Output shape:', output.dims);
-      console.log('Output data length:', output.data.length);
-      console.log('First 20 values:', Array.from(output.data.slice(0, 20)));
-
       // Process detections
       const detections = this.processOutput(
         output,

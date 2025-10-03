@@ -115,7 +115,7 @@ export const YoloTestPage: React.FC = () => {
   };
 
   // Memory info not available for ONNX Runtime
-  const memoryInfo = { numTensors: 0, numBytes: 0 };
+  // const memoryInfo = { numTensors: 0, numBytes: 0 };
 
   return (
     <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto', color: '#e0e0e0' }}>
@@ -327,3 +327,4 @@ export const YoloTestPage: React.FC = () => {
     </div>
   );
 };
+ 
