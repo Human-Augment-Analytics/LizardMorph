@@ -57,3 +57,5 @@ Thumbs.db
 
 # Monitoring configuration files with sensitive data
 monitoring/web.yml
+*.onnx
+*.pt

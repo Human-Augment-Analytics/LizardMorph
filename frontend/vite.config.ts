@@ -2,6 +2,8 @@ import { fileURLToPath, URL } from 'node:url';
 
 import { defineConfig, loadEnv } from 'vite';
 import plugin from '@vitejs/plugin-react';
+import wasm from 'vite-plugin-wasm';
+import topLevelAwait from 'vite-plugin-top-level-await';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -10,8 +12,12 @@ export default defineConfig(({ mode }) => {
     const apiPort = env.VITE_API_PORT || env.API_PORT || '5000';
     const baseURL = env.VITE_BASE_URL || env.BASE_URL || '/';
     return {
-        base: baseURL, 
-        plugins: [plugin()],
+        base: baseURL,
+        plugins: [
+            wasm(),
+            topLevelAwait(),
+            plugin(),
+        ],
         resolve: {
             alias: {
                 '@': fileURLToPath(new URL('./src', import.meta.url))
@@ -26,7 +32,14 @@ export default defineConfig(({ mode }) => {
                 }
             },
             allowedHosts: ['localhost', '127.0.0.1', '0.0.0.0', env.VITE_ALLOWED_HOSTS],
-        }
+            headers: {
+                'Cross-Origin-Opener-Policy': 'same-origin',
+                'Cross-Origin-Embedder-Policy': 'require-corp',
+            },
+        },
+        optimizeDeps: {
+            exclude: ['onnxruntime-web'],
+        },
     }
 });
 
