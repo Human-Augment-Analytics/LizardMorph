@@ -40,6 +40,15 @@ export default defineConfig(({ mode }) => {
         optimizeDeps: {
             exclude: ['onnxruntime-web'],
         },
+        assetsInclude: ['**/*.wasm'],
+        build: {
+            rollupOptions: {
+                external: (id) => {
+                    // Don't bundle WASM files, serve them as static assets
+                    return id.includes('.wasm');
+                }
+            }
+        },
     }
 });
 

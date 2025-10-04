@@ -51,22 +51,59 @@ export class OnnxDetectionService {
       this.isInitializing = true;
       console.log('Initializing ONNX Runtime...');
 
-      // Set WASM paths - use absolute path to public folder
-      ort.env.wasm.wasmPaths = {
-        'ort-wasm-simd-threaded.wasm': '/ort-wasm-simd-threaded.wasm',
-        'ort-wasm-simd.wasm': '/ort-wasm-simd.wasm',
-        'ort-wasm.wasm': '/ort-wasm.wasm',
-        'ort-wasm-threaded.wasm': '/ort-wasm-threaded.wasm',
-      };
+      // Configure ONNX Runtime environment - use minimal configuration
       ort.env.wasm.numThreads = 1;
+      ort.env.wasm.simd = false;
+      ort.env.wasm.proxy = false;
+      
+      // Set WASM paths - ensure proper path resolution
+      if (typeof window !== 'undefined') {
+        const baseUrl = window.location.origin;
+        ort.env.wasm.wasmPaths = baseUrl + '/';
+        console.log('WASM paths set to:', baseUrl + '/');
+      }
 
       const defaultModelUrl = modelUrl || '/models/yolov5n-seg.onnx';
       console.log(`Loading ONNX model from ${defaultModelUrl}...`);
 
-      this.session = await ort.InferenceSession.create(defaultModelUrl, {
-        executionProviders: ['wasm'],
-        graphOptimizationLevel: 'all',
-      });
+      // Try different execution provider configurations in order of preference
+      const executionProviders = ['webgl', 'wasm', 'cpu'] as const;
+      const sessionOptions = {
+        graphOptimizationLevel: 'all' as const,
+        enableCpuMemArena: false,
+        enableMemPattern: false,
+        enableMemReuse: false,
+      };
+
+      let sessionCreated = false;
+      for (const provider of executionProviders) {
+        try {
+          const options = { ...sessionOptions, executionProviders: [provider] };
+          this.session = await ort.InferenceSession.create(defaultModelUrl, options);
+          console.log(`Successfully loaded model with ${provider} backend`);
+          sessionCreated = true;
+          break;
+        } catch (error) {
+          console.warn(`${provider} execution provider failed:`, error);
+          if (provider === 'webgl') {
+            // Try WASM with different configurations
+            try {
+              ort.env.wasm.simd = true;
+              const wasmOptions = { ...sessionOptions, executionProviders: ['wasm'] as const };
+              this.session = await ort.InferenceSession.create(defaultModelUrl, wasmOptions);
+              console.log('Successfully loaded model with SIMD WASM backend');
+              sessionCreated = true;
+              break;
+            } catch (wasmError) {
+              console.warn('SIMD WASM also failed:', wasmError);
+            }
+          }
+        }
+      }
+
+      if (!sessionCreated || !this.session) {
+        throw new Error('Failed to initialize model with any execution provider');
+      }
 
       console.log('Model inputs:', this.session.inputNames);
       console.log('Model outputs:', this.session.outputNames);
@@ -90,6 +127,13 @@ export class OnnxDetectionService {
    */
   static isReady(): boolean {
     return this.isInitialized && this.session !== null;
+  }
+
+  /**
+   * Get all available class names
+   */
+  static getClassNames(): string[] {
+    return [...this.classNames];
   }
 
   /**
@@ -142,7 +186,7 @@ export class OnnxDetectionService {
    */
   static async detectObjects(
     imageElement: HTMLImageElement | HTMLCanvasElement,
-    scoreThreshold = 0.5,
+    scoreThreshold = 0.25, // Lowered default threshold for better detection
     iouThreshold = 0.45
   ): Promise<Detection[]> {
     if (!this.isReady()) {
@@ -206,6 +250,8 @@ export class OnnxDetectionService {
 
     // Parse detections - format is [1, num_detections, 117]
     let maxConfidenceSeen = 0;
+    const allDetections = []; // Track all detections for debugging
+    
     for (let i = 0; i < numDetections; i++) {
       const offset = i * valuesPerDetection;
 
@@ -231,6 +277,15 @@ export class OnnxDetectionService {
         maxConfidenceSeen = maxScore;
       }
 
+      // Store all detections above a very low threshold for debugging
+      if (maxScore > 0.01) {
+        allDetections.push({
+          class: this.classNames[maxClassId],
+          score: maxScore,
+          classId: maxClassId
+        });
+      }
+
       // Filter by threshold
       if (maxScore > scoreThreshold) {
         boxes.push([x, y, w, h]);
@@ -241,9 +296,29 @@ export class OnnxDetectionService {
 
     console.log(`Found ${boxes.length} detections above threshold ${scoreThreshold}`);
     console.log(`Max confidence seen: ${maxConfidenceSeen}`);
+    console.log(`Total detections above 0.01 threshold: ${allDetections.length}`);
+
+    // Show top detections for debugging
+    const topDetections = allDetections
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+    
+    console.log('Top 10 detections (any confidence):', topDetections);
+
+    // Look for flower-related classes specifically
+    const flowerRelated = allDetections.filter(d => 
+      d.class.toLowerCase().includes('plant') || 
+      d.class.toLowerCase().includes('flower') ||
+      d.class.toLowerCase().includes('vase') ||
+      d.class.toLowerCase().includes('potted')
+    );
+    
+    if (flowerRelated.length > 0) {
+      console.log('Flower-related detections:', flowerRelated);
+    }
 
     if (boxes.length > 0) {
-      console.log('Sample detection:', {
+      console.log('Sample detection above threshold:', {
         box: boxes[0],
         score: scores[0],
         class: this.classNames[classIds[0]]

@@ -9,7 +9,7 @@ export const YoloTestPage: React.FC = () => {
   const [detections, setDetections] = useState<Detection[]>([]);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [processingTime, setProcessingTime] = useState<number | null>(null);
-  const [scoreThreshold, setScoreThreshold] = useState(0.5);
+  const [scoreThreshold, setScoreThreshold] = useState(0.25);
   const [iouThreshold, setIouThreshold] = useState(0.45);
   const [modelUrl, setModelUrl] = useState('/models/yolov5n-seg.onnx');
 
@@ -175,6 +175,28 @@ export const YoloTestPage: React.FC = () => {
       }}>
         <strong>Model Status: </strong>
         {isLoading ? 'Loading...' : isModelLoaded ? 'Ready ✓' : 'Not Loaded'}
+        
+        {isModelLoaded && (
+          <div style={{ marginTop: '10px' }}>
+            <details style={{ cursor: 'pointer' }}>
+              <summary style={{ color: '#e0e0e0' }}>
+                Show Available Classes (80 total)
+              </summary>
+              <div style={{ 
+                marginTop: '10px', 
+                padding: '10px', 
+                backgroundColor: '#333', 
+                borderRadius: '4px',
+                maxHeight: '200px',
+                overflowY: 'auto',
+                fontSize: '12px',
+                color: '#e0e0e0'
+              }}>
+                {OnnxDetectionService.getClassNames().join(', ')}
+              </div>
+            </details>
+          </div>
+        )}
       </div>
 
       {/* Error display */}
