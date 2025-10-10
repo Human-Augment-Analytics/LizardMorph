@@ -9,29 +9,32 @@ export const YoloTestPage: React.FC = () => {
   const [detections, setDetections] = useState<Detection[]>([]);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [processingTime, setProcessingTime] = useState<number | null>(null);
-  const [scoreThreshold, setScoreThreshold] = useState(0.25);
+  const [scoreThreshold, setScoreThreshold] = useState(0.1);
   const [iouThreshold, setIouThreshold] = useState(0.45);
-  const [modelUrl, setModelUrl] = useState('/models/yolov5n-seg.onnx');
+  const modelUrl = '/models/best.onnx';
 
   const imageRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleLoadModel = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      await OnnxDetectionService.initialize(modelUrl);
-      setIsModelLoaded(true);
-    } catch (err) {
-      setError(`Failed to initialize model: ${err}`);
-      console.error(err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   useEffect(() => {
+    // Auto-load model on component mount
+    const loadModel = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        await OnnxDetectionService.initialize(modelUrl);
+        setIsModelLoaded(true);
+      } catch (err) {
+        setError(`Failed to initialize model: ${err}`);
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadModel();
+
     return () => {
       OnnxDetectionService.dispose();
     };
@@ -87,12 +90,24 @@ export const YoloTestPage: React.FC = () => {
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;
 
+    console.log('Drawing on canvas:', {
+      canvasSize: { width: canvas.width, height: canvas.height },
+      imageSize: { width: img.naturalWidth, height: img.naturalHeight },
+      detectionsCount: detections.length
+    });
+
     // Draw image
     ctx.drawImage(img, 0, 0);
 
     // Draw detections
-    detections.forEach((detection) => {
+    detections.forEach((detection, idx) => {
       const [x, y, width, height] = detection.bbox;
+
+      console.log(`Drawing detection ${idx}:`, {
+        bbox: { x, y, width, height },
+        class: detection.class,
+        score: detection.score
+      });
 
       // Draw bounding box
       ctx.strokeStyle = '#00FF00';
@@ -119,50 +134,7 @@ export const YoloTestPage: React.FC = () => {
 
   return (
     <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto', color: '#e0e0e0' }}>
-      <h1 style={{ color: '#ffffff' }}>YOLOv5 Object Detection Test</h1>
-
-      {/* Model URL input */}
-      {!isModelLoaded && (
-        <div style={{ marginBottom: '20px' }}>
-          <div style={{ marginBottom: '10px' }}>
-            <label style={{ display: 'block', marginBottom: '5px' }}>
-              <strong>Model URL:</strong>
-            </label>
-            <input
-              type="text"
-              value={modelUrl}
-              onChange={(e) => setModelUrl(e.target.value)}
-              placeholder="Path to model.json"
-              style={{
-                width: '400px',
-                padding: '8px',
-                marginRight: '10px',
-                border: '1px solid #ccc',
-                borderRadius: '4px'
-              }}
-            />
-            <button
-              onClick={handleLoadModel}
-              disabled={isLoading}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: isLoading ? '#6c757d' : '#28a745',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: isLoading ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {isLoading ? 'Loading Model...' : 'Load Model'}
-            </button>
-          </div>
-          <small style={{ color: '#a0a0a0' }}>
-            Enter the URL to your ONNX model file (.onnx)
-            <br />
-            <strong>Default:</strong> /models/yolov5n-seg.onnx
-          </small>
-        </div>
-      )}
+      <h1 style={{ color: '#ffffff' }}>Lizard Detection (YOLOv5)</h1>
 
       {/* Status */}
       <div style={{
@@ -180,7 +152,7 @@ export const YoloTestPage: React.FC = () => {
           <div style={{ marginTop: '10px' }}>
             <details style={{ cursor: 'pointer' }}>
               <summary style={{ color: '#e0e0e0' }}>
-                Show Available Classes (80 total)
+                Show Available Classes ({OnnxDetectionService.getClassNames().length} total)
               </summary>
               <div style={{ 
                 marginTop: '10px', 

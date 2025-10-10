@@ -15,18 +15,8 @@ export class OnnxDetectionService {
 
   // YOLOv5 model configuration
   private static readonly MODEL_INPUT_SIZE = 640;
-  private static readonly DEFAULT_CLASS_NAMES = [
-    'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat',
-    'traffic light', 'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat',
-    'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'backpack',
-    'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball',
-    'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket',
-    'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple',
-    'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair',
-    'couch', 'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse',
-    'remote', 'keyboard', 'cell phone', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator',
-    'book', 'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush'
-  ];
+  // Lizard body part detection model - multiple classes
+  private static readonly DEFAULT_CLASS_NAMES = ['Finger', 'Toe', 'Ruler'];
 
   /**
    * Initialize ONNX Runtime and load the model
@@ -63,7 +53,7 @@ export class OnnxDetectionService {
         console.log('WASM paths set to:', baseUrl + '/');
       }
 
-      const defaultModelUrl = modelUrl || '/models/yolov5n-seg.onnx';
+      const defaultModelUrl = modelUrl || '/models/best.onnx';
       console.log(`Loading ONNX model from ${defaultModelUrl}...`);
 
       // Try different execution provider configurations in order of preference
@@ -137,12 +127,15 @@ export class OnnxDetectionService {
   }
 
   /**
-   * Preprocess image to model input format
+   * Preprocess image to model input format with letterboxing
    */
   private static preprocessImage(imageElement: HTMLImageElement | HTMLCanvasElement): {
     tensor: ort.Tensor;
     originalWidth: number;
     originalHeight: number;
+    padX: number;
+    padY: number;
+    scale: number;
   } {
     // Create canvas for image processing
     const canvas = document.createElement('canvas');
@@ -150,31 +143,56 @@ export class OnnxDetectionService {
     canvas.height = this.MODEL_INPUT_SIZE;
     const ctx = canvas.getContext('2d')!;
 
-    // Draw and resize image
+    // Get original dimensions
     const originalWidth = imageElement.width || (imageElement as HTMLImageElement).naturalWidth;
     const originalHeight = imageElement.height || (imageElement as HTMLImageElement).naturalHeight;
 
-    ctx.drawImage(imageElement, 0, 0, this.MODEL_INPUT_SIZE, this.MODEL_INPUT_SIZE);
+    // Calculate scaling factor (letterboxing - maintain aspect ratio)
+    const scale = Math.min(
+      this.MODEL_INPUT_SIZE / originalWidth,
+      this.MODEL_INPUT_SIZE / originalHeight
+    );
+    
+    const scaledWidth = originalWidth * scale;
+    const scaledHeight = originalHeight * scale;
+    
+    // Calculate padding to center the image
+    const padX = (this.MODEL_INPUT_SIZE - scaledWidth) / 2;
+    const padY = (this.MODEL_INPUT_SIZE - scaledHeight) / 2;
+
+    // Fill with gray background (typical for YOLOv5 letterboxing)
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(0, 0, this.MODEL_INPUT_SIZE, this.MODEL_INPUT_SIZE);
+
+    // Draw letterboxed image
+    ctx.drawImage(imageElement, padX, padY, scaledWidth, scaledHeight);
 
     // Get image data
     const imageData = ctx.getImageData(0, 0, this.MODEL_INPUT_SIZE, this.MODEL_INPUT_SIZE);
     const pixels = imageData.data;
 
-    // Convert to NCHW format and normalize to [0, 1]
-    const red: number[] = [];
-    const green: number[] = [];
-    const blue: number[] = [];
-
+    // Convert to grayscale (matching training preprocessing)
+    // Formula: grayscale = 0.299*R + 0.587*G + 0.114*B
+    const grayscale: number[] = [];
     for (let i = 0; i < pixels.length; i += 4) {
-      red.push(pixels[i] / 255.0);
-      green.push(pixels[i + 1] / 255.0);
-      blue.push(pixels[i + 2] / 255.0);
+      const gray = (0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2]) / 255.0;
+      grayscale.push(gray);
     }
 
-    const input = Float32Array.from([...red, ...green, ...blue]);
+    // Replicate grayscale to 3 channels for RGB model input
+    const input = Float32Array.from([...grayscale, ...grayscale, ...grayscale]);
     const tensor = new ort.Tensor('float32', input, [1, 3, this.MODEL_INPUT_SIZE, this.MODEL_INPUT_SIZE]);
 
-    return { tensor, originalWidth, originalHeight };
+    console.log('Letterbox preprocessing:', {
+      originalSize: `${originalWidth}x${originalHeight}`,
+      scale: scale.toFixed(3),
+      scaledSize: `${scaledWidth.toFixed(1)}x${scaledHeight.toFixed(1)}`,
+      padding: `x=${padX.toFixed(1)}, y=${padY.toFixed(1)}`,
+      imageContentArea: `y=${padY.toFixed(1)} to y=${(padY + scaledHeight).toFixed(1)}`,
+      colorMode: 'grayscale (replicated to 3 channels)'
+    });
+
+    return { tensor, originalWidth, originalHeight, padX, padY, scale };
   }
 
   /**
@@ -195,7 +213,7 @@ export class OnnxDetectionService {
 
     try {
       // Preprocess image
-      const { tensor, originalWidth, originalHeight } = this.preprocessImage(imageElement);
+      const { tensor, originalWidth, originalHeight, padX, padY, scale } = this.preprocessImage(imageElement);
 
       // Run inference
       const feeds: Record<string, ort.Tensor> = {};
@@ -211,6 +229,9 @@ export class OnnxDetectionService {
         output,
         originalWidth,
         originalHeight,
+        padX,
+        padY,
+        scale,
         scoreThreshold,
         iouThreshold
       );
@@ -229,47 +250,92 @@ export class OnnxDetectionService {
     output: ort.Tensor,
     originalWidth: number,
     originalHeight: number,
+    padX: number,
+    padY: number,
+    scale: number,
     scoreThreshold: number,
     iouThreshold: number
   ): Detection[] {
     const data = output.data as Float32Array;
     const dims = output.dims;
 
-    // YOLOv5 output format: [batch, num_detections, values_per_detection]
-    // For YOLOv5n-seg: [1, 25200, 117] where 117 = 4 bbox + 1 objectness + 80 classes + 32 mask
-    const numDetections = dims[1];
-    const valuesPerDetection = dims[2];
-    const numClasses = 80;
+    // YOLOv5 output format can be either:
+    // [batch, num_detections, values_per_detection] or [batch, values_per_detection, num_detections]
+    // We need to detect which format and handle accordingly
+    let numDetections: number;
+    let valuesPerDetection: number;
+    
+    // If dims[1] is small (like 6-10), it's likely [batch, values, detections] - transposed
+    if (dims[1] < dims[2]) {
+      // Transposed format: [1, values, detections]
+      valuesPerDetection = dims[1];
+      numDetections = dims[2];
+      console.log('Detected transposed output format');
+    } else {
+      // Standard format: [1, detections, values]
+      numDetections = dims[1];
+      valuesPerDetection = dims[2];
+      console.log('Detected standard output format');
+    }
+    
+    const numClasses = valuesPerDetection - 5; // 5 = 4 bbox coords + 1 objectness
 
     console.log(`Processing ${numDetections} detections with ${valuesPerDetection} values each`);
+    console.log(`Output shape: [${dims.join(', ')}], Calculated classes: ${numClasses}`);
 
     const detections: Detection[] = [];
     const boxes: number[][] = [];
     const scores: number[] = [];
     const classIds: number[] = [];
 
-    // Parse detections - format is [1, num_detections, 117]
+    // Parse detections
     let maxConfidenceSeen = 0;
     const allDetections = []; // Track all detections for debugging
+    let debugLogged = false; // Flag to log first detection for debugging
+    const isTransposed = dims[1] < dims[2];
     
     for (let i = 0; i < numDetections; i++) {
-      const offset = i * valuesPerDetection;
+      // Access data based on format
+      // Standard: data[i * valuesPerDetection + j]
+      // Transposed: data[j * numDetections + i]
+      const getValue = (valueIndex: number) => {
+        return isTransposed 
+          ? data[valueIndex * numDetections + i]
+          : data[i * valuesPerDetection + valueIndex];
+      };
 
       // Extract bbox (center x, center y, width, height)
-      const x = data[offset];
-      const y = data[offset + 1];
-      const w = data[offset + 2];
-      const h = data[offset + 3];
+      const x = getValue(0);
+      const y = getValue(1);
+      const w = getValue(2);
+      const h = getValue(3);
 
-      // Extract class scores (positions 4-83, no separate objectness for this model)
+      // YOLOv5 format: [x, y, w, h, objectness, class1, class2, ...]
+      // Extract objectness score and apply sigmoid
+      const objectness = this.sigmoid(getValue(4));
+      
+      // Extract class scores and apply sigmoid
       let maxScore = 0;
       let maxClassId = 0;
       for (let c = 0; c < numClasses; c++) {
-        const classScore = data[offset + 4 + c];
-        if (classScore > maxScore) {
-          maxScore = classScore;
+        const classScore = this.sigmoid(getValue(5 + c));
+        const finalScore = objectness * classScore; // Multiply objectness with class score
+        if (finalScore > maxScore) {
+          maxScore = finalScore;
           maxClassId = c;
         }
+      }
+
+      // Log first high-confidence detection for debugging
+      if (!debugLogged && objectness > 0.5) {
+        console.log('First high-confidence detection:', {
+          objectness: objectness.toFixed(4),
+          rawObjectness: getValue(4).toFixed(4),
+          maxScore: maxScore.toFixed(4),
+          bbox: [x, y, w, h],
+          isTransposed
+        });
+        debugLogged = true;
       }
 
       // Track max confidence for debugging
@@ -280,7 +346,7 @@ export class OnnxDetectionService {
       // Store all detections above a very low threshold for debugging
       if (maxScore > 0.01) {
         allDetections.push({
-          class: this.classNames[maxClassId],
+          class: this.classNames[maxClassId] || `class_${maxClassId}`,
           score: maxScore,
           classId: maxClassId
         });
@@ -305,23 +371,23 @@ export class OnnxDetectionService {
     
     console.log('Top 10 detections (any confidence):', topDetections);
 
-    // Look for flower-related classes specifically
-    const flowerRelated = allDetections.filter(d => 
-      d.class.toLowerCase().includes('plant') || 
-      d.class.toLowerCase().includes('flower') ||
-      d.class.toLowerCase().includes('vase') ||
-      d.class.toLowerCase().includes('potted')
+    // Look for lizard detections specifically
+    const lizardDetections = allDetections.filter(d => 
+      d.class && d.class.toLowerCase().includes('lizard')
     );
     
-    if (flowerRelated.length > 0) {
-      console.log('Flower-related detections:', flowerRelated);
+    if (lizardDetections.length > 0) {
+      console.log('Lizard detections found:', lizardDetections);
     }
 
     if (boxes.length > 0) {
       console.log('Sample detection above threshold:', {
         box: boxes[0],
+        boxValues: `[x=${boxes[0][0].toFixed(2)}, y=${boxes[0][1].toFixed(2)}, w=${boxes[0][2].toFixed(2)}, h=${boxes[0][3].toFixed(2)}]`,
         score: scores[0],
-        class: this.classNames[classIds[0]]
+        class: this.classNames[classIds[0]],
+        modelInputSize: this.MODEL_INPUT_SIZE,
+        originalSize: `${originalWidth}x${originalHeight}`
       });
     }
 
@@ -331,20 +397,61 @@ export class OnnxDetectionService {
 
     for (const idx of selectedIndices) {
       const box = boxes[idx];
-      // Convert from center format (x, y, w, h) to corner format and scale to original size
-      const scaleX = originalWidth / this.MODEL_INPUT_SIZE;
-      const scaleY = originalHeight / this.MODEL_INPUT_SIZE;
+      
+      // Try different coordinate interpretations
+      // Option 1: Model outputs are already at original image scale
+      let x, y, width, height;
+      
+      // Check if coordinates look like they're at original scale
+      const isOriginalScale = box[0] < originalWidth && box[1] < originalHeight;
+      
+      if (isOriginalScale) {
+        console.log('Using original scale coordinates');
+        // Direct use - coordinates are already at original image scale
+        x = box[0] - box[2] / 2;
+        y = box[1] - box[3] / 2;
+        width = box[2];
+        height = box[3];
+      } else {
+        console.log('Using 640x640 scale coordinates with letterbox conversion');
+        // Original letterbox conversion
+        const centerX640 = box[0];
+        const centerY640 = box[1];
+        const width640 = box[2];
+        const height640 = box[3];
+        
+        // Remove letterbox padding
+        const centerXNoPad = centerX640 - padX;
+        const centerYNoPad = centerY640 - padY;
+        
+        // Scale back to original image size
+        const centerX = centerXNoPad / scale;
+        const centerY = centerYNoPad / scale;
+        width = width640 / scale;
+        height = height640 / scale;
+        
+        // Convert from center format to top-left corner format
+        x = centerX - width / 2;
+        y = centerY - height / 2;
+      }
 
-      const x = (box[0] - box[2] / 2) * scaleX;
-      const y = (box[1] - box[3] / 2) * scaleY;
-      const width = box[2] * scaleX;
-      const height = box[3] * scaleY;
-
-      detections.push({
+      const detection = {
         bbox: [x, y, width, height],
         class: this.classNames[classIds[idx]] || `class_${classIds[idx]}`,
         score: scores[idx],
+      };
+
+      console.log('Final detection:', {
+        rawBox: `[cx=${box[0].toFixed(1)}, cy=${box[1].toFixed(1)}, w=${box[2].toFixed(1)}, h=${box[3].toFixed(1)}]`,
+        coordinateMode: isOriginalScale ? 'original-scale' : '640x640-letterbox',
+        originalSize: `${originalWidth}x${originalHeight}`,
+        finalBbox: `[x=${x.toFixed(1)}, y=${y.toFixed(1)}, w=${width.toFixed(1)}, h=${height.toFixed(1)}]`,
+        percentOfImage: `x=${(x/originalWidth*100).toFixed(1)}%, y=${(y/originalHeight*100).toFixed(1)}%, w=${(width/originalWidth*100).toFixed(1)}%, h=${(height/originalHeight*100).toFixed(1)}%`,
+        class: detection.class,
+        score: detection.score
       });
+
+      detections.push(detection);
     }
 
     // Sort by area (larger objects first)
@@ -355,6 +462,13 @@ export class OnnxDetectionService {
     });
 
     return detections;
+  }
+
+  /**
+   * Sigmoid activation function
+   */
+  private static sigmoid(x: number): number {
+    return 1 / (1 + Math.exp(-x));
   }
 
   /**
