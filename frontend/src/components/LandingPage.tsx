@@ -209,6 +209,30 @@ export const LandingPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Lizard Detection */}
+        <div
+          style={{
+            ...LandingPageStyles.optionCard,
+            ...(hoveredCard === "lizard-detection" ? LandingPageStyles.optionCardHover : {}),
+          }}
+          onClick={() => navigate('/lizard-detection')}
+          onMouseEnter={() => handleMouseEnter("lizard-detection")}
+          onMouseLeave={handleMouseLeave}
+        >
+          <div style={LandingPageStyles.cardContent}>
+            <div style={{
+              ...LandingPageStyles.icon,
+              ...(hoveredCard === "lizard-detection" ? LandingPageStyles.iconHover : {})
+            }}>
+              🔍
+            </div>
+            <h3 style={LandingPageStyles.optionTitle}>Lizard Detection</h3>
+            <p style={LandingPageStyles.optionDescription}>
+              Detect lizard toepads with AI-powered bounding boxes
+            </p>
+          </div>
+        </div>
+
         {/* Custom Model - Disabled */}
         <div
           style={{

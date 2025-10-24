@@ -20,6 +20,9 @@ import psutil
 import threading
 import time
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+import subprocess
+import tempfile
+import os
 
 # Load ENV variables
 load_dotenv()
@@ -1454,6 +1457,175 @@ def github_webhook():
     except Exception as e:
         logger.error(f"Error processing webhook: {str(e)}", exc_info=True)
         return jsonify({"error": f"Webhook processing error: {str(e)}"}), 500
+
+
+@app.route("/api/preprocess-image", methods=["POST"])
+@cross_origin()
+@track_metrics
+def preprocess_image():
+    """Preprocess image using the same pipeline as detect_lizard_toepads.py"""
+    try:
+        if 'image' not in request.files:
+            return jsonify({"error": "No image file provided"}), 400
+        
+        file = request.files['image']
+        if file.filename == '':
+            return jsonify({"error": "No image file selected"}), 400
+        
+        # Create temporary file for the uploaded image
+        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_input:
+            file.save(temp_input.name)
+            temp_input_path = temp_input.name
+        
+        try:
+            # Import the preprocessing function from detect_lizard_toepads.py
+            import sys
+            import os
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            sys.path.append(project_root)
+            
+            from detect_lizard_toepads import preprocess_image_for_inference
+            import base64
+            from io import BytesIO
+            
+            # Preprocess image using the same function as the detection script
+            processed_img, new_width, new_height, scale = preprocess_image_for_inference(
+                temp_input_path, target_size=1024
+            )
+            
+            # Convert processed image to base64
+            buffer = BytesIO()
+            processed_img.save(buffer, format='JPEG')
+            processed_image_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            
+            # Get original image dimensions
+            from PIL import Image
+            with Image.open(temp_input_path) as original_img:
+                original_width, original_height = original_img.size
+            
+            return jsonify({
+                "status": "success",
+                "processed_image": processed_image_b64,
+                "original_width": original_width,
+                "original_height": original_height,
+                "processed_width": new_width,
+                "processed_height": new_height,
+                "scale": scale
+            })
+            
+        finally:
+            # Clean up temporary files
+            try:
+                os.unlink(temp_input_path)
+            except:
+                pass
+                
+    except Exception as e:
+        logger.error(f"Error in image preprocessing: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Preprocessing error: {str(e)}"}), 500
+
+
+@app.route("/api/detect-lizard", methods=["POST"])
+@cross_origin()
+@track_metrics
+def detect_lizard_toepads():
+    """Detect lizard toepads using the Python detection script."""
+    try:
+        if 'image' not in request.files:
+            return jsonify({"error": "No image file provided"}), 400
+        
+        file = request.files['image']
+        if file.filename == '':
+            return jsonify({"error": "No image file selected"}), 400
+        
+        # Get confidence threshold from form data
+        confidence = float(request.form.get('confidence', 0.1))
+        
+        # Create temporary file for the uploaded image
+        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_input:
+            file.save(temp_input.name)
+            temp_input_path = temp_input.name
+        
+        # Create temporary file for the output
+        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_output:
+            temp_output_path = temp_output.name
+        
+        try:
+            # Run the Python detection script
+            cmd = [
+                'python', 'detect_lizard_toepads.py',
+                '--image', temp_input_path,
+                '--output', temp_output_path,
+                '--conf', str(confidence),
+                '--no-save'  # We don't need to save the image, just get detections
+            ]
+            
+            # Get the project root directory (parent of backend)
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            result = subprocess.run(cmd, capture_output=True, text=True, cwd=project_root)
+            
+            if result.returncode != 0:
+                return jsonify({
+                    "error": f"Detection failed: {result.stderr}"
+                }), 500
+            
+            # Parse the output to extract detections
+            # The script prints detection info to stdout, we need to parse it
+            detections = []
+            lines = result.stdout.split('\n')
+            
+            for line in lines:
+                if 'Detected' in line and 'confidence=' in line:
+                    # Parse line like: "Detected finger: confidence=0.867, box=(349.7, 279.2, 384.8, 292.8)"
+                    try:
+                        parts = line.split(': ')
+                        if len(parts) >= 2:
+                            class_name = parts[0].replace('Detected ', '').strip()
+                            rest = parts[1]
+                            
+                            # Extract confidence
+                            conf_start = rest.find('confidence=') + len('confidence=')
+                            conf_end = rest.find(', box=')
+                            confidence_score = float(rest[conf_start:conf_end])
+                            
+                            # Extract bounding box
+                            box_start = rest.find('box=(') + len('box=(')
+                            box_end = rest.find(')')
+                            box_str = rest[box_start:box_end]
+                            box_coords = [float(x.strip()) for x in box_str.split(',')]
+                            
+                            # The coordinates are already in (x1, y1, x2, y2) format
+                            # Convert to (x, y, width, height) for frontend
+                            x1, y1, x2, y2 = box_coords
+                            width = x2 - x1
+                            height = y2 - y1
+                            
+                            detections.append({
+                                "bbox": [x1, y1, width, height],
+                                "class": class_name,
+                                "score": confidence_score
+                            })
+                    except Exception as parse_error:
+                        print(f"Error parsing detection line: {line}, error: {parse_error}")
+                        continue
+            
+            return jsonify({
+                "status": "success",
+                "detections": detections,
+                "count": len(detections)
+            })
+            
+        finally:
+            # Clean up temporary files
+            try:
+                os.unlink(temp_input_path)
+                os.unlink(temp_output_path)
+            except:
+                pass
+                
+    except Exception as e:
+        logger.error(f"Error in lizard detection: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Detection error: {str(e)}"}), 500
 
 
 # Make sure your app runs on the correct host and port if started directly

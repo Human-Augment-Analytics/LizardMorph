@@ -1,4 +1,5 @@
 import * as ort from 'onnxruntime-web';
+import { convertOnnxToYoloCoords } from '../utils/coordinateConverter';
 
 export interface Detection {
   bbox: number[]; // [x, y, width, height]
@@ -13,7 +14,7 @@ export class OnnxDetectionService {
   private static isInitializing = false;
   private static classNames: string[] = [];
 
-  // YOLOv5 model configuration
+  // YOLOv5 model configuration - ONNX model expects 640x640
   private static readonly MODEL_INPUT_SIZE = 640;
   // Lizard body part detection model - multiple classes
   private static readonly DEFAULT_CLASS_NAMES = ['Finger', 'Toe', 'Ruler'];
@@ -127,7 +128,7 @@ export class OnnxDetectionService {
   }
 
   /**
-   * Preprocess image to model input format with letterboxing
+   * Preprocess image with letterboxing (ONNX model expects 640x640)
    */
   private static preprocessImage(imageElement: HTMLImageElement | HTMLCanvasElement): {
     tensor: ort.Tensor;
@@ -196,6 +197,83 @@ export class OnnxDetectionService {
   }
 
   /**
+   * Calculate letterbox parameters for coordinate conversion
+   */
+  private static calculateLetterboxParams(originalWidth: number, originalHeight: number): {
+    padX: number;
+    padY: number;
+  } {
+    const scale = Math.min(
+      this.MODEL_INPUT_SIZE / originalWidth,
+      this.MODEL_INPUT_SIZE / originalHeight
+    );
+    
+    const scaledWidth = originalWidth * scale;
+    const scaledHeight = originalHeight * scale;
+    
+    const padX = (this.MODEL_INPUT_SIZE - scaledWidth) / 2;
+    const padY = (this.MODEL_INPUT_SIZE - scaledHeight) / 2;
+    
+    return { padX, padY };
+  }
+
+  /**
+   * Detect objects in an image using direct resize (no letterbox)
+   * @param imageElement - HTML image element or canvas
+   * @param scoreThreshold - Minimum confidence score (0-1)
+   * @param iouThreshold - IoU threshold for NMS (0-1)
+   * @param targetWidth - Target width for resizing
+   * @param targetHeight - Target height for resizing
+   * @returns Array of detected objects
+   */
+  static async detectObjectsDirectResize(
+    imageElement: HTMLImageElement | HTMLCanvasElement,
+    scoreThreshold: number = 0.25,
+    iouThreshold: number = 0.45,
+    targetWidth: number = 1024,
+    targetHeight: number = 489
+  ): Promise<Detection[]> {
+    if (!this.isReady()) {
+      throw new Error('ONNX model not initialized. Call initialize() first.');
+    }
+
+    try {
+      // Preprocess image using direct resize with 640x640 padding
+      const { tensor, originalWidth, originalHeight, padX, padY, scale } = this.preprocessImageDirectResize(
+        imageElement, targetWidth, targetHeight
+      );
+
+      // Run inference
+      const feeds: Record<string, ort.Tensor> = {};
+      feeds[this.session!.inputNames[0]] = tensor;
+
+      const results = await this.session!.run(feeds);
+
+      // Get output tensor (YOLOv5 output format)
+      const output = results[this.session!.outputNames[0]];
+
+      // Process detections using direct resize coordinate system
+      const detections = this.processOutputDirectResize(
+        output,
+        originalWidth,
+        originalHeight,
+        targetWidth,
+        targetHeight,
+        padX,
+        padY,
+        scale,
+        scoreThreshold,
+        iouThreshold
+      );
+
+      return detections;
+    } catch (error) {
+      console.error('Detection error:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Detect objects in an image
    * @param imageElement - HTML image element or canvas
    * @param scoreThreshold - Minimum confidence score (0-1)
@@ -212,7 +290,7 @@ export class OnnxDetectionService {
     }
 
     try {
-      // Preprocess image
+      // Preprocess image using letterbox preprocessing (ONNX model expects 640x640)
       const { tensor, originalWidth, originalHeight, padX, padY, scale } = this.preprocessImage(imageElement);
 
       // Run inference
@@ -224,7 +302,7 @@ export class OnnxDetectionService {
       // Get output tensor (YOLOv5 output format)
       const output = results[this.session!.outputNames[0]];
 
-      // Process detections
+      // Process detections using letterbox coordinate system
       const detections = this.processOutput(
         output,
         originalWidth,
@@ -244,7 +322,131 @@ export class OnnxDetectionService {
   }
 
   /**
-   * Process YOLO output and apply NMS
+   * Process YOLO output using YOLO coordinate system (matching detect_lizard_toepads.py)
+   */
+  private static processOutputYolo(
+    output: ort.Tensor,
+    originalWidth: number,
+    originalHeight: number,
+    newWidth: number,
+    newHeight: number,
+    scale: number,
+    scoreThreshold: number,
+    iouThreshold: number
+  ): Detection[] {
+    const data = output.data as Float32Array;
+    const dims = output.dims;
+
+    // YOLO output format: [batch, num_detections, values_per_detection]
+    let numDetections: number;
+    let valuesPerDetection: number;
+    
+    if (dims[1] < dims[2]) {
+      // Transposed format: [1, values, detections]
+      valuesPerDetection = dims[1];
+      numDetections = dims[2];
+    } else {
+      // Standard format: [1, detections, values]
+      numDetections = dims[1];
+      valuesPerDetection = dims[2];
+    }
+    
+    const numClasses = valuesPerDetection - 5; // 5 = 4 bbox coords + 1 objectness
+    const isTransposed = dims[1] < dims[2];
+
+    console.log(`YOLO processing: ${numDetections} detections, ${valuesPerDetection} values each, ${numClasses} classes`);
+
+    const detections: Detection[] = [];
+    const boxes: number[][] = [];
+    const scores: number[] = [];
+    const classIds: number[] = [];
+
+    // Parse detections
+    for (let i = 0; i < numDetections; i++) {
+      const getValue = (valueIndex: number) => {
+        return isTransposed 
+          ? data[valueIndex * numDetections + i]
+          : data[i * valuesPerDetection + valueIndex];
+      };
+
+      // Extract bbox (center x, center y, width, height) - YOLO format
+      const centerX = getValue(0);
+      const centerY = getValue(1);
+      const width = getValue(2);
+      const height = getValue(3);
+
+      // Extract objectness score
+      const objectness = this.sigmoid(getValue(4));
+      
+      // Extract class scores
+      let maxScore = 0;
+      let maxClassId = 0;
+      for (let c = 0; c < numClasses; c++) {
+        const classScore = this.sigmoid(getValue(5 + c));
+        const finalScore = objectness * classScore;
+        if (finalScore > maxScore) {
+          maxScore = finalScore;
+          maxClassId = c;
+        }
+      }
+
+      // Filter by threshold
+      if (maxScore > scoreThreshold) {
+        // Convert from center format to corner format for NMS
+        const x1 = centerX - width / 2;
+        const y1 = centerY - height / 2;
+        const x2 = centerX + width / 2;
+        const y2 = centerY + height / 2;
+        
+        boxes.push([x1, y1, x2, y2]);
+        scores.push(maxScore);
+        classIds.push(maxClassId);
+      }
+    }
+
+    console.log(`Found ${boxes.length} detections above threshold ${scoreThreshold}`);
+
+    // Apply NMS
+    const selectedIndices = this.nonMaxSuppression(boxes, scores, iouThreshold);
+    console.log(`After NMS: ${selectedIndices.length} detections`);
+
+    for (const idx of selectedIndices) {
+      const box = boxes[idx];
+      
+      // Convert from ONNX letterbox coordinates to YOLO direct resize coordinates
+      const yoloCoords = convertOnnxToYoloCoords(
+        box, // [x1, y1, x2, y2] in ONNX letterbox system
+        originalWidth,
+        originalHeight,
+        640,  // ONNX input size
+        1024  // YOLO target size
+      );
+      
+      const [yolo_x1, yolo_y1, yolo_x2, yolo_y2] = yoloCoords;
+      const width = yolo_x2 - yolo_x1;
+      const height = yolo_y2 - yolo_y1;
+
+      const detection = {
+        bbox: [yolo_x1, yolo_y1, width, height],
+        class: this.classNames[classIds[idx]] || `class_${classIds[idx]}`,
+        score: scores[idx],
+      };
+
+      console.log('YOLO-style detection:', {
+        onnxBox: `[${box[0].toFixed(1)}, ${box[1].toFixed(1)}, ${box[2].toFixed(1)}, ${box[3].toFixed(1)}]`,
+        yoloBox: `[x=${yolo_x1.toFixed(1)}, y=${yolo_y1.toFixed(1)}, w=${width.toFixed(1)}, h=${height.toFixed(1)}]`,
+        class: detection.class,
+        score: detection.score
+      });
+
+      detections.push(detection);
+    }
+
+    return detections;
+  }
+
+  /**
+   * Process YOLO output and apply NMS (legacy method for letterbox)
    */
   private static processOutput(
     output: ort.Tensor,
@@ -548,5 +750,207 @@ export class OnnxDetectionService {
     }
     this.isInitialized = false;
     console.log('ONNX model disposed');
+  }
+
+  /**
+   * Preprocess image using direct resize but pad to 640x640 for ONNX model
+   */
+  private static preprocessImageDirectResize(
+    imageElement: HTMLImageElement | HTMLCanvasElement,
+    targetWidth: number,
+    targetHeight: number
+  ): {
+    tensor: ort.Tensor;
+    originalWidth: number;
+    originalHeight: number;
+    padX: number;
+    padY: number;
+    scale: number;
+  } {
+    // Get original dimensions
+    const originalWidth = imageElement.width || (imageElement as HTMLImageElement).naturalWidth;
+    const originalHeight = imageElement.height || (imageElement as HTMLImageElement).naturalHeight;
+
+    // Create canvas for 640x640 (ONNX model requirement)
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 640;
+    const ctx = canvas.getContext('2d')!;
+
+    // Calculate scale to fit the target size within 640x640
+    const scaleX = 640 / targetWidth;
+    const scaleY = 640 / targetHeight;
+    const scale = Math.min(scaleX, scaleY);
+    
+    const scaledWidth = targetWidth * scale;
+    const scaledHeight = targetHeight * scale;
+    
+    // Calculate padding to center the image
+    const padX = (640 - scaledWidth) / 2;
+    const padY = (640 - scaledHeight) / 2;
+
+    // Fill with gray background
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(0, 0, 640, 640);
+
+    // Draw the resized image centered
+    ctx.drawImage(imageElement, padX, padY, scaledWidth, scaledHeight);
+
+    // Get image data
+    const imageData = ctx.getImageData(0, 0, 640, 640);
+    const pixels = imageData.data;
+
+    // Convert to grayscale (matching training preprocessing)
+    const grayscale: number[] = [];
+    for (let i = 0; i < pixels.length; i += 4) {
+      const gray = (0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2]) / 255.0;
+      grayscale.push(gray);
+    }
+
+    // Replicate grayscale to 3 channels for RGB model input
+    const input = Float32Array.from([...grayscale, ...grayscale, ...grayscale]);
+    const tensor = new ort.Tensor('float32', input, [1, 3, 640, 640]);
+
+    console.log('Direct resize preprocessing with padding:', {
+      originalSize: `${originalWidth}x${originalHeight}`,
+      targetSize: `${targetWidth}x${targetHeight}`,
+      paddedSize: `640x640`,
+      scale: scale.toFixed(3),
+      padding: `x=${padX.toFixed(1)}, y=${padY.toFixed(1)}`,
+      colorMode: 'grayscale (replicated to 3 channels)',
+      tensorShape: `[1, 3, 640, 640]`
+    });
+
+    return { tensor, originalWidth, originalHeight, padX, padY, scale };
+  }
+
+  /**
+   * Process output using direct resize coordinate system with letterbox conversion
+   */
+  private static processOutputDirectResize(
+    output: ort.Tensor,
+    originalWidth: number,
+    originalHeight: number,
+    targetWidth: number,
+    targetHeight: number,
+    padX: number,
+    padY: number,
+    scale: number,
+    scoreThreshold: number,
+    iouThreshold: number
+  ): Detection[] {
+    const data = output.data as Float32Array;
+    const dims = output.dims;
+
+    // YOLO output format: [batch, num_detections, values_per_detection]
+    let numDetections: number;
+    let valuesPerDetection: number;
+    
+    if (dims[1] < dims[2]) {
+      // Transposed format: [1, values, detections]
+      valuesPerDetection = dims[1];
+      numDetections = dims[2];
+    } else {
+      // Standard format: [1, detections, values]
+      numDetections = dims[1];
+      valuesPerDetection = dims[2];
+    }
+    
+    const numClasses = valuesPerDetection - 5; // 5 = 4 bbox coords + 1 objectness
+    const isTransposed = dims[1] < dims[2];
+
+    console.log(`Direct resize processing: ${numDetections} detections, ${valuesPerDetection} values each, ${numClasses} classes`);
+
+    const detections: Detection[] = [];
+    const boxes: number[][] = [];
+    const scores: number[] = [];
+    const classIds: number[] = [];
+
+    // Parse detections
+    for (let i = 0; i < numDetections; i++) {
+      const getValue = (valueIndex: number) => {
+        return isTransposed 
+          ? data[valueIndex * numDetections + i]
+          : data[i * valuesPerDetection + valueIndex];
+      };
+
+      // Extract bbox (center x, center y, width, height) - YOLO format
+      const centerX = getValue(0);
+      const centerY = getValue(1);
+      const width = getValue(2);
+      const height = getValue(3);
+
+      // Extract objectness score
+      const objectness = this.sigmoid(getValue(4));
+      
+      // Extract class scores
+      let maxScore = 0;
+      let maxClassId = 0;
+      for (let c = 0; c < numClasses; c++) {
+        const classScore = this.sigmoid(getValue(5 + c));
+        const finalScore = objectness * classScore;
+        if (finalScore > maxScore) {
+          maxScore = finalScore;
+          maxClassId = c;
+        }
+      }
+
+      // Filter by threshold
+      if (maxScore > scoreThreshold) {
+        // Convert from center format to corner format for NMS
+        const x1 = centerX - width / 2;
+        const y1 = centerY - height / 2;
+        const x2 = centerX + width / 2;
+        const y2 = centerY + height / 2;
+        
+        boxes.push([x1, y1, x2, y2]);
+        scores.push(maxScore);
+        classIds.push(maxClassId);
+      }
+    }
+
+    console.log(`Found ${boxes.length} detections above threshold ${scoreThreshold}`);
+
+    // Apply NMS
+    const selectedIndices = this.nonMaxSuppression(boxes, scores, iouThreshold);
+    console.log(`After NMS: ${selectedIndices.length} detections`);
+
+    for (const idx of selectedIndices) {
+      const box = boxes[idx];
+      
+      // Convert from 640x640 letterbox coordinates to target image coordinates
+      // Step 1: Remove padding and scale back to target image
+      const targetX1 = (box[0] - padX) / scale;
+      const targetY1 = (box[1] - padY) / scale;
+      const targetX2 = (box[2] - padX) / scale;
+      const targetY2 = (box[3] - padY) / scale;
+      
+      // Step 2: Convert from target image coordinates to original image coordinates
+      const x1 = targetX1 / targetWidth * originalWidth;
+      const y1 = targetY1 / targetHeight * originalHeight;
+      const x2 = targetX2 / targetWidth * originalWidth;
+      const y2 = targetY2 / targetHeight * originalHeight;
+      
+      const width = x2 - x1;
+      const height = y2 - y1;
+
+      const detection = {
+        bbox: [x1, y1, width, height],
+        class: this.classNames[classIds[idx]] || `class_${classIds[idx]}`,
+        score: scores[idx],
+      };
+
+      console.log('Direct resize detection:', {
+        letterboxBox: `[${box[0].toFixed(1)}, ${box[1].toFixed(1)}, ${box[2].toFixed(1)}, ${box[3].toFixed(1)}]`,
+        targetBox: `[${targetX1.toFixed(1)}, ${targetY1.toFixed(1)}, ${targetX2.toFixed(1)}, ${targetY2.toFixed(1)}]`,
+        originalBox: `[x=${x1.toFixed(1)}, y=${y1.toFixed(1)}, w=${width.toFixed(1)}, h=${height.toFixed(1)}]`,
+        class: detection.class,
+        score: detection.score
+      });
+
+      detections.push(detection);
+    }
+
+    return detections;
   }
 }

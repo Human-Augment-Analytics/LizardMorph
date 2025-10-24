@@ -4,6 +4,7 @@ import "./App.css";
 import { MainView } from "./views/MainView";
 import { LandingPage } from "./components/LandingPage";
 import { YoloTestPage } from "./components/YoloTestPage";
+import { LizardDetectionPage } from "./components/LizardDetectionPage";
 import type { LizardViewType } from "./components/LandingPage";
 
 // Wrapper component to provide navigation to MainView
@@ -21,6 +22,7 @@ function App() {
         <Route path="/toepads" element={<Navigate to="/" replace />} />
         <Route path="/custom" element={<Navigate to="/" replace />} />
         <Route path="/yolo-test" element={<YoloTestPage />} />
+        <Route path="/lizard-detection" element={<LizardDetectionPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>
