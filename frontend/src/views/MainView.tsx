@@ -5,11 +5,15 @@ import type { Point } from "../models/Point";
 import type { ImageSet } from "../models/ImageSet";
 import type { ProcessedImage } from "../models/ProcessedImage";
 import type { UploadHistoryItem } from "../models/UploadHistoryItem";
+import type { ScaleSettings } from "../models/ScaleSettings";
+import type { Measurement } from "../models/Measurement";
 
 import { Header } from "../components/Header";
 import { NavigationControls } from "../components/NavigationControls";
 import { ImageVersionControls } from "../components/ImageVersionControls";
 import { HistoryPanel } from "../components/HistoryPanel";
+import { ScaleSettings as ScaleSettingsComponent } from "../components/ScaleSettings";
+import { MeasurementsPanel } from "../components/MeasurementsPanel";
 import { MainViewStyles } from "./MainView.style";
 import { SVGViewer } from "../components/SVGViewer";
 import { ApiService } from "../services/ApiService";
@@ -36,6 +40,8 @@ interface MainState {
   imageSet: ImageSet;
   lizardCount: number;
   zoomTransform: d3.ZoomTransform;
+  scaleSettings: ScaleSettings;
+  measurements: Measurement[];
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -70,6 +76,13 @@ export class MainView extends Component<MainProps, MainState> {
     },
     lizardCount: 0,
     zoomTransform: d3.zoomIdentity,
+    scaleSettings: {
+      pointAId: null,
+      pointBId: null,
+      value: null,
+      units: "mm",
+    },
+    measurements: [],
   };
 
   componentDidMount(): void {
@@ -787,6 +800,14 @@ export class MainView extends Component<MainProps, MainState> {
     this.setState({ zoomTransform: transform });
   };
 
+  private readonly handleScaleSettingsChange = (scaleSettings: ScaleSettings): void => {
+    this.setState({ scaleSettings });
+  };
+
+  private readonly handleMeasurementsChange = (measurements: Measurement[]): void => {
+    this.setState({ measurements });
+  };
+
   render() {
     return (
       <div style={MainViewStyles.container}>
@@ -851,6 +872,19 @@ export class MainView extends Component<MainProps, MainState> {
               onScatterDataUpdate={this.handleScatterDataUpdate}
               onScalingComplete={this.handleScalingComplete}
               onZoomChange={this.handleZoomChange}
+            />
+          </div>
+          <div style={MainViewStyles.measurementsPanel}>
+            <ScaleSettingsComponent
+              points={this.state.originalScatterData}
+              scaleSettings={this.state.scaleSettings}
+              onScaleSettingsChange={this.handleScaleSettingsChange}
+            />
+            <MeasurementsPanel
+              points={this.state.originalScatterData}
+              measurements={this.state.measurements}
+              scaleSettings={this.state.scaleSettings}
+              onMeasurementsChange={this.handleMeasurementsChange}
             />
           </div>
         </div>

@@ -20,6 +20,14 @@ export class MainViewStyles {
     position: "relative",
   };
 
+  static readonly measurementsPanel: CSSProperties = {
+    width: "27vw",
+    borderLeft: "1px solid #ccc",
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+  };
+
   static readonly placeholderMessage: CSSProperties = {
     position: "absolute",
     top: "50%",
