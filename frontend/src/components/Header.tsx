@@ -6,8 +6,11 @@ interface HeaderProps {
   loading: boolean;
   dataFetched: boolean;
   dataError: Error | null;
+  selectedViewType: string;
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onExportAll: () => void;
+  onClearHistory: () => void;
+  onBackToSelection: () => void;
 }
 
 export class Header extends Component<HeaderProps> {
@@ -19,6 +22,7 @@ export class Header extends Component<HeaderProps> {
       dataError,
       onUpload,
       onExportAll,
+      onClearHistory,
     } = this.props;
 
     return (
@@ -31,14 +35,8 @@ export class Header extends Component<HeaderProps> {
             <p style={HeaderStyles.infoBoxParagraph}>
               In Partnership with Dr. Stroud
             </p>
-            <p style={HeaderStyles.infoBoxParagraph}>
-              Author: Mercedes Quintana
-            </p>
-            <p style={HeaderStyles.infoBoxParagraph}>
-              AI Engineer: Anthony Trevino
-            </p>
             <p style={HeaderStyles.infoBoxItalic}>
-              Georgia Institute of Technology - Spring 2025
+              Georgia Institute of Technology
             </p>
             <a
               href="https://github.com/Human-Augment-Analytics/Lizard-CV-Web-App"
@@ -86,17 +84,34 @@ export class Header extends Component<HeaderProps> {
             >
               Export All Data
             </button>
+
+            <button
+              onClick={onClearHistory}
+              disabled={loading}
+              style={{
+                ...HeaderStyles.clearHistoryButton,
+                ...(loading ? HeaderStyles.clearHistoryButtonDisabled : {}),
+              }}
+            >
+              Clear History
+            </button>
           </div>
 
-          <div style={HeaderStyles.titleContainer}>
-            <img
-              src="/android-chrome-192x192.png"
-              alt="Lizard Logo"
-              style={HeaderStyles.logo}
-            />
-            <h2 style={HeaderStyles.title}>
-              Lizard Anolis X-Ray Auto-Annotator
-            </h2>
+          <div 
+            style={{ ...HeaderStyles.titleContainer, cursor: 'pointer', flexDirection: 'column' as const }}
+            onClick={this.props.onBackToSelection}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ ...HeaderStyles.logo, fontSize: '40px', marginRight: '12px' }}>
+                {this.props.selectedViewType === 'lateral' ? '🦖' : '🦎'}
+              </div>
+              <h2 style={HeaderStyles.title}>
+                Lizard Anolis X-Ray Auto-Annotator
+              </h2>
+            </div>
+            <p style={HeaderStyles.viewType}>
+              View Type: {this.props.selectedViewType ? this.props.selectedViewType.charAt(0).toUpperCase() + this.props.selectedViewType.slice(1) : ''}
+            </p>
           </div>
 
           <div style={HeaderStyles.rightSpacer}></div>
