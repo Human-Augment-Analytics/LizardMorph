@@ -14,7 +14,7 @@ export class MainViewStyles {
   };
 
   static readonly svgContainer: CSSProperties = {
-    flex: 3,
+    flex: 1,
     overflow: "visible",
     position: "relative",
   };

@@ -28,6 +28,7 @@ interface SVGViewerProps {
   isEditMode: boolean;
   onToggleEditMode: () => void;
   onResetZoom: () => void;
+  isModalOpen?: boolean;
 }
 
 interface SVGViewerState {
@@ -915,4 +916,3 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     );
   }
 }
-

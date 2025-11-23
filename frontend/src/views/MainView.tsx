@@ -13,8 +13,7 @@ import { Header } from "../components/Header";
 import { NavigationControls } from "../components/NavigationControls";
 import { ImageVersionControls } from "../components/ImageVersionControls";
 import { HistoryPanel } from "../components/HistoryPanel";
-import { ScaleSettings as ScaleSettingsComponent } from "../components/ScaleSettings";
-import { MeasurementsPanel } from "../components/MeasurementsPanel";
+import { MeasurementsAndScalePanel } from "../components/MeasurementsAndScalePanel";
 import { SessionInfo } from "../components/SessionInfo";
 import { MainViewStyles } from "./MainView.style";
 import { SVGViewer } from "../components/SVGViewer";
@@ -52,6 +51,7 @@ interface MainState {
     scatterData: Point[],
     originalScatterData: Point[]
   ) => void;
+  isMeasurementsAndScaleModalOpen: boolean;
 }
 
 interface MainProps {
@@ -98,6 +98,7 @@ export class MainView extends Component<MainProps, MainState> {
     uploadProgress: {},
     onPointSelect: () => {},
     onScatterDataUpdate: () => {},
+    isMeasurementsAndScaleModalOpen: false,
   };
   componentDidMount(): void {
     this.initializeApp();
@@ -570,7 +571,9 @@ export class MainView extends Component<MainProps, MainState> {
         this.state.currentImageIndex,
         this.state.scatterData,
         this.state.originalScatterData,
-        this.createImageWithPointsBlob
+        this.createImageWithPointsBlob,
+        this.state.measurements,
+        this.state.scaleSettings
       );
 
       if (result.failedFiles > 0) {
@@ -857,6 +860,14 @@ export class MainView extends Component<MainProps, MainState> {
     this.setState({ zoomTransform: d3.zoomIdentity });
   };
 
+  private readonly handleOpenMeasurementsAndScaleModal = (): void => {
+    this.setState({ isMeasurementsAndScaleModalOpen: true });
+  };
+
+  private readonly handleCloseMeasurementsAndScaleModal = (): void => {
+    this.setState({ isMeasurementsAndScaleModalOpen: false });
+  };
+
   // Add cleanup functionality to clear history when the app closes, including beforeunload event handler
   private readonly setupBeforeUnloadHandler = (): void => {
     window.addEventListener("beforeunload", this.handleBeforeUnload);
@@ -893,6 +904,7 @@ export class MainView extends Component<MainProps, MainState> {
           onExportAll={this.handleScatterData}
           onClearHistory={this.handleClearHistory}
           onBackToSelection={() => window.location.href = '/'}
+          onOpenMeasurementsModal={this.handleOpenMeasurementsAndScaleModal}
         />
         <div style={MainViewStyles.mainContentArea}>
           {" "}
@@ -953,23 +965,22 @@ export class MainView extends Component<MainProps, MainState> {
                 isEditMode={this.state.isEditMode}
                 onToggleEditMode={this.handleToggleEditMode}
                 onResetZoom={this.handleResetZoom}
+                isModalOpen={this.state.isMeasurementsAndScaleModalOpen}
               />
             </div>
           </div>
-          <div style={MainViewStyles.measurementsPanel}>
-            <ScaleSettingsComponent
-              points={this.state.originalScatterData}
-              scaleSettings={this.state.scaleSettings}
-              onScaleSettingsChange={this.handleScaleSettingsChange}
-            />
-            <MeasurementsPanel
-              points={this.state.originalScatterData}
-              measurements={this.state.measurements}
-              scaleSettings={this.state.scaleSettings}
-              onMeasurementsChange={this.handleMeasurementsChange}
-            />
-          </div>
         </div>
+        {this.state.isMeasurementsAndScaleModalOpen && (
+          <MeasurementsAndScalePanel
+            points={this.state.originalScatterData}
+            scaleSettings={this.state.scaleSettings}
+            onScaleSettingsChange={this.handleScaleSettingsChange}
+            measurements={this.state.measurements}
+            onMeasurementsChange={this.handleMeasurementsChange}
+            isModal={true}
+            onClose={this.handleCloseMeasurementsAndScaleModal}
+          />
+        )}
       </div>
     );
   }
