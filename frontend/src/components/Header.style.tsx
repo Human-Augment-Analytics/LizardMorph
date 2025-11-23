@@ -51,8 +51,10 @@ export class HeaderStyles {
     justifyContent: "space-between",
     alignItems: "center",
     maxWidth: "1200px",
-    margin: "15px auto 0",
+    margin: "0 0 0 15px",
     padding: "0 20px",
+    marginRight: "340px",
+    gap: "60px",
   };
 
   static readonly buttonContainer: CSSProperties = {
@@ -104,6 +106,25 @@ export class HeaderStyles {
     opacity: 0.7,
   };
 
+  static readonly clearHistoryButton: CSSProperties = {
+    padding: "12px 20px",
+    backgroundColor: "#f44336",
+    color: "white",
+    border: "none",
+    borderRadius: "4px",
+    cursor: "pointer",
+    width: "100%",
+    boxSizing: "border-box",
+    fontWeight: "bold",
+    fontSize: "14px",
+    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+  };
+
+  static readonly clearHistoryButtonDisabled: CSSProperties = {
+    cursor: "not-allowed",
+    opacity: 0.7,
+  };
+
   static readonly titleContainer: CSSProperties = {
     display: "flex",
     alignItems: "center",
@@ -118,6 +139,15 @@ export class HeaderStyles {
   static readonly title: CSSProperties = {
     margin: 0,
     whiteSpace: "nowrap",
+  };
+
+  static readonly viewType: CSSProperties = {
+    margin: "8px 0 0 0",
+    fontSize: "0.9em",
+    color: "#666",
+    fontWeight: "500",
+    textTransform: "capitalize",
+    letterSpacing: "0.5px",
   };
 
   static readonly rightSpacer: CSSProperties = {

@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import type { Point } from "../models/Point";
 import { ApiService } from "./ApiService";
+import { API_URL } from "./config";
 
 export class ExportService {
   static createTpsContent(coords: Point[], imageName: string): string {
@@ -53,7 +54,7 @@ export class ExportService {
   ): Promise<{ totalFiles: number; failedFiles: number; successfulFiles: number }> {
     const downloadPromises: Promise<{ name: string; tpsContent: string; imageBlob?: Blob }>[] = [];
     const zip = new JSZip();
-
+    console.log(currentScatterData);
     for (let i = 0; i < images.length; i++) {
       const originalCoords =
         i === currentIndex
@@ -80,7 +81,7 @@ export class ExportService {
           if (result.image_urls && result.image_urls.length > 0) {
             const imageUrl = result.image_urls[0].startsWith('http')
               ? result.image_urls[0]
-              : `/api${result.image_urls[0].startsWith('/') ? '' : '/'}${result.image_urls[0]}`;
+              : `${API_URL}/${result.image_urls[0].startsWith('/') ? '' : '/'}${result.image_urls[0]}`;
 
             try {
               imageBlob = await ApiService.downloadAnnotatedImage(imageUrl);

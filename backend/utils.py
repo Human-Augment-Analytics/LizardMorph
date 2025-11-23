@@ -19,6 +19,60 @@ import random
 # Tools for predicting objects and shapes in new images
 
 
+def load_dlib_detector(detector_path):
+    """
+    Load a dlib fhog object detector from file.
+    
+    Parameters:
+    ----------
+        detector_path (str): Path to the detector file
+        
+    Returns:
+    ----------
+        detector: dlib.fhog_object_detector object or None if file doesn't exist
+    """
+    if detector_path and os.path.exists(detector_path):
+        try:
+            return dlib.fhog_object_detector(detector_path)
+        except Exception as e:
+            print(f"Error loading detector from {detector_path}: {e}")
+            return None
+    return None
+
+
+def detect_bounding_box_dlib(image, detector, upsample_num_times=0, adjust_threshold=0):
+    """
+    Detect bounding boxes using dlib fhog object detector.
+    
+    Parameters:
+    ----------
+        image: RGB image (numpy array)
+        detector: dlib.fhog_object_detector object
+        upsample_num_times (int): Number of times to upsample the image
+        adjust_threshold (float): Threshold adjustment for detection
+        
+    Returns:
+    ----------
+        dlib.rectangle: Detected bounding box or None if no detection
+    """
+    if detector is None:
+        return None
+        
+    try:
+        # Run the detector
+        [boxes, confidences, detector_idxs] = dlib.fhog_object_detector.run(
+            detector, image, upsample_num_times=upsample_num_times, adjust_threshold=adjust_threshold)
+        
+        # Return the first detected box if any
+        if len(boxes) > 0:
+            return boxes[0]
+        else:
+            return None
+    except Exception as e:
+        print(f"Error during detection: {e}")
+        return None
+
+
 def initialize_xml():
     """
     Initializes the xml file for the predictions
@@ -210,6 +264,73 @@ def predictions_to_xml_single(predictor_name: str, image_path: str, output: str)
     for scale in scales:
         image = cv2.resize(img, (0, 0), fx=scale, fy=scale)
         rect = dlib.rectangle(1, 1, int(w * scale) - 1, int(h * scale) - 1)
+        shape = predictor(image, rect)
+        landmarks.append(shape_to_np(shape) / scale)
+
+    box = create_box(img.shape)
+    part_length = range(0, shape.num_parts)
+    
+    for item, i in enumerate(sorted(part_length, key=str)):
+        x = np.median([landmark[item][0] for landmark in landmarks])
+        y = np.median([landmark[item][1] for landmark in landmarks])
+        part = create_part(x, y, i)
+        box.append(part)
+
+    box[:] = sorted(box, key=lambda child: (child.tag, float(child.get("name"))))
+    image_e.append(box)
+    images_e.append(image_e)
+    pretty_xml(root, output)
+
+
+def predictions_to_xml_single_with_detector(predictor_name: str, image_path: str, output: str, detector_path: str = None):
+    """
+    Generates dlib format xml file for a single image using dlib fhog object detector for bounding box detection.
+    This follows the approach from visualize_predictions.py.
+    
+    Parameters:
+    ----------
+        predictor_name (str): Path to the shape predictor file
+        image_path (str): Path to the input image
+        output (str): Path for the output XML file
+        detector_path (str): Optional path to the dlib fhog object detector file
+    """
+    predictor = dlib.shape_predictor(predictor_name)
+    root, images_e = initialize_xml()
+    kernel = np.ones((7, 7), np.float32) / 49
+
+    image_e = ET.Element('image')
+    image_e.set('file', str(image_path))
+    
+    img = cv2.imread(image_path)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = cv2.filter2D(img, -1, kernel)
+    img = cv2.bilateralFilter(img, 9, 41, 21)
+    
+    # Load detector if path is provided
+    detector = None
+    if detector_path:
+        detector = load_dlib_detector(detector_path)
+    
+    scales = [0.25, 0.5, 1]
+    w = img.shape[1]
+    h = img.shape[0]
+    landmarks = []
+    
+    for scale in scales:
+        image = cv2.resize(img, (0, 0), fx=scale, fy=scale)
+        
+        # Try to detect bounding box using detector, fallback to default rectangle
+        detected_rect = None
+        if detector is not None:
+            detected_rect = detect_bounding_box_dlib(image, detector)
+        
+        if detected_rect is not None:
+            # Use the detected rectangle directly (no scaling back needed since we're working at the scaled level)
+            rect = detected_rect
+        else:
+            # Fallback to default rectangle
+            rect = dlib.rectangle(1, 1, int(w * scale) - 1, int(h * scale) - 1)
+        
         shape = predictor(image, rect)
         landmarks.append(shape_to_np(shape) / scale)
 

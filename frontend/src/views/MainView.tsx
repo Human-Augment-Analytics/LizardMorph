@@ -7,6 +7,7 @@ import type { ProcessedImage } from "../models/ProcessedImage";
 import type { UploadHistoryItem } from "../models/UploadHistoryItem";
 import type { ScaleSettings } from "../models/ScaleSettings";
 import type { Measurement } from "../models/Measurement";
+import type { LizardViewType } from "../components/LandingPage";
 
 import { Header } from "../components/Header";
 import { NavigationControls } from "../components/NavigationControls";
@@ -14,6 +15,7 @@ import { ImageVersionControls } from "../components/ImageVersionControls";
 import { HistoryPanel } from "../components/HistoryPanel";
 import { ScaleSettings as ScaleSettingsComponent } from "../components/ScaleSettings";
 import { MeasurementsPanel } from "../components/MeasurementsPanel";
+import { SessionInfo } from "../components/SessionInfo";
 import { MainViewStyles } from "./MainView.style";
 import { SVGViewer } from "../components/SVGViewer";
 import { ApiService } from "../services/ApiService";
@@ -42,15 +44,23 @@ interface MainState {
   zoomTransform: d3.ZoomTransform;
   scaleSettings: ScaleSettings;
   measurements: Measurement[];
+  isEditMode: boolean;
+  sessionReady: boolean;
+  uploadProgress: { [key: string]: number };
+  onPointSelect: (point: Point | null) => void;
+  onScatterDataUpdate: (
+    scatterData: Point[],
+    originalScatterData: Point[]
+  ) => void;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-interface MainProps {}
+interface MainProps {
+  selectedViewType: LizardViewType;
+}
 
 export class MainView extends Component<MainProps, MainState> {
   readonly svgRef = createRef<SVGSVGElement>();
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
-
   state: MainState = {
     currentImageIndex: 0,
     images: [],
@@ -83,16 +93,49 @@ export class MainView extends Component<MainProps, MainState> {
       units: "mm",
     },
     measurements: [],
+    isEditMode: false,
+    sessionReady: false,
+    uploadProgress: {},
+    onPointSelect: () => {},
+    onScatterDataUpdate: () => {},
   };
-
   componentDidMount(): void {
-    this.fetchUploadedFiles();
-    this.setupInterval();
+    this.initializeApp();
   }
 
   componentWillUnmount(): void {
     if (this.intervalId) {
       clearInterval(this.intervalId);
+    }
+    // Clean up history on component unmount
+    this.clearHistory();
+    // Remove beforeunload event listener
+    window.removeEventListener("beforeunload", this.handleBeforeUnload);
+  }
+  private async initializeApp(): Promise<void> {
+    try {
+      console.log("Initializing LizardMorph app...");
+
+      // Initialize session management (will reuse existing session if available)
+      await ApiService.initialize();
+
+      // Mark session as ready
+      this.setState({ sessionReady: true });
+      console.log("Session initialized successfully");
+
+      // Now proceed with normal initialization
+      this.fetchUploadedFiles();
+      this.setupBeforeUnloadHandler();
+    } catch (error) {
+      console.error("Failed to initialize app:", error);
+      // Show error to user or handle gracefully
+      this.setState({
+        dataError:
+          error instanceof Error
+            ? error
+            : new Error("Failed to initialize session"),
+        sessionReady: false,
+      });
     }
   }
 
@@ -119,14 +162,9 @@ export class MainView extends Component<MainProps, MainState> {
       (prevState.currentImageURL !== this.state.currentImageURL ||
         prevState.imageWidth !== this.state.imageWidth ||
         prevState.imageHeight !== this.state.imageHeight ||
-        prevState.originalScatterData !== this.state.originalScatterData ||
-        prevState.needsScaling !== this.state.needsScaling)
+        this.state.needsScaling)
     ) {
       this.renderSVG();
-    }
-
-    if (prevState.selectedPoint !== this.state.selectedPoint) {
-      this.updatePointSelection();
     }
   }
   private readonly countUniqueImages = (): void => {
@@ -136,9 +174,6 @@ export class MainView extends Component<MainProps, MainState> {
     });
   };
 
-  private readonly setupInterval = (): void => {
-    this.intervalId = setInterval(this.fetchUploadedFiles, 30000);
-  };
   private readonly handleUpload = async (
     e: React.ChangeEvent<HTMLInputElement>
   ): Promise<void> => {
@@ -146,79 +181,176 @@ export class MainView extends Component<MainProps, MainState> {
     if (!files || files.length === 0) return;
 
     this.setState({ loading: true, dataLoading: true, dataError: null });
+    
+    // Initialize progress for all files and add them to history
+    const initialProgress: { [key: string]: number } = {};
+    const newHistoryItems: UploadHistoryItem[] = [];
+    
+    Array.from(files).forEach(file => {
+      initialProgress[file.name] = 0;
+      newHistoryItems.push({
+        name: file.name,
+        timestamp: "Uploading...",
+        index: -1,
+      });
+    });
+    
+    this.setState((prevState) => ({
+      uploadProgress: initialProgress,
+      uploadHistory: [...prevState.uploadHistory, ...newHistoryItems],
+    }));
 
-    try {
-      const results = await ApiService.uploadMultipleImages(Array.from(files));
+    Promise.all(
+      Array.from(files).map(async (file) => {
+        try {
+          // Update progress to 25% when starting upload
+          this.setState((prevState) => ({
+            uploadProgress: {
+              ...prevState.uploadProgress,
+              [file.name]: 25,
+            },
+          }));
 
-      const processedImages = await Promise.all(
-        results.map(async (result) => {
+          // Upload the file (replace with your actual upload logic)
+          const results = await ApiService.uploadMultipleImages([file], this.props.selectedViewType);
+          
+          // Check if we got a valid result
+          if (!results || results.length === 0) {
+            throw new Error(`Failed to process image: ${file.name}`);
+          }
+          
+          const result = results[0];
+          
+          // Validate result has required properties
+          if (!result || !result.name) {
+            throw new Error(`Invalid result for image: ${file.name}`);
+          }
+          
+          // Update progress to 50% after upload
+          this.setState((prevState) => ({
+            uploadProgress: {
+              ...prevState.uploadProgress,
+              [file.name]: 50,
+            },
+          }));
+
+          // Process the uploaded image immediately
           const imageSets = await ApiService.fetchImageSet(result.name);
+          
+          // Update progress to 75% after fetching image set
+          this.setState((prevState) => ({
+            uploadProgress: {
+              ...prevState.uploadProgress,
+              [file.name]: 75,
+            },
+          }));
+
+          // Validate coords exist
+          if (!result.coords || !Array.isArray(result.coords)) {
+            throw new Error(`No coordinates found for image: ${file.name}`);
+          }
+          
           const coords = result.coords.map((coord, index: number) => ({
             ...coord,
             id: index + 1,
           }));
 
-          return {
+          const processedImage = {
             name: result.name,
             coords: coords,
-            originalCoords: JSON.parse(JSON.stringify(coords)), // Deep copy
+            originalCoords: JSON.parse(JSON.stringify(coords)),
             imageSets,
-            timestamp: new Date().toLocaleString(), // Add timestamp for history
+            timestamp: new Date().toLocaleString(),
           };
-        })
-      );
-      if (processedImages.length > 0) {
-        const firstImage = processedImages[0];
 
-        this.setState((prevState) => {
-          // Update images with new uploads
-          const updatedImages = [...prevState.images, ...processedImages];
+          // Update progress to 100% when processing is complete
+          this.setState((prevState) => ({
+            uploadProgress: {
+              ...prevState.uploadProgress,
+              [file.name]: 100,
+            },
+          }));
 
-          // Update upload history
-          const newHistory = [...prevState.uploadHistory];
-          processedImages.forEach((img) => {
-            newHistory.push({
-              name: img.name,
-              timestamp: img.timestamp,
-              index: updatedImages.findIndex(
-                (i) => i.name === img.name && i.timestamp === img.timestamp
-              ),
-            });
+          // Update state for each processed image as it finishes
+          this.setState((prevState) => {
+            const updatedImages = [...prevState.images, processedImage];
+            
+            // Update the history item for this file
+            const updatedHistory = prevState.uploadHistory.map(item => 
+              item.name === file.name 
+                ? {
+                    name: processedImage.name,
+                    timestamp: processedImage.timestamp,
+                    index: updatedImages.length - 1,
+                  }
+                : item
+            );
+            return {
+              ...prevState,
+              images: updatedImages,
+              uploadHistory: updatedHistory,
+              currentImageIndex:
+                prevState.images.length === 0 ? 0 : prevState.currentImageIndex,
+              imageFilename:
+                prevState.images.length === 0
+                  ? processedImage.name
+                  : prevState.imageFilename,
+              originalScatterData:
+                prevState.images.length === 0
+                  ? processedImage.originalCoords
+                  : prevState.originalScatterData,
+              scatterData:
+                prevState.images.length === 0
+                  ? processedImage.coords
+                  : prevState.scatterData,
+              imageSet:
+                prevState.images.length === 0
+                  ? processedImage.imageSets
+                  : prevState.imageSet,
+              currentImageURL:
+                prevState.images.length === 0
+                  ? processedImage.imageSets.original
+                  : prevState.currentImageURL,
+              needsScaling:
+                prevState.images.length === 0 ? true : prevState.needsScaling,
+              dataFetched:
+                prevState.images.length === 0 ? true : prevState.dataFetched,
+              selectedPoint:
+                prevState.images.length === 0 ? null : prevState.selectedPoint,
+            };
           });
-
-          // Set current image to the first of the new uploads
-          const newImageIndex = prevState.images.length; // Index of the first new image
-
-          return {
-            images: updatedImages,
-            uploadHistory: newHistory,
-            currentImageIndex: newImageIndex,
-            imageFilename: firstImage.name,
-            originalScatterData: firstImage.originalCoords,
-            scatterData: firstImage.coords,
-            imageSet: firstImage.imageSets,
-            currentImageURL: firstImage.imageSets.original,
-            needsScaling: true,
-            dataFetched: true,
-            selectedPoint: null,
-          };
-        });
-      }
-    } catch (err) {
+        } catch (err) {
+          console.error(`Error processing ${file.name}:`, err);
+          // Update progress to show error state
+          this.setState((prevState) => ({
+            uploadProgress: {
+              ...prevState.uploadProgress,
+              [file.name]: -1, // Use -1 to indicate error state
+            },
+          }));
+          // Re-throw the error so Promise.all can handle it
+          throw err;
+        }
+      })
+    ).then(() => {
+      this.setState({
+        loading: false,
+        dataLoading: false,
+        uploadProgress: {}, // Clear progress after completion
+      });
+    }).catch((err) => {
       console.error("Upload error:", err);
       this.setState({
         dataError: err instanceof Error ? err : new Error("Upload failed"),
+        uploadProgress: {}, // Clear progress on error
+        loading: false,
+        dataLoading: false,
       });
-    } finally {
-      this.setState({ loading: false });
-      // dataLoading will be set to false by the image onload handler
-    }
+    });
   };
   // This loads the image when the currentImageURL changes
   private readonly loadImage = (): void => {
     if (this.state.currentImageURL) {
-      console.log("Loading image from URL:", this.state.currentImageURL);
-
       const img = new Image();
 
       img.onload = () => {
@@ -305,7 +437,6 @@ export class MainView extends Component<MainProps, MainState> {
         })); // Always scale from original coordinates
         this.setState((prevState) => {
           const scaledData = prevState.originalScatterData.map((point) => {
-            // Check if the point already has x and y values before scaling
             if (typeof point.x === "number" && typeof point.y === "number") {
               return {
                 ...point,
@@ -391,15 +522,6 @@ export class MainView extends Component<MainProps, MainState> {
           .attr("stroke-width", "0.5px");
       });
 
-      // Add drag behavior
-      pointGroups.call(
-        d3
-          .drag<SVGGElement, Point>()
-          .on("start", this.dragstarted)
-          .on("drag", this.dragged)
-          .on("end", this.dragended)
-      );
-
       // Add zoom behavior, preserving the current zoom state
       const zoom = d3
         .zoom<SVGSVGElement, unknown>()
@@ -434,123 +556,15 @@ export class MainView extends Component<MainProps, MainState> {
     }
   };
 
-  private readonly dragstarted = (
-    event: d3.D3DragEvent<SVGGElement, Point, Point>,
-    d: Point
-  ): void => {
-    // Prevent event from bubbling up to zoom behavior
-    event.sourceEvent.stopPropagation();
-
-    d3.select(event.sourceEvent.target.parentNode)
-      .raise()
-      .attr("stroke", "black");
-    this.setState({ selectedPoint: d }); // Update selected point when starting to drag    // Update visual appearance of all points
-    const svg = d3.select(this.svgRef.current);
-    const scatterPlotGroup = svg.select(".scatter-points");
-    scatterPlotGroup
-      .selectAll<SVGCircleElement, Point>("circle")
-      .attr("fill", (p: Point) => (p.id === d.id ? "yellow" : "red"))
-      .attr("stroke-width", (p: Point) => (p.id === d.id ? 2 : 1));
-  };
-
-  private readonly dragged = (
-    event: d3.D3DragEvent<SVGGElement, Point, Point>,
-    d: Point
-  ): void => {
-    const point = d3.pointer(event, this.svgRef.current);
-    const transform = d3.zoomTransform(this.svgRef.current!);
-
-    // Calculate actual coordinates accounting for zoom
-    const x = (point[0] - transform.x) / transform.k;
-    const y = (point[1] - transform.y) / transform.k;
-
-    const group = d3.select(event.sourceEvent.target.parentNode);
-    group.select("circle").attr("cx", x).attr("cy", y);
-
-    group
-      .select("text")
-      .attr("x", x + 5)
-      .attr("y", y - 5);
-    this.setState((prevState) => {
-      const updatedScatterData = prevState.scatterData.map((p) =>
-        p.id === d.id ? { ...p, x, y } : p
-      );
-
-      // Create mock scale functions for coordinate conversion
-      const scaleX = d3
-        .scaleLinear()
-        .domain([0, prevState.imageWidth])
-        .range([
-          0,
-          window.innerHeight * (prevState.imageWidth / prevState.imageHeight),
-        ]);
-
-      const scaleY = d3
-        .scaleLinear()
-        .domain([0, prevState.imageHeight])
-        .range([0, window.innerHeight - window.innerHeight * 0.2]);
-
-      // Update original coordinates when dragging
-      const updatedOriginalCoords = prevState.originalScatterData.map((p) =>
-        p.id === d.id
-          ? {
-              ...p,
-              x: scaleX.invert(x),
-              y: scaleY.invert(y),
-            }
-          : p
-      );
-
-      return {
-        scatterData: updatedScatterData,
-        originalScatterData: updatedOriginalCoords,
-        selectedPoint: { ...d, x, y },
-      };
-    });
-  };
-
-  private readonly dragended = (
-    event: d3.D3DragEvent<SVGGElement, Point, Point>
-  ): void => {
-    // Prevent event from bubbling up to zoom behavior
-    event.sourceEvent.stopPropagation();
-
-    d3.select(event.sourceEvent.target.parentNode).attr("stroke", "black");
-    // Keep the point selected after drag ends
-  };
-  // Separate method for updating point selection styles without re-rendering the entire SVG
-  private readonly updatePointSelection = (): void => {
-    if (this.svgRef.current && this.state.scatterData.length > 0) {
-      const svg = d3.select(this.svgRef.current);
-
-      // Update the visual appearance of circles based on selection
-      svg
-        .selectAll<SVGCircleElement, Point>("circle")
-        .attr("fill", (d: Point) => {
-          // Match circle by data-id attribute
-          const id = d.id ?? d3.select(svg.node()).attr("data-id");
-          return this.state.selectedPoint && id == this.state.selectedPoint.id
-            ? "yellow"
-            : "red";
-        })
-        .attr("stroke-width", (d: Point) => {
-          const id = d.id ?? d3.select(svg.node()).attr("data-id");
-          return this.state.selectedPoint && id == this.state.selectedPoint.id
-            ? 2
-            : 1;
-        });
-    }
-  };
-
   // Handle point selection from the table without affecting zoom
-  private readonly handlePointSelect = (point: Point): void => {
+  private readonly handlePointSelect = (point: Point | null): void => {
     this.setState({ selectedPoint: point });
   };
 
   private readonly handleScatterData = async (): Promise<void> => {
     try {
       this.setState({ loading: true });
-      
+
       const result = await ExportService.exportAllData(
         this.state.images,
         this.state.currentImageIndex,
@@ -560,51 +574,88 @@ export class MainView extends Component<MainProps, MainState> {
       );
 
       if (result.failedFiles > 0) {
-        alert(`Some files failed to download: ${result.failedFiles} of ${result.totalFiles}`);
+        alert(
+          `Some files failed to download: ${result.failedFiles} of ${result.totalFiles}`
+        );
       } else {
-        alert(`Successfully downloaded ${result.successfulFiles} TPS file(s) and annotated image(s)`);
+        alert(
+          `Successfully downloaded ${result.successfulFiles} TPS file(s) and annotated image(s)`
+        );
       }
     } catch (error) {
-      alert('An error occurred during download');
-      console.error('Download error:', error);
+      alert("An error occurred during download");
+      console.error("Download error:", error);
     } finally {
       this.setState({ loading: false });
     }
   };
 
+  private readonly handleClearHistory = async (): Promise<void> => {
+    const confirmed = window.confirm(
+      "Are you sure you want to clear all history? This will delete all uploaded images, processed files, and session data. This action cannot be undone."
+    );
+
+    if (confirmed) {
+      try {
+        this.setState({ loading: true });
+        await this.clearHistory();
+        alert("History cleared successfully");
+      } catch (error) {
+        alert("Error clearing history");
+        console.error("Clear history error:", error);
+      } finally {
+        this.setState({ loading: false });
+      }
+    }
+  };
+
   // Helper method to create image with points overlay as blob
-  private createImageWithPointsBlob = async (imageIndex: number, imageName: string): Promise<Blob> => {
+  private createImageWithPointsBlob = async (
+    imageIndex: number,
+    imageName: string
+  ): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       try {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d')!;
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d")!;
 
         // Determine which image and coordinates to use
-        const imageData = imageIndex === this.state.currentImageIndex ? {
-          imageUrl: this.state.currentImageURL!,
-          coords: this.state.originalScatterData, // Use original coordinates instead of scaled ones
-          width: this.state.imageWidth,
-          height: this.state.imageHeight
-        } : {
-          imageUrl: this.state.images[imageIndex].imageSets.original,
-          coords: this.state.images[imageIndex].originalCoords || this.state.images[imageIndex].coords,
-          width: 0, // Will be set when image loads
-          height: 0 // Will be set when image loads
-        };
+        const imageData =
+          imageIndex === this.state.currentImageIndex
+            ? {
+                imageUrl: this.state.currentImageURL!,
+                coords: this.state.originalScatterData,
+                width: this.state.imageWidth,
+                height: this.state.imageHeight,
+              }
+            : {
+                imageUrl: this.state.images[imageIndex].imageSets.original,
+                coords:
+                  this.state.images[imageIndex].originalCoords ||
+                  this.state.images[imageIndex].coords,
+                width: 0, // Will be set when image loads
+                height: 0, // Will be set when image loads
+              };
 
         const img = new Image();
 
         img.onload = () => {
           // Set canvas dimensions to match original image
-          canvas.width = imageIndex === this.state.currentImageIndex ? imageData.width : img.width;
-          canvas.height = imageIndex === this.state.currentImageIndex ? imageData.height : img.height;
+          canvas.width =
+            imageIndex === this.state.currentImageIndex
+              ? imageData.width
+              : img.width;
+          canvas.height =
+            imageIndex === this.state.currentImageIndex
+              ? imageData.height
+              : img.height;
 
           // Draw the background image
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
           // Draw each point
-          ctx.fillStyle = 'red';
-          ctx.strokeStyle = 'black';
+          ctx.fillStyle = "red";
+          ctx.strokeStyle = "black";
           ctx.lineWidth = 1;
 
           imageData.coords.forEach((point) => {
@@ -618,8 +669,8 @@ export class MainView extends Component<MainProps, MainState> {
             ctx.stroke();
 
             // Reset styles for next point
-            ctx.fillStyle = 'red';
-            ctx.strokeStyle = 'black';
+            ctx.fillStyle = "red";
+            ctx.strokeStyle = "black";
             ctx.lineWidth = 1;
           });
 
@@ -628,9 +679,9 @@ export class MainView extends Component<MainProps, MainState> {
             if (blob) {
               resolve(blob);
             } else {
-              reject(new Error('Failed to create blob from canvas'));
+              reject(new Error("Failed to create blob from canvas"));
             }
-          }, 'image/png');
+          }, "image/png");
         };
 
         img.onerror = () => {
@@ -639,30 +690,22 @@ export class MainView extends Component<MainProps, MainState> {
 
         // Set image source
         img.src = imageData.imageUrl;
-
       } catch (error) {
         reject(error);
       }
     });
-  }
+  };
 
   // Handle changing to a different image in the set
   private readonly changeCurrentImage = (index: number): void => {
     this.setState((prevState) => {
-      if (index < 0 || index >= prevState.images.length) return prevState; // Save current data to the current image before switching
+      if (index < 0 || index >= prevState.images.length) return prevState;
       const updatedImages = [...prevState.images];
-      if (
-        prevState.currentImageIndex !== index &&
-        prevState.images.length > 0
-      ) {
-        // Save both current scatter data (display) and original coordinates
-        updatedImages[prevState.currentImageIndex].coords =
-          prevState.scatterData;
-        updatedImages[prevState.currentImageIndex].originalCoords =
-          prevState.originalScatterData;
-      }
+      // Always save the current state of landmarks for the current image
+      updatedImages[prevState.currentImageIndex].coords = prevState.scatterData;
+      updatedImages[prevState.currentImageIndex].originalCoords = prevState.originalScatterData;
 
-      // Set new current image
+      // Load the last-saved state for the new image
       const newImage = updatedImages[index];
       return {
         ...prevState,
@@ -681,7 +724,6 @@ export class MainView extends Component<MainProps, MainState> {
   private readonly fetchUploadedFiles = async (): Promise<void> => {
     try {
       const files = await ApiService.fetchUploadedFiles();
-      console.log("Files in upload folder:", files);
 
       // Create history entries for files that aren't in current upload history
       const currentFileNames = new Set(
@@ -731,9 +773,8 @@ export class MainView extends Component<MainProps, MainState> {
       }
 
       // If not loaded, process it
-      const result = await ApiService.processExistingImage(filename);
+      const result = await ApiService.processExistingImage(filename, this.props.selectedViewType);
       const imageSets = await ApiService.fetchImageSet(filename);
-
       const coords = result.coords.map((coord: Point, index: number) => ({
         ...coord,
         id: index + 1,
@@ -808,23 +849,57 @@ export class MainView extends Component<MainProps, MainState> {
     this.setState({ measurements });
   };
 
+  private readonly handleToggleEditMode = (): void => {
+    this.setState((prevState) => ({ isEditMode: !prevState.isEditMode }));
+  };
+
+  private readonly handleResetZoom = (): void => {
+    this.setState({ zoomTransform: d3.zoomIdentity });
+  };
+
+  // Add cleanup functionality to clear history when the app closes, including beforeunload event handler
+  private readonly setupBeforeUnloadHandler = (): void => {
+    window.addEventListener("beforeunload", this.handleBeforeUnload);
+    window.addEventListener("unload", this.handleBeforeUnload);
+  };
+  private readonly handleBeforeUnload = async (): Promise<void> => {
+    try {
+      // Clear session history before page closes
+      await this.clearHistory();
+    } catch (error) {
+      console.error("Failed to clear session on page close:", error);
+    }
+  };
+
+  private readonly clearHistory = async (): Promise<void> => {
+    try {
+      await ApiService.clearHistory();
+      console.log("Session history cleared");
+    } catch (error) {
+      console.error("Failed to clear history:", error);
+    }
+  };
   render() {
     return (
       <div style={MainViewStyles.container}>
-        {" "}
+        {this.state.sessionReady && <SessionInfo />}
         <Header
           lizardCount={this.state.lizardCount}
           loading={this.state.loading}
           dataFetched={this.state.dataFetched}
           dataError={this.state.dataError}
+          selectedViewType={this.props.selectedViewType}
           onUpload={this.handleUpload}
           onExportAll={this.handleScatterData}
+          onClearHistory={this.handleClearHistory}
+          onBackToSelection={() => window.location.href = '/'}
         />
         <div style={MainViewStyles.mainContentArea}>
           {" "}
           <HistoryPanel
             uploadHistory={this.state.uploadHistory}
             currentImageIndex={this.state.currentImageIndex}
+            uploadProgress={this.state.uploadProgress}
             onSelectImage={this.changeCurrentImage}
             onLoadFromUploads={this.loadImageFromUploads}
           />
@@ -849,30 +924,37 @@ export class MainView extends Component<MainProps, MainState> {
               dataLoading={this.state.dataLoading}
               onVersionChange={(imageURL: string) => {
                 this.setState({
-                  needsScaling: true,
                   currentImageURL: imageURL,
                 });
               }}
-            />{" "}
-            <SVGViewer
-              dataFetched={this.state.dataFetched}
-              loading={this.state.loading}
-              dataLoading={this.state.dataLoading}
-              dataError={this.state.dataError}
-              uploadHistory={this.state.uploadHistory}
-              scatterData={this.state.scatterData}
-              originalScatterData={this.state.originalScatterData}
-              selectedPoint={this.state.selectedPoint}
-              needsScaling={this.state.needsScaling}
-              currentImageURL={this.state.currentImageURL}
-              imageWidth={this.state.imageWidth}
-              imageHeight={this.state.imageHeight}
-              zoomTransform={this.state.zoomTransform}
-              onPointSelect={this.handlePointSelect}
-              onScatterDataUpdate={this.handleScatterDataUpdate}
-              onScalingComplete={this.handleScalingComplete}
-              onZoomChange={this.handleZoomChange}
+              isEditMode={this.state.isEditMode}
+              onToggleEditMode={this.handleToggleEditMode}
+              onResetZoom={this.handleResetZoom}
             />
+            <div style={{ overflow: "auto", height: "100%" }}>
+              <SVGViewer
+                dataFetched={this.state.dataFetched}
+                loading={this.state.loading}
+                dataLoading={this.state.dataLoading}
+                dataError={this.state.dataError}
+                uploadHistory={this.state.uploadHistory}
+                scatterData={this.state.scatterData}
+                originalScatterData={this.state.originalScatterData}
+                selectedPoint={this.state.selectedPoint}
+                needsScaling={this.state.needsScaling}
+                currentImageURL={this.state.currentImageURL}
+                imageWidth={this.state.imageWidth}
+                imageHeight={this.state.imageHeight}
+                zoomTransform={this.state.zoomTransform}
+                onPointSelect={this.handlePointSelect}
+                onScatterDataUpdate={this.handleScatterDataUpdate}
+                onScalingComplete={this.handleScalingComplete}
+                onZoomChange={this.handleZoomChange}
+                isEditMode={this.state.isEditMode}
+                onToggleEditMode={this.handleToggleEditMode}
+                onResetZoom={this.handleResetZoom}
+              />
+            </div>
           </div>
           <div style={MainViewStyles.measurementsPanel}>
             <ScaleSettingsComponent

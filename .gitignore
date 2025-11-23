@@ -1,7 +1,12 @@
 # Git
 .git
 
-backend/better_predictor_auto.dat
+backend/*.dat
+backend/test/
+backend/landmark_visualizations/
+test.xml
+images/
+*svm
 
 # Node.js
 frontend/node_modules
@@ -22,7 +27,7 @@ backend/.venv
 backend/venv
 backend/env
 backend/.pytest_cache
-
+backend/sessions
 
 # Output directories
 backend/upload
@@ -44,3 +49,11 @@ Thumbs.db
 
 # env files
 .env*
+
+# key & cert files
+*.key
+*.crt
+*.pem
+
+# Monitoring configuration files with sensitive data
+monitoring/web.yml
