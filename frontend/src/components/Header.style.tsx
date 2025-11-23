@@ -63,7 +63,40 @@ export class HeaderStyles {
     alignItems: "flex-start",
     gap: "15px",
     width: "220px",
-    marginTop: "20px",
+  };
+
+  static readonly dropdownContainer: CSSProperties = {
+    position: "relative",
+    width: "100%",
+  };
+
+  static readonly dropdownButton: CSSProperties = {
+    padding: "12px 20px",
+    backgroundColor: "#607D8B",
+    color: "white",
+    border: "none",
+    borderRadius: "4px",
+    cursor: "pointer",
+    width: "100%",
+    boxSizing: "border-box",
+    fontWeight: "bold",
+    fontSize: "14px",
+    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+  };
+
+  static readonly dropdownContent: CSSProperties = {
+    position: "absolute",
+    top: "100%",
+    left: 0,
+    backgroundColor: "#f9f9f9",
+    minWidth: "220px",
+    boxShadow: "0px 8px 16px 0px rgba(0,0,0,0.2)",
+    zIndex: 1,
+    display: "flex",
+    flexDirection: "column",
+    gap: "5px",
+    padding: "5px",
+    borderRadius: "4px",
   };
 
   static readonly uploadButton: CSSProperties = {
@@ -121,6 +154,44 @@ export class HeaderStyles {
   };
 
   static readonly clearHistoryButtonDisabled: CSSProperties = {
+    cursor: "not-allowed",
+    opacity: 0.7,
+  };
+
+  static readonly setScaleButton: CSSProperties = {
+    padding: "12px 20px",
+    backgroundColor: "#FF9800",
+    color: "white",
+    border: "none",
+    borderRadius: "4px",
+    cursor: "pointer",
+    width: "100%",
+    boxSizing: "border-box",
+    fontWeight: "bold",
+    fontSize: "14px",
+    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+  };
+
+  static readonly setScaleButtonDisabled: CSSProperties = {
+    cursor: "not-allowed",
+    opacity: 0.7,
+  };
+
+  static readonly measurementsButton: CSSProperties = {
+    padding: "12px 20px",
+    backgroundColor: "#9C27B0",
+    color: "white",
+    border: "none",
+    borderRadius: "4px",
+    cursor: "pointer",
+    width: "100%",
+    boxSizing: "border-box",
+    fontWeight: "bold",
+    fontSize: "14px",
+    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+  };
+
+  static readonly measurementsButtonDisabled: CSSProperties = {
     cursor: "not-allowed",
     opacity: 0.7,
   };

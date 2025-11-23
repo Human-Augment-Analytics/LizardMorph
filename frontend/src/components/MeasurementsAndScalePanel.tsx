@@ -1,29 +1,32 @@
 import React, { Component } from "react";
-import { MeasurementsPanelStyles } from "./MeasurementsPanel.style";
+import { MeasurementsAndScalePanelStyles as styles } from "./MeasurementsAndScalePanel.style";
 import type { Measurement } from "../models/Measurement";
 import type { Point } from "../models/Point";
-import type { ScaleSettings } from "../models/ScaleSettings";
+import type { ScaleSettings as ScaleSettingsType } from "../models/ScaleSettings";
+import { UNITS } from "../models/ScaleSettings";
 
-interface MeasurementsPanelProps {
+interface MeasurementsAndScalePanelProps {
   points: Point[];
   measurements: Measurement[];
-  scaleSettings: ScaleSettings;
+  scaleSettings: ScaleSettingsType;
   onMeasurementsChange: (measurements: Measurement[]) => void;
+  onScaleSettingsChange: (settings: ScaleSettingsType) => void;
+  isModal?: boolean;
+  onClose?: () => void;
 }
 
-export class MeasurementsPanel extends Component<MeasurementsPanelProps> {
-  componentDidUpdate(prevProps: MeasurementsPanelProps): void {
-    // Recalculate distances when scale settings or points change
+export class MeasurementsAndScalePanel extends Component<MeasurementsAndScalePanelProps> {
+  componentDidUpdate(prevProps: MeasurementsAndScalePanelProps): void {
     if (
       prevProps.scaleSettings !== this.props.scaleSettings ||
       prevProps.points !== this.props.points
     ) {
       const updatedMeasurements = this.props.measurements.map((measurement) => {
         const pointA = measurement.pointAId
-          ? this.props.points.find((p) => p.id === measurement.pointAId)
+          ? this.props.points.find((p) => p.id === measurement.pointAId) || null
           : null;
         const pointB = measurement.pointBId
-          ? this.props.points.find((p) => p.id === measurement.pointBId)
+          ? this.props.points.find((p) => p.id === measurement.pointBId) || null
           : null;
 
         return {
@@ -36,7 +39,6 @@ export class MeasurementsPanel extends Component<MeasurementsPanelProps> {
         };
       });
 
-      // Only update if measurements actually changed
       const hasChanges = updatedMeasurements.some(
         (m, i) =>
           m.calculatedDistance !== this.props.measurements[i]?.calculatedDistance
@@ -51,18 +53,16 @@ export class MeasurementsPanel extends Component<MeasurementsPanelProps> {
   private calculateDistance(
     pointA: Point | null,
     pointB: Point | null,
-    scaleSettings: ScaleSettings
+    scaleSettings: ScaleSettingsType
   ): number | null {
     if (!pointA || !pointB || !scaleSettings.pointAId || !scaleSettings.pointBId || scaleSettings.value === null || scaleSettings.value <= 0) {
       return null;
     }
 
-    // Calculate pixel distance between the two measurement points
     const pixelDistance = Math.sqrt(
       Math.pow(pointB.x - pointA.x, 2) + Math.pow(pointB.y - pointA.y, 2)
     );
 
-    // Find the scale points
     const scalePointA = this.props.points.find(
       (p) => p.id === scaleSettings.pointAId
     );
@@ -74,7 +74,6 @@ export class MeasurementsPanel extends Component<MeasurementsPanelProps> {
       return null;
     }
 
-    // Calculate pixel distance of the scale
     const scalePixelDistance = Math.sqrt(
       Math.pow(scalePointB.x - scalePointA.x, 2) +
         Math.pow(scalePointB.y - scalePointA.y, 2)
@@ -83,10 +82,6 @@ export class MeasurementsPanel extends Component<MeasurementsPanelProps> {
     if (scalePixelDistance === 0) {
       return null;
     }
-
-    // Calculate the real-world distance
-    // pixelDistance / scalePixelDistance = realDistance / scaleValue
-    // realDistance = (pixelDistance / scalePixelDistance) * scaleValue
     const realDistance = (pixelDistance / scalePixelDistance) * scaleSettings.value;
 
     return realDistance;
@@ -121,13 +116,12 @@ export class MeasurementsPanel extends Component<MeasurementsPanelProps> {
       if (m.id === id) {
         const updated = { ...m, ...updates };
         
-        // Recalculate distance if points changed
         if (updates.pointAId !== undefined || updates.pointBId !== undefined) {
           const pointA = updated.pointAId
-            ? this.props.points.find((p) => p.id === updated.pointAId)
+            ? this.props.points.find((p) => p.id === updated.pointAId) || null
             : null;
           const pointB = updated.pointBId
-            ? this.props.points.find((p) => p.id === updated.pointBId)
+            ? this.props.points.find((p) => p.id === updated.pointBId) || null
             : null;
 
           updated.calculatedDistance = this.calculateDistance(
@@ -146,14 +140,118 @@ export class MeasurementsPanel extends Component<MeasurementsPanelProps> {
   };
 
   render() {
-    const { points, measurements, scaleSettings } = this.props;
+    const { points, measurements, scaleSettings, onScaleSettingsChange, isModal, onClose } = this.props;
 
-    return (
-      <div style={MeasurementsPanelStyles.container}>
-        <h3 style={MeasurementsPanelStyles.title}>Measurements</h3>
+    const handlePointAChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const pointAId = e.target.value ? parseInt(e.target.value, 10) : null;
+      onScaleSettingsChange({
+        ...scaleSettings,
+        pointAId,
+      });
+    };
 
+    const handlePointBChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const pointBId = e.target.value ? parseInt(e.target.value, 10) : null;
+      onScaleSettingsChange({
+        ...scaleSettings,
+        pointBId,
+      });
+    };
+
+    const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = e.target.value ? parseFloat(e.target.value) : null;
+      onScaleSettingsChange({
+        ...scaleSettings,
+        value,
+      });
+    };
+
+    const handleUnitsChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      onScaleSettingsChange({
+        ...scaleSettings,
+        units: e.target.value,
+      });
+    };
+
+    const scaleSettingsContent = (
+      <>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Point A:</label>
+          <select
+            style={styles.select}
+            value={scaleSettings.pointAId ?? ""}
+            onChange={handlePointAChange}
+          >
+            <option value="">Select landmark...</option>
+            {points.map((point) => (
+              <option key={point.id} value={point.id}>
+                Landmark {point.id}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Point B:</label>
+          <select
+            style={styles.select}
+            value={scaleSettings.pointBId ?? ""}
+            onChange={handlePointBChange}
+          >
+            <option value="">Select landmark...</option>
+            {points.map((point) => (
+              <option key={point.id} value={point.id}>
+                Landmark {point.id}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Value:</label>
+          <input
+            type="number"
+            style={styles.input}
+            value={scaleSettings.value ?? ""}
+            onChange={handleValueChange}
+            placeholder="Enter known distance"
+            step="any"
+            min="0"
+          />
+        </div>
+
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Units:</label>
+          <select
+            style={styles.select}
+            value={scaleSettings.units}
+            onChange={handleUnitsChange}
+          >
+            {UNITS.map((unit) => (
+              <option key={unit.value} value={unit.value}>
+                {unit.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {scaleSettings.pointAId &&
+          scaleSettings.pointBId &&
+          scaleSettings.value !== null &&
+          scaleSettings.value > 0 && (
+            <div style={styles.infoText}>
+              Scale set: {scaleSettings.value} {scaleSettings.units} between
+              Landmark {scaleSettings.pointAId} and Landmark{" "}
+              {scaleSettings.pointBId}
+            </div>
+          )}
+      </>
+    );
+
+    const measurementsContent = (
+      <>
         {measurements.length === 0 ? (
-          <div style={MeasurementsPanelStyles.emptyState}>
+          <div style={styles.emptyState}>
             No measurements yet. Click "Add Measurement" to create one.
           </div>
         ) : (
@@ -165,7 +263,6 @@ export class MeasurementsPanel extends Component<MeasurementsPanelProps> {
               ? points.find((p) => p.id === measurement.pointBId)
               : null;
 
-            // Recalculate distance if scale settings changed
             let calculatedDistance = measurement.calculatedDistance;
             if (pointA && pointB) {
               calculatedDistance = this.calculateDistance(
@@ -176,24 +273,24 @@ export class MeasurementsPanel extends Component<MeasurementsPanelProps> {
             }
 
             return (
-              <div key={measurement.id} style={MeasurementsPanelStyles.measurementItem}>
-                <div style={MeasurementsPanelStyles.measurementHeader}>
-                  <span style={MeasurementsPanelStyles.measurementLabel}>
+              <div key={measurement.id} style={styles.measurementItem}>
+                <div style={styles.measurementHeader}>
+                  <span style={styles.measurementLabel}>
                     Measurement #{index + 1}
                   </span>
                   <button
-                    style={MeasurementsPanelStyles.deleteButton}
+                    style={styles.deleteButton}
                     onClick={() => this.handleDeleteMeasurement(measurement.id)}
                   >
                     Delete
                   </button>
                 </div>
 
-                <div style={MeasurementsPanelStyles.formGroup}>
-                  <label style={MeasurementsPanelStyles.label}>Label:</label>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Label:</label>
                   <input
                     type="text"
-                    style={MeasurementsPanelStyles.input}
+                    style={styles.input}
                     value={measurement.label}
                     onChange={(e) =>
                       this.handleMeasurementChange(measurement.id, {
@@ -204,10 +301,10 @@ export class MeasurementsPanel extends Component<MeasurementsPanelProps> {
                   />
                 </div>
 
-                <div style={MeasurementsPanelStyles.formGroup}>
-                  <label style={MeasurementsPanelStyles.label}>Point A:</label>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Point A:</label>
                   <select
-                    style={MeasurementsPanelStyles.select}
+                    style={styles.select}
                     value={measurement.pointAId ?? ""}
                     onChange={(e) =>
                       this.handleMeasurementChange(measurement.id, {
@@ -226,10 +323,10 @@ export class MeasurementsPanel extends Component<MeasurementsPanelProps> {
                   </select>
                 </div>
 
-                <div style={MeasurementsPanelStyles.formGroup}>
-                  <label style={MeasurementsPanelStyles.label}>Point B:</label>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Point B:</label>
                   <select
-                    style={MeasurementsPanelStyles.select}
+                    style={styles.select}
                     value={measurement.pointBId ?? ""}
                     onChange={(e) =>
                       this.handleMeasurementChange(measurement.id, {
@@ -249,7 +346,7 @@ export class MeasurementsPanel extends Component<MeasurementsPanelProps> {
                 </div>
 
                 {calculatedDistance !== null && (
-                  <div style={MeasurementsPanelStyles.distanceDisplay}>
+                  <div style={styles.distanceDisplay}>
                     Distance: {calculatedDistance.toFixed(3)} {scaleSettings.units}
                     {measurement.label && ` (${measurement.label})`}
                   </div>
@@ -260,13 +357,56 @@ export class MeasurementsPanel extends Component<MeasurementsPanelProps> {
         )}
 
         <button
-          style={MeasurementsPanelStyles.addButton}
+          style={styles.addButton}
           onClick={this.handleAddMeasurement}
         >
           + Add Measurement
         </button>
+      </>
+    );
+
+    const modalContent = (
+      <>
+        <div style={styles.sectionTitle}>Set Scale</div>
+        {scaleSettingsContent}
+        <div style={styles.sectionTitle}>Measurements</div>
+        {measurementsContent}
+      </>
+    );
+
+    if (isModal) {
+      return (
+        <>
+          <div
+            style={styles.modalOverlay}
+            onClick={onClose}
+          />
+          <div
+            style={styles.modalContent}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={styles.modalHeader}>
+              <h3 style={{ margin: 0 }}>Scale and Measurements</h3>
+              <button
+                style={styles.closeButton}
+                onClick={onClose}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <div style={styles.modalBody}>
+              {modalContent}
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    return (
+      <div style={styles.container}>
+        {modalContent}
       </div>
     );
   }
 }
-
