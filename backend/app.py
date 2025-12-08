@@ -27,8 +27,8 @@ frontend_dir = os.getenv("FRONTEND_DIR", "../frontend/dist")
 session_dir = os.getenv("SESSION_DIR", "sessions")
 
 # Model files for different view types
-DORSAL_PREDICTOR_FILE = os.getenv("DORSAL_PREDICTOR_FILE", "./better_predictor_auto.dat")
-LATERAL_PREDICTOR_FILE = os.getenv("LATERAL_PREDICTOR_FILE", "./lateral_predictor_auto.dat")
+DORSAL_PREDICTOR_FILE = os.getenv("DORSAL_PREDICTOR_FILE", "../models/lizard-x-ray/better_predictor_auto.dat")
+LATERAL_PREDICTOR_FILE = os.getenv("LATERAL_PREDICTOR_FILE", "../models/lizard-x-ray/lateral_predictor_auto.dat")
 TOEPADS_PREDICTOR_FILE = os.getenv("TOEPADS_PREDICTOR_FILE", "./toepads_predictor_auto.dat")
 CUSTOM_PREDICTOR_FILE = os.getenv("CUSTOM_PREDICTOR_FILE", "./custom_predictor_auto.dat")
 
@@ -38,10 +38,19 @@ LATERAL_DETECTOR_FILE = os.getenv("LATERAL_DETECTOR_FILE", None)
 TOEPADS_DETECTOR_FILE = os.getenv("TOEPADS_DETECTOR_FILE", None)
 CUSTOM_DETECTOR_FILE = os.getenv("CUSTOM_DETECTOR_FILE", None)
 
+# Lizard Toepad model files
+# Note: To use cropped predictors (e.g., toe_predictor_cropped.dat), set the environment variable:
+# TOEPAD_TOE_PREDICTOR="../models/lizard-toe-pad/toe_predictor_cropped.dat"
+# The inference code will automatically detect cropped predictors by filename and apply appropriate preprocessing.
+TOEPAD_YOLO_MODEL = os.getenv("TOEPAD_YOLO_MODEL", "../models/lizard-toe-pad/yolo_bounding_box.pt")
+TOEPAD_TOE_PREDICTOR = os.getenv("TOEPAD_TOE_PREDICTOR", "../models/lizard-toe-pad/lizard_toe.dat")
+TOEPAD_SCALE_PREDICTOR = os.getenv("TOEPAD_SCALE_PREDICTOR", "../models/lizard-toe-pad/lizard_scale.dat")
+TOEPAD_FINGER_PREDICTOR = os.getenv("TOEPAD_FINGER_PREDICTOR", "../models/lizard-toe-pad/lizard_finger.dat")
+
 
 
 # Default predictor file (fallback)
-predictor_file = os.getenv("PREDICTOR_FILE", "./better_predictor_auto.dat")
+predictor_file = os.getenv("PREDICTOR_FILE", "../models/lizard-x-ray/better_predictor_auto.dat")
 
 # Webhook configuration
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "your-webhook-secret-here")
@@ -63,6 +72,10 @@ logger.info(f"Dorsal detector file: {DORSAL_DETECTOR_FILE}")
 logger.info(f"Lateral detector file: {LATERAL_DETECTOR_FILE}")
 logger.info(f"Toepads detector file: {TOEPADS_DETECTOR_FILE}")
 logger.info(f"Custom detector file: {CUSTOM_DETECTOR_FILE}")
+logger.info(f"Toepad YOLO model: {TOEPAD_YOLO_MODEL}")
+logger.info(f"Toepad toe predictor: {TOEPAD_TOE_PREDICTOR}")
+logger.info(f"Toepad scale predictor: {TOEPAD_SCALE_PREDICTOR}")
+logger.info(f"Toepad finger predictor: {TOEPAD_FINGER_PREDICTOR}")
 
 
 app = Flask(__name__)
@@ -301,36 +314,49 @@ def get_view_type_config(view_type):
     Get the appropriate predictor file and detector file based on view type.
     
     Args:
-        view_type (str): The view type (dorsal, lateral, toepads, custom)
+        view_type (str): The view type (dorsal, lateral, toepads, toepad, custom)
         
     Returns:
-        tuple: (predictor_file_path, detector_file_path)
+        tuple: (predictor_file_path, detector_file_path, yolo_model_path)
+               For non-toepad types, yolo_model_path will be None
     """
     view_type = view_type.lower() if view_type else "dorsal"
     
     if view_type == "dorsal":
         predictor_file = DORSAL_PREDICTOR_FILE
         detector_file = DORSAL_DETECTOR_FILE
+        yolo_model = None
     elif view_type == "lateral":
         predictor_file = LATERAL_PREDICTOR_FILE
         detector_file = LATERAL_DETECTOR_FILE
+        yolo_model = None
     elif view_type == "toepads":
         predictor_file = TOEPADS_PREDICTOR_FILE
         detector_file = TOEPADS_DETECTOR_FILE
+        yolo_model = None
+    elif view_type == "toepad":
+        # For toepad, we use YOLO + dlib predictors
+        # Default to toe predictor, but can be specified per request
+        predictor_file = TOEPAD_TOE_PREDICTOR
+        detector_file = None
+        yolo_model = TOEPAD_YOLO_MODEL
     elif view_type == "custom":
         predictor_file = CUSTOM_PREDICTOR_FILE
         detector_file = CUSTOM_DETECTOR_FILE
+        yolo_model = None
     else:
         # Default to dorsal if unknown view type
         logger.warning(f"Unknown view type '{view_type}', using dorsal configuration")
         predictor_file = DORSAL_PREDICTOR_FILE
         detector_file = DORSAL_DETECTOR_FILE
+        yolo_model = None
     
     logger.info(f"View type '{view_type}' configured with:")
     logger.info(f"  - Predictor file: {predictor_file}")
     logger.info(f"  - Detector file: {detector_file}")
+    logger.info(f"  - YOLO model: {yolo_model}")
     
-    return predictor_file, detector_file
+    return predictor_file, detector_file, yolo_model
 
 
 def cleanup_on_startup():
@@ -474,9 +500,20 @@ def upload():
 
         # Get view type from form data
         view_type = request.form.get("view_type", "dorsal")
-        predictor_file_path, detector_file_path = get_view_type_config(view_type)
+        # Get toepad predictor type if specified (toe, scale, finger)
+        toepad_predictor_type = request.form.get("toepad_predictor_type", "toe")
+        predictor_file_path, detector_file_path, yolo_model_path = get_view_type_config(view_type)
         
-        logger.info(f"Processing images with view type: {view_type}, predictor: {predictor_file_path}, detector: {detector_file_path}")
+        # For toepad view type, select the appropriate predictor
+        if view_type.lower() == "toepad":
+            if toepad_predictor_type == "scale":
+                predictor_file_path = TOEPAD_SCALE_PREDICTOR
+            elif toepad_predictor_type == "finger":
+                predictor_file_path = TOEPAD_FINGER_PREDICTOR
+            else:  # default to toe
+                predictor_file_path = TOEPAD_TOE_PREDICTOR
+        
+        logger.info(f"Processing images with view type: {view_type}, predictor: {predictor_file_path}, detector: {detector_file_path}, YOLO: {yolo_model_path}")
 
         images = request.files.getlist("image")
         all_data = []
@@ -507,13 +544,26 @@ def upload():
                     xml_output_path = os.path.join(
                         session_data["outputs_folder"], f"output_{unique_name}.xml"
                     )
-                    logger.info(f"Generating XML predictions for {unique_name} using predictor: {predictor_file_path}")
-                    # Use detector-based prediction if detector is available, otherwise use original function
-                    if detector_file_path and os.path.exists(detector_file_path):
+                    logger.info(f"Generating XML predictions for {unique_name} using YOLO with all predictors")
+                    # Use YOLO-based prediction for toepad, detector-based for others, or original function
+                    if view_type.lower() == "toepad" and yolo_model_path and os.path.exists(yolo_model_path):
+                        logger.info(f"Using YOLO detection for toepad view: {yolo_model_path}")
+                        utils.predictions_to_xml_single_with_yolo(
+                            image_path, 
+                            xml_output_path, 
+                            yolo_model_path,
+                            toe_predictor_path=TOEPAD_TOE_PREDICTOR,
+                            scale_predictor_path=TOEPAD_SCALE_PREDICTOR,
+                            finger_predictor_path=TOEPAD_FINGER_PREDICTOR,
+                            target_predictor_type=toepad_predictor_type
+                        )
+                        logger.info(f"YOLO processing completed for {unique_name}")
+                    elif detector_file_path and os.path.exists(detector_file_path):
                         utils.predictions_to_xml_single_with_detector(
                             predictor_file_path, image_path, xml_output_path, detector_file_path
                         )
                     else:
+                        logger.warning(f"Not using YOLO - view_type={view_type}, yolo_model_path={yolo_model_path}, exists={os.path.exists(yolo_model_path) if yolo_model_path else False}")
                         utils.predictions_to_xml_single(
                             predictor_file_path, image_path, xml_output_path
                         )
@@ -568,7 +618,14 @@ def upload():
                     gc.collect()
                     
                 except Exception as img_error:
-                    logger.error(f"Error processing image {unique_name}: {str(img_error)}")
+                    logger.error(f"Error processing image {unique_name}: {str(img_error)}", exc_info=True)
+                    # Add error info to response so client knows what went wrong
+                    all_data.append({
+                        "name": unique_name,
+                        "error": str(img_error),
+                        "coords": [],
+                        "bounding_boxes": []
+                    })
                     # Continue with next image instead of failing completely
                     continue
 
@@ -668,7 +725,7 @@ def process_scatter_data():
 
     try:
         # Get view type configuration
-        predictor_file_path, detector_file_path = get_view_type_config(view_type)
+        predictor_file_path, detector_file_path, yolo_model_path = get_view_type_config(view_type)
         
         # Get session-specific folders
         session_id = get_session_id()
@@ -862,7 +919,17 @@ def process_existing():
 
         # Get view type from query parameters
         view_type = request.args.get("view_type", "dorsal")
-        predictor_file_path, detector_file_path = get_view_type_config(view_type)
+        toepad_predictor_type = request.args.get("toepad_predictor_type", "toe")
+        predictor_file_path, detector_file_path, yolo_model_path = get_view_type_config(view_type)
+        
+        # For toepad view type, select the appropriate predictor
+        if view_type.lower() == "toepad":
+            if toepad_predictor_type == "scale":
+                predictor_file_path = TOEPAD_SCALE_PREDICTOR
+            elif toepad_predictor_type == "finger":
+                predictor_file_path = TOEPAD_FINGER_PREDICTOR
+            else:  # default to toe
+                predictor_file_path = TOEPAD_TOE_PREDICTOR
         
         # Get session-specific folders
         session_id = get_session_id()
@@ -900,8 +967,18 @@ def process_existing():
 
         # Generate XML if it doesn't exist
         if not os.path.exists(xml_path):
-            # Use detector-based prediction if detector is available, otherwise use original function
-            if detector_file_path and os.path.exists(detector_file_path):
+            # Use YOLO-based prediction for toepad, detector-based for others, or original function
+            if view_type.lower() == "toepad" and yolo_model_path and os.path.exists(yolo_model_path):
+                utils.predictions_to_xml_single_with_yolo(
+                    image_path, 
+                    xml_path, 
+                    yolo_model_path,
+                    toe_predictor_path=TOEPAD_TOE_PREDICTOR,
+                    scale_predictor_path=TOEPAD_SCALE_PREDICTOR,
+                    finger_predictor_path=TOEPAD_FINGER_PREDICTOR,
+                    target_predictor_type=toepad_predictor_type
+                )
+            elif detector_file_path and os.path.exists(detector_file_path):
                 utils.predictions_to_xml_single_with_detector(
                     predictor_file_path, image_path, xml_path, detector_file_path
                 )
@@ -976,7 +1053,17 @@ def save_annotations():
             return jsonify({"error": "Missing required data: coords or name"}), 400
 
         # Get view type configuration
-        predictor_file_path, detector_file_path = get_view_type_config(view_type)
+        predictor_file_path, detector_file_path, yolo_model_path = get_view_type_config(view_type)
+        
+        # For toepad view type, select the appropriate predictor (default to toe)
+        if view_type.lower() == "toepad":
+            toepad_predictor_type = data.get("toepad_predictor_type", "toe")
+            if toepad_predictor_type == "scale":
+                predictor_file_path = TOEPAD_SCALE_PREDICTOR
+            elif toepad_predictor_type == "finger":
+                predictor_file_path = TOEPAD_FINGER_PREDICTOR
+            else:
+                predictor_file_path = TOEPAD_TOE_PREDICTOR
 
         # Get session-specific folders
         session_id = get_session_id()

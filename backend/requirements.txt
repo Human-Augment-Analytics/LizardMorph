@@ -12,3 +12,6 @@ python-dotenv
 werkzeug==2.2.2
 prometheus-client
 psutil
+ultralytics
+torch
+torchvision

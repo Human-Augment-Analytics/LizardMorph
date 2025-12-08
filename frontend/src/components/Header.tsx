@@ -12,6 +12,8 @@ interface HeaderProps {
   onClearHistory: () => void;
   onBackToSelection: () => void;
   onOpenMeasurementsModal?: () => void;
+  toepadPredictorType?: string;
+  onToepadPredictorTypeChange?: (type: string) => void;
 }
 
 interface HeaderState {
@@ -167,7 +169,7 @@ export class Header extends Component<HeaderProps, HeaderState> {
                   marginRight: "12px",
                 }}
               >
-                {this.props.selectedViewType === "lateral" ? "🦖" : "🦎"}
+                {this.props.selectedViewType === "lateral" ? "🦖" : this.props.selectedViewType === "toepads" ? "🦶" : "🦎"}
               </div>
               <h2 style={HeaderStyles.title}>
                 Lizard Anolis X-Ray Auto-Annotator

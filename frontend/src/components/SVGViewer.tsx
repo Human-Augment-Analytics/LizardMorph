@@ -3,6 +3,7 @@ import * as d3 from "d3";
 import { SVGViewerStyles } from "./SVGViewer.style";
 import type { Point } from "../models/Point";
 import type { UploadHistoryItem } from "../models/UploadHistoryItem";
+import type { BoundingBox } from "../models/AnnotationsData";
 
 interface SVGViewerProps {
   dataFetched: boolean;
@@ -29,6 +30,7 @@ interface SVGViewerProps {
   onToggleEditMode: () => void;
   onResetZoom: () => void;
   isModalOpen?: boolean;
+  boundingBoxes?: BoundingBox[];
 }
 
 interface SVGViewerState {
@@ -93,7 +95,9 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       this.props.originalScatterData.length > 0 &&
       (prevProps.imageWidth !== this.props.imageWidth ||
         prevProps.imageHeight !== this.props.imageHeight ||
-        this.props.needsScaling)
+        this.props.needsScaling ||
+        prevProps.boundingBoxes !== this.props.boundingBoxes ||
+        (this.props.boundingBoxes && this.props.boundingBoxes.length !== (prevProps.boundingBoxes?.length || 0)))
     ) {
       setTimeout(() => {
         this.renderSVG();
@@ -242,6 +246,56 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         .attr("width", width)
         .attr("height", height)
         .attr("preserveAspectRatio", "xMidYMid slice");
+
+      // Add bounding boxes to the zoom container (if available)
+      if (this.props.boundingBoxes && this.props.boundingBoxes.length > 0) {
+        const bboxGroup = zoomContainer
+          .append("g")
+          .attr("class", "bounding-boxes");
+        
+        // Scale functions for bounding boxes
+        const scaleX = d3.scaleLinear()
+          .domain([0, this.props.imageWidth])
+          .range([0, width]);
+        const scaleY = d3.scaleLinear()
+          .domain([0, this.props.imageHeight])
+          .range([0, height]);
+        
+        // Color scheme for different box types (toe, finger, scale)
+        const boxColors = ['#00ff00', '#0088ff', '#ff8800']; // Green, Blue, Orange
+        
+        this.props.boundingBoxes.forEach((bbox, index) => {
+          const scaledX = scaleX(bbox.left);
+          const scaledY = scaleY(bbox.top);
+          const scaledWidth = scaleX(bbox.width);
+          const scaledHeight = scaleY(bbox.height);
+          
+          // Calculate coverage for logging
+          const boxArea = bbox.width * bbox.height;
+          const imageArea = this.props.imageWidth * this.props.imageHeight;
+          const coverageRatio = boxArea / imageArea;
+          
+          console.log(`Rendering bounding box ${index}:`, {
+            original: { left: bbox.left, top: bbox.top, width: bbox.width, height: bbox.height },
+            scaled: { x: scaledX, y: scaledY, width: scaledWidth, height: scaledHeight },
+            coverage: `${(coverageRatio * 100).toFixed(1)}%`
+          });
+          
+          // Draw rectangle for bounding box
+          bboxGroup
+            .append("rect")
+            .attr("x", scaledX)
+            .attr("y", scaledY)
+            .attr("width", scaledWidth)
+            .attr("height", scaledHeight)
+            .attr("fill", "none")
+            .attr("stroke", boxColors[index % boxColors.length])
+            .attr("stroke-width", 3)
+            .attr("stroke-dasharray", "8,4")
+            .attr("opacity", 0.9)
+            .style("pointer-events", "none");
+        });
+      }
 
       // Add scatter points to the zoom container
       const scatterPlotGroup = zoomContainer
