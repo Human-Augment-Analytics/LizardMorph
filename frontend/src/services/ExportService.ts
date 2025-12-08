@@ -22,25 +22,30 @@ export class ExportService {
   ): string {
     let csvContent = "Measurement,Image,Point A,Point B,Distance,Units\n";
 
-    images.forEach((image, imageIndex) => {
-      measurements.forEach((measurement) => {
-        const pointA = measurement.pointAId
-          ? image.coords.find((p) => p.id === measurement.pointAId)
-          : null;
-        const pointB = measurement.pointBId
-          ? image.coords.find((p) => p.id === measurement.pointBId)
-          : null;
-
-        if (pointA && pointB) {
-          const distance = this.calculateDistance(
-            pointA,
-            pointB,
-            scaleSettings,
-            image.coords
-          );
-          csvContent += `${measurement.label || `Measurement ${imageIndex + 1}`},${image.name},${measurement.pointAId},${measurement.pointBId},${distance ? distance.toFixed(3) : "N/A"},${scaleSettings.units}\n`;
+    images.forEach((image) => {
+      // Generate all pairwise combinations of landmarks
+      const coords = image.coords;
+      for (let i = 0; i < coords.length; i++) {
+        for (let j = i + 1; j < coords.length; j++) {
+          const pointA = coords[i];
+          const pointB = coords[j];
+          
+          if (pointA && pointB) {
+            const distance = this.calculateDistance(
+              pointA,
+              pointB,
+              scaleSettings,
+              coords
+            );
+            // Check if there's a custom label for this measurement
+            const customMeasurement = measurements.find(
+              (m) => m.pointAId === pointA.id && m.pointBId === pointB.id
+            );
+            const label = customMeasurement?.label || `Landmark ${pointA.id}-${pointB.id}`;
+            csvContent += `${label},${image.name},${pointA.id},${pointB.id},${distance ? distance.toFixed(3) : "N/A"},${scaleSettings.units}\n`;
+          }
         }
-      });
+      }
     });
 
     return csvContent;

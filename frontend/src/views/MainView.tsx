@@ -148,7 +148,21 @@ export class MainView extends Component<MainProps, MainState> {
   private intervalId: NodeJS.Timeout | null = null;
 
   // Effect to count unique images in upload folder
-  componentDidUpdate(_prevProps: MainProps, prevState: MainState): void {
+  componentDidUpdate(prevProps: MainProps, prevState: MainState): void {
+    // Filter history when viewType changes
+    if (prevProps.selectedViewType !== this.props.selectedViewType) {
+      this.setState((currentState) => ({
+        uploadHistory: currentState.uploadHistory.filter(
+          item => item.viewType === this.props.selectedViewType || !item.viewType
+        ),
+        // Also filter images to only show those for current viewType
+        images: currentState.images.filter((img, idx) => {
+          const historyItem = currentState.uploadHistory.find(h => h.index === idx);
+          return historyItem?.viewType === this.props.selectedViewType || !historyItem?.viewType;
+        }),
+      }));
+    }
+    
     if (prevState.images !== this.state.images) {
       this.countUniqueImages();
     }
@@ -198,6 +212,7 @@ export class MainView extends Component<MainProps, MainState> {
         name: file.name,
         timestamp: "Uploading...",
         index: -1,
+        viewType: this.props.selectedViewType,
       });
     });
     
@@ -299,6 +314,7 @@ export class MainView extends Component<MainProps, MainState> {
                     name: processedImage.name,
                     timestamp: processedImage.timestamp,
                     index: updatedImages.length - 1,
+                    viewType: this.props.selectedViewType,
                   }
                 : item
             );
@@ -615,13 +631,50 @@ export class MainView extends Component<MainProps, MainState> {
 
   private readonly handleClearHistory = async (): Promise<void> => {
     const confirmed = window.confirm(
-      "Are you sure you want to clear all history? This will delete all uploaded images, processed files, and session data. This action cannot be undone."
+      `Are you sure you want to clear all history for ${this.props.selectedViewType} view? This will delete all uploaded images, processed files, and session data for this view type. This action cannot be undone.`
     );
 
     if (confirmed) {
       try {
         this.setState({ loading: true });
+        // Clear backend session (this clears all files, but we'll filter frontend history)
         await this.clearHistory();
+        
+        // Filter frontend history to only keep items for other viewTypes
+        this.setState((prevState) => {
+          const historyToKeep = prevState.uploadHistory.filter(
+            item => item.viewType !== this.props.selectedViewType
+          );
+          const indicesToKeep = new Set(historyToKeep.map(item => item.index).filter(idx => idx >= 0));
+          
+          // Filter images to only keep those referenced by remaining history items
+          const filteredImages = prevState.images.filter((_img, idx) => indicesToKeep.has(idx));
+          
+          // Reindex history items to match new image indices
+          const reindexedHistory = historyToKeep.map(item => {
+            if (item.index >= 0) {
+              const newIndex = Array.from(indicesToKeep).indexOf(item.index);
+              return { ...item, index: newIndex >= 0 ? newIndex : -1 };
+            }
+            return item;
+          });
+          
+          return {
+            uploadHistory: reindexedHistory,
+            images: filteredImages,
+            currentImageIndex: filteredImages.length > 0 ? 0 : 0,
+            scatterData: filteredImages.length > 0 ? filteredImages[0].coords : [],
+            originalScatterData: filteredImages.length > 0 ? filteredImages[0].originalCoords : [],
+            imageSet: filteredImages.length > 0 ? filteredImages[0].imageSets : {
+              original: "",
+              inverted: "",
+              color_contrasted: "",
+            },
+            currentImageURL: filteredImages.length > 0 ? filteredImages[0].imageSets.original : null,
+            imageFilename: filteredImages.length > 0 ? filteredImages[0].name : null,
+          };
+        });
+        
         alert("History cleared successfully");
       } catch (error) {
         alert("Error clearing history");
@@ -761,6 +814,7 @@ export class MainView extends Component<MainProps, MainState> {
             name: file,
             timestamp: "From uploads folder",
             index: -1, // Will be set when loaded
+            viewType: this.props.selectedViewType,
           });
         }
       });
@@ -826,6 +880,7 @@ export class MainView extends Component<MainProps, MainState> {
           name: filename,
           timestamp: "From uploads folder",
           index: updatedImages.length - 1,
+          viewType: this.props.selectedViewType,
         };
 
         const updatedHistory = prevState.uploadHistory.map((item) =>
@@ -942,7 +997,9 @@ export class MainView extends Component<MainProps, MainState> {
         <div style={MainViewStyles.mainContentArea}>
           {" "}
           <HistoryPanel
-            uploadHistory={this.state.uploadHistory}
+            uploadHistory={this.state.uploadHistory.filter(
+              item => item.viewType === this.props.selectedViewType || !item.viewType
+            )}
             currentImageIndex={this.state.currentImageIndex}
             uploadProgress={this.state.uploadProgress}
             onSelectImage={this.changeCurrentImage}
@@ -982,7 +1039,9 @@ export class MainView extends Component<MainProps, MainState> {
                 loading={this.state.loading}
                 dataLoading={this.state.dataLoading}
                 dataError={this.state.dataError}
-                uploadHistory={this.state.uploadHistory}
+                uploadHistory={this.state.uploadHistory.filter(
+                  item => item.viewType === this.props.selectedViewType || !item.viewType
+                )}
                 scatterData={this.state.scatterData}
                 originalScatterData={this.state.originalScatterData}
                 selectedPoint={this.state.selectedPoint}
