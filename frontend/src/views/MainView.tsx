@@ -8,6 +8,7 @@ import type { UploadHistoryItem } from "../models/UploadHistoryItem";
 import type { ScaleSettings } from "../models/ScaleSettings";
 import type { Measurement } from "../models/Measurement";
 import type { LizardViewType } from "../components/LandingPage";
+import type { BoundingBox } from "../models/AnnotationsData";
 
 import { Header } from "../components/Header";
 import { NavigationControls } from "../components/NavigationControls";
@@ -52,6 +53,8 @@ interface MainState {
     originalScatterData: Point[]
   ) => void;
   isMeasurementsAndScaleModalOpen: boolean;
+  toepadPredictorType: string;
+  currentBoundingBoxes: BoundingBox[];
 }
 
 interface MainProps {
@@ -99,6 +102,8 @@ export class MainView extends Component<MainProps, MainState> {
     onPointSelect: () => {},
     onScatterDataUpdate: () => {},
     isMeasurementsAndScaleModalOpen: false,
+    toepadPredictorType: "toe",
+    currentBoundingBoxes: [],
   };
   componentDidMount(): void {
     this.initializeApp();
@@ -213,7 +218,11 @@ export class MainView extends Component<MainProps, MainState> {
           }));
 
           // Upload the file (replace with your actual upload logic)
-          const results = await ApiService.uploadMultipleImages([file], this.props.selectedViewType);
+          const results = await ApiService.uploadMultipleImages(
+            [file], 
+            this.props.selectedViewType,
+            this.props.selectedViewType === "toepads" ? this.state.toepadPredictorType : undefined
+          );
           
           // Check if we got a valid result
           if (!results || results.length === 0) {
@@ -262,7 +271,14 @@ export class MainView extends Component<MainProps, MainState> {
             originalCoords: JSON.parse(JSON.stringify(coords)),
             imageSets,
             timestamp: new Date().toLocaleString(),
+            boundingBoxes: result.bounding_boxes || [],
           };
+          
+          console.log("Processed image with bounding boxes:", {
+            name: processedImage.name,
+            boundingBoxes: processedImage.boundingBoxes,
+            boundingBoxesCount: processedImage.boundingBoxes?.length || 0
+          });
 
           // Update progress to 100% when processing is complete
           this.setState((prevState) => ({
@@ -318,6 +334,10 @@ export class MainView extends Component<MainProps, MainState> {
                 prevState.images.length === 0 ? true : prevState.dataFetched,
               selectedPoint:
                 prevState.images.length === 0 ? null : prevState.selectedPoint,
+              currentBoundingBoxes:
+                prevState.images.length === 0
+                  ? (processedImage.boundingBoxes || [])
+                  : prevState.currentBoundingBoxes,
             };
           });
         } catch (err) {
@@ -721,6 +741,7 @@ export class MainView extends Component<MainProps, MainState> {
         selectedPoint: null,
         scatterData: newImage.coords,
         originalScatterData: newImage.originalCoords || newImage.coords,
+        currentBoundingBoxes: newImage.boundingBoxes || [],
       };
     });
   };
@@ -776,7 +797,11 @@ export class MainView extends Component<MainProps, MainState> {
       }
 
       // If not loaded, process it
-      const result = await ApiService.processExistingImage(filename, this.props.selectedViewType);
+      const result = await ApiService.processExistingImage(
+        filename, 
+        this.props.selectedViewType,
+        this.props.selectedViewType === "toepads" ? this.state.toepadPredictorType : undefined
+      );
       const imageSets = await ApiService.fetchImageSet(filename);
       const coords = result.coords.map((coord: Point, index: number) => ({
         ...coord,
@@ -789,6 +814,7 @@ export class MainView extends Component<MainProps, MainState> {
         originalCoords: JSON.parse(JSON.stringify(coords)),
         imageSets,
         timestamp: "From uploads folder",
+        boundingBoxes: result.bounding_boxes || [],
       };
 
       this.setState((prevState) => {
@@ -817,6 +843,7 @@ export class MainView extends Component<MainProps, MainState> {
           currentImageURL: imageSets.original,
           needsScaling: true,
           selectedPoint: null,
+          currentBoundingBoxes: result.bounding_boxes || [],
         };
       });
     } catch (error) {
@@ -868,6 +895,10 @@ export class MainView extends Component<MainProps, MainState> {
     this.setState({ isMeasurementsAndScaleModalOpen: false });
   };
 
+  private readonly handleToepadPredictorTypeChange = (type: string): void => {
+    this.setState({ toepadPredictorType: type });
+  };
+
   // Add cleanup functionality to clear history when the app closes, including beforeunload event handler
   private readonly setupBeforeUnloadHandler = (): void => {
     window.addEventListener("beforeunload", this.handleBeforeUnload);
@@ -905,6 +936,8 @@ export class MainView extends Component<MainProps, MainState> {
           onClearHistory={this.handleClearHistory}
           onBackToSelection={() => window.location.href = '/'}
           onOpenMeasurementsModal={this.handleOpenMeasurementsAndScaleModal}
+          toepadPredictorType={this.state.toepadPredictorType}
+          onToepadPredictorTypeChange={this.handleToepadPredictorTypeChange}
         />
         <div style={MainViewStyles.mainContentArea}>
           {" "}
@@ -966,6 +999,7 @@ export class MainView extends Component<MainProps, MainState> {
                 onToggleEditMode={this.handleToggleEditMode}
                 onResetZoom={this.handleResetZoom}
                 isModalOpen={this.state.isMeasurementsAndScaleModalOpen}
+                boundingBoxes={this.state.currentBoundingBoxes}
               />
             </div>
           </div>

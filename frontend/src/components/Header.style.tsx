@@ -228,4 +228,29 @@ export class HeaderStyles {
   static readonly errorMessage: CSSProperties = {
     color: "red",
   };
+
+  static readonly predictorSelector: CSSProperties = {
+    marginTop: "10px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  };
+
+  static readonly predictorLabel: CSSProperties = {
+    fontSize: "0.9em",
+    color: "#666",
+    fontWeight: "500",
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+  };
+
+  static readonly predictorSelect: CSSProperties = {
+    padding: "6px 12px",
+    borderRadius: "4px",
+    border: "1px solid #ccc",
+    fontSize: "0.9em",
+    backgroundColor: "white",
+    cursor: "pointer",
+  };
 }

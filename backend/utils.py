@@ -375,6 +375,260 @@ def shape_to_np(shape):
     return coords
 
 
+def predictions_to_xml_single_with_yolo(image_path: str, output: str, 
+                                        yolo_model_path: str = None,
+                                        toe_predictor_path: str = None,
+                                        scale_predictor_path: str = None,
+                                        finger_predictor_path: str = None,
+                                        conf_threshold: float = 0.25,
+                                        padding_ratio: float = 0.3,
+                                        scale_bar_length_mm: float = 10.0,
+                                        target_predictor_type: str = None):
+    """
+    Generates dlib format xml file for a single image using YOLO for bounding box detection
+    and dlib shape predictor for landmark prediction. YOLO detects multiple objects (toe, finger, scale)
+    and each detection is processed with its corresponding predictor.
+    
+    For scale bars: Uses YOLO only (no ml-morph/dlib predictor). Creates two landmarks by removing
+    1mm from the left and right edges of the YOLO bounding box.
+    
+    For cropped predictors (trained on cropped images), this function will:
+    1. Add padding to YOLO bounding boxes (default 30%)
+    2. Crop the image to the padded bounding box
+    3. Apply predictor to the cropped image (with full image rectangle)
+    4. Convert coordinates back to original image space
+    
+    Parameters:
+    ----------
+        image_path (str): Path to the input image
+        output (str): Path for the output XML file
+        yolo_model_path (str): Path to the YOLO model file (.pt)
+        toe_predictor_path (str): Path to the toe dlib shape predictor file (.dat)
+        scale_predictor_path (str): Path to the scale dlib shape predictor file (.dat) - NOT USED for scale bars
+        finger_predictor_path (str): Path to the finger dlib shape predictor file (.dat)
+        conf_threshold (float): Confidence threshold for YOLO detections
+        padding_ratio (float): Padding ratio for bounding boxes when using cropped predictors (default: 0.3 = 30%)
+        scale_bar_length_mm (float): Length of the scale bar in mm (default: 10.0). Used to calculate 1mm offset.
+        target_predictor_type (str): Optional filter to only process specific type ('toe', 'finger', 'scale'). 
+                                     If None, processes all detections. If specified, only processes that type.
+    """
+    from ultralytics import YOLO
+    
+    # Load all predictors and check if they are cropped predictors
+    # Note: Scale bars now use YOLO only (no dlib predictor needed)
+    predictors = {}
+    is_cropped_predictor = {}
+    if toe_predictor_path and os.path.exists(toe_predictor_path):
+        predictors['toe'] = dlib.shape_predictor(toe_predictor_path)
+        # Check if predictor is cropped (by filename containing "cropped")
+        is_cropped_predictor['toe'] = 'cropped' in os.path.basename(toe_predictor_path).lower()
+    # Scale bars now use YOLO only - skip loading scale predictor
+    # if scale_predictor_path and os.path.exists(scale_predictor_path):
+    #     predictors['scale'] = dlib.shape_predictor(scale_predictor_path)
+    #     is_cropped_predictor['scale'] = 'cropped' in os.path.basename(scale_predictor_path).lower()
+    if finger_predictor_path and os.path.exists(finger_predictor_path):
+        predictors['finger'] = dlib.shape_predictor(finger_predictor_path)
+        is_cropped_predictor['finger'] = 'cropped' in os.path.basename(finger_predictor_path).lower()
+    
+    # Note: Scale bars don't require a predictor (they use YOLO only)
+    # But we still need at least one predictor for other object types
+    if not predictors:
+        raise ValueError("At least one predictor path (toe or finger) must be provided and exist")
+    
+    root, images_e = initialize_xml()
+
+    image_e = ET.Element('image')
+    image_e.set('file', str(image_path))
+    
+    # Load raw image for prediction (matching visualize_yolo_prediction.py exactly)
+    # Use PIL to load image (same as direct script), then convert to numpy array
+    from PIL import Image
+    # Increase PIL image size limit for large images (same as direct script)
+    Image.MAX_IMAGE_PIXELS = None
+    img_pil = Image.open(image_path)
+    img_array = np.array(img_pil)
+    img_raw = img_array.copy()  # RGB format, no filters
+    
+    w = img_raw.shape[1]
+    h = img_raw.shape[0]
+    
+    # Detect bounding boxes using YOLO (CPU mode)
+    detections = []
+    print(f"Starting YOLO detection on {image_path} with model {yolo_model_path}")
+    if yolo_model_path and os.path.exists(yolo_model_path):
+        try:
+            model = YOLO(yolo_model_path)
+            # Use CPU device explicitly
+            # Use PIL Image for YOLO (matching direct script)
+            results = model(img_pil, conf=conf_threshold, device='cpu', verbose=False)
+            print(f"YOLO model returned {len(results)} result(s)")
+            
+            # Get class names from model
+            class_names = model.names if hasattr(model, 'names') else {}
+            print(f"YOLO class names: {class_names}")
+            
+            for result in results:
+                if result.boxes is not None and len(result.boxes) > 0:
+                    print(f"Found {len(result.boxes)} detections")
+                    for box in result.boxes:
+                        # Get bounding box coordinates
+                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                        dlib_rect = dlib.rectangle(int(x1), int(y1), int(x2), int(y2))
+                        
+                        # Get class ID and name
+                        cls_id = int(box.cls[0].cpu().numpy())
+                        cls_name = class_names.get(cls_id, '').lower() if class_names else ''
+                        
+                        # Map class name/ID to predictor type
+                        # YOLO class mapping: 0=finger, 1=toe, 2=ruler (matches test_toe_direct.py)
+                        # Try to match by class name first, then by class ID
+                        predictor_type = None
+                        if 'toe' in cls_name:
+                            predictor_type = 'toe'
+                        elif 'finger' in cls_name:
+                            predictor_type = 'finger'
+                        elif 'scale' in cls_name or 'ruler' in cls_name:
+                            predictor_type = 'scale'
+                        else:
+                            # Fallback: map by class ID (actual order: 0=finger, 1=toe, 2=ruler)
+                            # This matches the YOLO_CLASSES in test_toe_direct.py
+                            if cls_id == 0 and 'finger' in predictors:
+                                predictor_type = 'finger'
+                            elif cls_id == 1 and 'toe' in predictors:
+                                predictor_type = 'toe'
+                            elif cls_id == 2:
+                                # Scale bars/rulers don't require a predictor (use YOLO only)
+                                predictor_type = 'scale'
+                            else:
+                                # Last resort: try to use class ID as index into available predictors
+                                available_types = list(predictors.keys())
+                                if cls_id < len(available_types):
+                                    predictor_type = available_types[cls_id]
+                        
+                        # Allow scale bars even without a predictor (they use YOLO only)
+                        # For other types, require a predictor
+                        if predictor_type:
+                            if predictor_type == 'scale' or predictor_type in predictors:
+                                detections.append({
+                                    'rect': dlib_rect,
+                                    'predictor_type': predictor_type,
+                                    'class_id': cls_id,
+                                    'class_name': cls_name
+                                })
+                                print(f"Added detection: type={predictor_type}, class_id={cls_id}, class_name={cls_name}, rect=({dlib_rect.left()}, {dlib_rect.top()}, {dlib_rect.width()}, {dlib_rect.height()})")
+                            else:
+                                print(f"Skipped detection: predictor_type={predictor_type} not in available predictors={list(predictors.keys())}")
+                        else:
+                            print(f"Skipped detection: could not determine predictor_type for class_id={cls_id}, class_name={cls_name}")
+                else:
+                    print("No boxes found in YOLO result")
+        except Exception as e:
+            print(f"Error during YOLO detection: {e}")
+            import traceback
+            traceback.print_exc()
+    else:
+        print(f"YOLO model path not available or doesn't exist: {yolo_model_path}")
+    
+    print(f"Total detections after YOLO: {len(detections)}")
+    
+    # Process each detection with its corresponding predictor
+    print(f"Processing {len(detections)} detections")
+    if detections:
+        for idx, detection in enumerate(detections):
+            print(f"Processing detection {idx+1}/{len(detections)}: {detection['predictor_type']}")
+            detected_rect = detection['rect']
+            predictor_type = detection['predictor_type']
+            
+            # For toe and finger, check if predictor is available before processing
+            if predictor_type != 'scale' and predictor_type not in predictors:
+                print(f"Warning: Predictor for {predictor_type} not available, skipping detection")
+                continue
+            
+            # Create box element for this detection
+            box = ET.Element("box")
+            box.set("top", str(int(detected_rect.top())))
+            box.set("left", str(int(detected_rect.left())))
+            box.set("width", str(int(detected_rect.width())))
+            box.set("height", str(int(detected_rect.height())))
+            
+            # Special handling for scale bars: use YOLO only, no ml-morph predictor
+            if predictor_type == 'scale':
+                print(f"Processing scale bar with YOLO only (no ml-morph)")
+                # Calculate pixels per mm based on scale bar length
+                # The YOLO bounding box width represents the scale bar plus 1mm padding on each side
+                # So total width = scale_bar_length_mm + 2mm (1mm left + 1mm right padding)
+                total_length_mm = scale_bar_length_mm + 2.0
+                pixels_per_mm = detected_rect.width() / total_length_mm
+                offset_pixels = pixels_per_mm * 1.0  # Remove 1mm from each side
+                
+                # Calculate center Y coordinate
+                center_y = detected_rect.top() + detected_rect.height() / 2.0
+                
+                # Create two landmarks: one at left + 1mm, one at right - 1mm
+                left_x = detected_rect.left() + offset_pixels
+                right_x = detected_rect.right() - offset_pixels
+                
+                # Ensure points are within the bounding box
+                left_x = np.clip(left_x, detected_rect.left(), detected_rect.right())
+                right_x = np.clip(right_x, detected_rect.left(), detected_rect.right())
+                
+                # Create two landmarks (points 0 and 1)
+                part0 = create_part(float(left_x), float(center_y), 0)
+                part1 = create_part(float(right_x), float(center_y), 1)
+                box.append(part0)
+                box.append(part1)
+                
+                print(f"Created scale bar landmarks: left=({left_x:.1f}, {center_y:.1f}), right=({right_x:.1f}, {center_y:.1f})")
+            else:
+                # For toe and finger, use dlib predictor as before
+                predictor = predictors[predictor_type]
+                is_cropped = is_cropped_predictor.get(predictor_type, False)
+                
+                # Match visualize_yolo_prediction.py approach:
+                # - Use raw image (no filters) for prediction
+                # - Use YOLO bounding box directly (even for cropped predictors)
+                # - Single scale prediction (no multi-scale)
+                
+                # Use YOLO bounding box directly on full raw image
+                # This matches visualize_yolo_prediction.py behavior exactly
+                shape = predictor(img_raw, detected_rect)
+                
+                # Extract landmarks exactly like direct script: iterate through parts() in natural order
+                # This matches test_toe_direct.py: np.array([[p.x, p.y] for p in pred_shape.parts()])
+                pred_landmarks = np.array([[p.x, p.y] for p in shape.parts()])
+                
+                # Add landmarks to box - use natural order (no sorting, no clipping)
+                # Direct script doesn't clip landmarks, so we shouldn't either
+                for i, (x, y) in enumerate(pred_landmarks):
+                    part = create_part(float(x), float(y), i)
+                    box.append(part)
+            
+            box[:] = sorted(box, key=lambda child: (child.tag, float(child.get("name"))))
+            image_e.append(box)
+    else:
+        # Fallback: use default rectangle with first available predictor
+        predictor = list(predictors.values())[0]
+        # Use raw image for fallback too (matching visualize_yolo_prediction.py)
+        rect = dlib.rectangle(1, 1, w - 1, h - 1)
+        shape = predictor(img_raw, rect)
+        landmarks_array = shape_to_np(shape)
+        
+        box = create_box(img_raw.shape)
+        part_length = range(0, shape.num_parts)
+        
+        for item, i in enumerate(sorted(part_length, key=str)):
+            x = float(landmarks_array[item][0])
+            y = float(landmarks_array[item][1])
+            part = create_part(x, y, i)
+            box.append(part)
+        
+        box[:] = sorted(box, key=lambda child: (child.tag, float(child.get("name"))))
+        image_e.append(box)
+    
+    images_e.append(image_e)
+    pretty_xml(root, output)
+
+
 # Importing to pandas tools
 
 
