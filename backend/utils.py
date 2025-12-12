@@ -656,13 +656,13 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                 left_x = np.clip(left_x, detected_rect.left(), detected_rect.right())
                 right_x = np.clip(right_x, detected_rect.left(), detected_rect.right())
                 
-                # Create two landmarks (points 0 and 1)
-                part0 = create_part(float(left_x), float(center_y), 0)
-                part1 = create_part(float(right_x), float(center_y), 1)
+                # Create two landmarks with fixed IDs 1 and 2 for scale
+                part0 = create_part(float(left_x), float(center_y), 1)
+                part1 = create_part(float(right_x), float(center_y), 2)
                 box.append(part0)
                 box.append(part1)
                 
-                print(f"Created scale bar landmarks: left=({left_x:.1f}, {center_y:.1f}), right=({right_x:.1f}, {center_y:.1f})")
+                print(f"Created scale bar landmarks (IDs 1-2): left=({left_x:.1f}, {center_y:.1f}), right=({right_x:.1f}, {center_y:.1f})")
             else:
                 # For toe and finger, use dlib predictor as before
                 predictor = predictors[predictor_type]
@@ -733,11 +733,24 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     # This matches test_toe_direct.py: np.array([[p.x, p.y] for p in pred_shape.parts()])
                     pred_landmarks = np.array([[p.x, p.y] for p in shape.parts()])
                 
-                # Add landmarks to box - use natural order (no sorting, no clipping)
-                # Direct script doesn't clip landmarks, so we shouldn't either
+                # Assign fixed landmark IDs based on detection type:
+                # Scale: 1-2, Bottom Finger: 3-11, Bottom Toe: 12-20, Top Finger: 21-29, Top Toe: 30-38
+                id_offset_map = {
+                    'bot_finger': 3,   # IDs 3-11 (9 landmarks)
+                    'bot_toe': 12,     # IDs 12-20 (9 landmarks)
+                    'up_finger': 21,   # IDs 21-29 (9 landmarks)
+                    'up_toe': 30,      # IDs 30-38 (9 landmarks)
+                }
+                # Get ID offset based on class_name, fallback to generic type
+                id_offset = id_offset_map.get(class_name, id_offset_map.get(f'bot_{predictor_type}', 3))
+                
+                # Add landmarks with fixed IDs
                 for i, (x, y) in enumerate(pred_landmarks):
-                    part = create_part(float(x), float(y), i)
+                    fixed_id = id_offset + i
+                    part = create_part(float(x), float(y), fixed_id)
                     box.append(part)
+                
+                print(f"Created {len(pred_landmarks)} landmarks for {class_name} with IDs {id_offset}-{id_offset + len(pred_landmarks) - 1}")
             
             box[:] = sorted(box, key=lambda child: (child.tag, float(child.get("name"))))
             image_e.append(box)
