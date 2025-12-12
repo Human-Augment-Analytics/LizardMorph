@@ -2,7 +2,9 @@ import utils
 import visual_individual_performance
 import xray_preprocessing
 from export_handler import ExportHandler
+from export_handler import ExportHandler
 from session_manager import SessionManager
+import id_extractor
 
 import os
 import hmac
@@ -76,6 +78,20 @@ logger.info(f"Toepad YOLO model: {TOEPAD_YOLO_MODEL}")
 logger.info(f"Toepad toe predictor: {TOEPAD_TOE_PREDICTOR}")
 logger.info(f"Toepad scale predictor: {TOEPAD_SCALE_PREDICTOR}")
 logger.info(f"Toepad finger predictor: {TOEPAD_FINGER_PREDICTOR}")
+
+# Cache YOLO model at startup to avoid reloading on each request
+_cached_yolo_model = None
+
+def get_cached_yolo_model():
+    """Get cached YOLO model, loading it on first call."""
+    global _cached_yolo_model
+    if _cached_yolo_model is None:
+        if TOEPAD_YOLO_MODEL and os.path.exists(TOEPAD_YOLO_MODEL):
+            from ultralytics import YOLO
+            logger.info(f"Loading YOLO model: {TOEPAD_YOLO_MODEL}")
+            _cached_yolo_model = YOLO(TOEPAD_YOLO_MODEL)
+            logger.info("YOLO model loaded and cached")
+    return _cached_yolo_model
 
 
 app = Flask(__name__)
@@ -1541,6 +1557,95 @@ def github_webhook():
     except Exception as e:
         logger.error(f"Error processing webhook: {str(e)}", exc_info=True)
         return jsonify({"error": f"Webhook processing error: {str(e)}"}), 500
+
+@app.route("/extract_id", methods=["POST"])
+@cross_origin()
+@track_metrics
+def extract_id():
+    """Extract ID from image using YOLO and EasyOCR."""
+    image_filename = request.form.get("image_filename")
+    if not image_filename:
+        return jsonify({"error": "image_filename is required"}), 400
+    
+    try:
+        session_id = get_session_id()
+        session_data = get_session_folders(session_id)
+        
+        # Look for image in upload folder
+        image_path = os.path.join(session_data["upload_folder"], image_filename)
+        if not os.path.exists(image_path):
+             # Try absolute path if provided (for testing primarily)
+             if os.path.exists(image_filename):
+                 image_path = image_filename
+             else:
+                 return jsonify({"error": f"Image not found: {image_filename}"}), 404
+
+        # Use cached YOLO model
+        model = get_cached_yolo_model()
+        if model is None:
+            return jsonify({"error": "YOLO model not found or failed to load"}), 500
+        
+        # Run inference
+        # Use CPU device explicitly
+        results = model(image_path, conf=0.25, device='cpu', verbose=False)
+        
+        best_id_candidate = None
+        best_conf = 0.0
+
+        class_names = model.names
+        
+        # Find ID class by name or ID
+        id_class_id = None
+        for class_id, class_name in class_names.items():
+            if class_name.lower() == 'id':
+                id_class_id = class_id
+                break
+        
+        # Fallback: assume class ID 5 is 'id' (6-class model) or class 3 (legacy 4-class model)
+        if id_class_id is None:
+            if 5 in class_names:
+                id_class_id = 5
+            elif 3 in class_names:
+                id_class_id = 3
+        
+        logger.info(f"ID class detection: id_class_id={id_class_id}, class_names={class_names}")
+        
+        for result in results:
+             if result.boxes:
+                for box in result.boxes:
+                    # Filter for ID class boxes only (if ID class is known)
+                    box_class_id = int(box.cls[0].cpu().numpy())
+                    if id_class_id is not None and box_class_id != id_class_id:
+                        continue
+                    
+                    # Get normalized coordinates for cropping logic
+                    # xywhn returns normalized x_center, y_center, width, height
+                    x_c, y_c, w, h = box.xywhn[0].cpu().numpy()
+                    
+                    extraction_result = id_extractor.extract_id_from_image(image_path, (x_c, y_c, w, h))
+                    
+                    if 'error' not in extraction_result and extraction_result.get('id'):
+                        # Simple logic: prefer higher confidence
+                        if extraction_result['confidence'] > best_conf:
+                            best_conf = extraction_result['confidence']
+                            best_id_candidate = extraction_result['id']
+                            
+        if best_id_candidate:
+             return jsonify({
+                 "success": True,
+                 "id": best_id_candidate,
+                 "confidence": best_conf
+             })
+        else:
+            return jsonify({
+                "success": False,
+                "error": "No ID found in image"
+            }), 404
+
+    except Exception as e:
+        logger.error(f"Error extracting ID: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 
 
 # Make sure your app runs on the correct host and port if started directly

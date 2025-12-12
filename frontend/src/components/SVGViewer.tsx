@@ -31,6 +31,8 @@ interface SVGViewerProps {
   onResetZoom: () => void;
   isModalOpen?: boolean;
   boundingBoxes?: BoundingBox[];
+  maxWidth?: number; // Optional max width for constrained views like toepads
+  fitToContainerWidth?: boolean; // Scale to fit container width instead of height
 }
 
 interface SVGViewerState {
@@ -95,6 +97,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       this.props.originalScatterData.length > 0 &&
       (prevProps.imageWidth !== this.props.imageWidth ||
         prevProps.imageHeight !== this.props.imageHeight ||
+        prevProps.maxWidth !== this.props.maxWidth ||
         this.props.needsScaling ||
         prevProps.boundingBoxes !== this.props.boundingBoxes ||
         (this.props.boundingBoxes && this.props.boundingBoxes.length !== (prevProps.boundingBoxes?.length || 0)))
@@ -175,10 +178,33 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       svg.selectAll("*").remove(); // Clear SVG first to prevent duplication
 
       // Calculate dimensions maintaining aspect ratio
-      const windowHeight = window.innerHeight - window.innerHeight * 0.2;
-      const width =
-        windowHeight * (this.props.imageWidth / this.props.imageHeight);
-      const height = windowHeight;
+      let width: number;
+      let height: number;
+
+      if (this.props.fitToContainerWidth) {
+        // Scale based on container width (use available window width minus sidebar)
+        const containerWidth = window.innerWidth * 0.65; // Approximate available width
+        width = containerWidth;
+        height = width * (this.props.imageHeight / this.props.imageWidth);
+
+        // Cap height to window height if too tall
+        const maxHeight = window.innerHeight * 0.7;
+        if (height > maxHeight) {
+          height = maxHeight;
+          width = height * (this.props.imageWidth / this.props.imageHeight);
+        }
+      } else {
+      // Default: scale based on window height
+        const windowHeight = window.innerHeight - window.innerHeight * 0.2;
+        width = windowHeight * (this.props.imageWidth / this.props.imageHeight);
+        height = windowHeight;
+
+        // If maxWidth is provided, constrain to it
+        if (this.props.maxWidth && width > this.props.maxWidth) {
+          width = this.props.maxWidth;
+          height = width * (this.props.imageHeight / this.props.imageWidth);
+        }
+      }
 
       svg.attr("width", width).attr("height", height);
 
@@ -302,9 +328,24 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         .append("g")
         .attr("class", "scatter-points");
 
+      // Always scale from originalScatterData to match current SVG dimensions
+      // (this ensures correct scaling when maxWidth constraint is applied)
+      const scaleXForPoints = d3.scaleLinear()
+        .domain([0, this.props.imageWidth])
+        .range([0, width]);
+      const scaleYForPoints = d3.scaleLinear()
+        .domain([0, this.props.imageHeight])
+        .range([0, height]);
+
+      const scaledPointsForRender = this.props.originalScatterData.map((point: Point) => ({
+        ...point,
+        x: scaleXForPoints(point.x),
+        y: scaleYForPoints(point.y),
+      }));
+
       const pointGroups = scatterPlotGroup
         .selectAll("g")
-        .data(this.props.scatterData)
+        .data(scaledPointsForRender)
         .enter()
         .append("g")
         .attr("data-landmark-id", (d: Point) => d.id) // Add unique identifier to each group

@@ -55,6 +55,8 @@ interface MainState {
   isMeasurementsAndScaleModalOpen: boolean;
   toepadPredictorType: string;
   currentBoundingBoxes: BoundingBox[];
+  extractedId: string | null;
+  extractedIdConfidence: number | null;
 }
 
 interface MainProps {
@@ -104,6 +106,8 @@ export class MainView extends Component<MainProps, MainState> {
     isMeasurementsAndScaleModalOpen: false,
     toepadPredictorType: "toe",
     currentBoundingBoxes: [],
+    extractedId: null,
+    extractedIdConfidence: null,
   };
   componentDidMount(): void {
     this.initializeApp();
@@ -156,7 +160,7 @@ export class MainView extends Component<MainProps, MainState> {
           item => item.viewType === this.props.selectedViewType || !item.viewType
         ),
         // Also filter images to only show those for current viewType
-        images: currentState.images.filter((img, idx) => {
+        images: currentState.images.filter((_img, idx) => {
           const historyItem = currentState.uploadHistory.find(h => h.index === idx);
           return historyItem?.viewType === this.props.selectedViewType || !historyItem?.viewType;
         }),
@@ -356,6 +360,28 @@ export class MainView extends Component<MainProps, MainState> {
                   : prevState.currentBoundingBoxes,
             };
           });
+
+          // Extract ID for toepad view type (only for the first/current image)
+          if (this.props.selectedViewType === "toepads") {
+            try {
+              const idResult = await ApiService.extractId(result.name);
+              if (idResult.success && idResult.id) {
+                console.log("Extracted ID:", idResult.id, "confidence:", idResult.confidence);
+
+                const confidence = idResult.confidence ?? 0;
+                const extractedId = idResult.id;
+
+                // Store the extracted ID (UI will show overwrite option if it differs)
+                this.setState({
+                  extractedId: extractedId,
+                  extractedIdConfidence: confidence,
+                });
+              }
+            } catch (idErr) {
+              console.warn("Failed to extract ID:", idErr);
+              // Don't fail the whole upload if ID extraction fails
+            }
+          }
         } catch (err) {
           console.error(`Error processing ${file.name}:`, err);
           // Update progress to show error state
@@ -1033,7 +1059,83 @@ export class MainView extends Component<MainProps, MainState> {
               onToggleEditMode={this.handleToggleEditMode}
               onResetZoom={this.handleResetZoom}
             />
-            <div style={{ overflow: "auto", height: "100%" }}>
+            {/* Display extracted ID for toepad view */}
+            {this.props.selectedViewType === "toepads" && this.state.extractedId && (() => {
+              const filenameWithoutExt = this.state.imageFilename?.replace(/\.[^/.]+$/, "") ?? "";
+              const idMismatch = this.state.extractedId !== filenameWithoutExt;
+
+              return (
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  marginTop: "10px",
+                  padding: "8px 16px",
+                  backgroundColor: idMismatch ? "#f9a825" : "#2e7d32",
+                  borderRadius: "6px",
+                  color: idMismatch ? "#333" : "white",
+                  fontWeight: "bold",
+                }}>
+                  <span>🏷️ Specimen ID:</span>
+                  <span style={{ fontSize: "18px" }}>{this.state.extractedId}</span>
+                  {this.state.extractedIdConfidence !== null && (
+                    <span style={{
+                      fontSize: "12px",
+                      backgroundColor: "rgba(255,255,255,0.3)",
+                      padding: "2px 8px",
+                      borderRadius: "4px",
+                    }}>
+                      {(this.state.extractedIdConfidence * 100).toFixed(0)}% conf
+                    </span>
+                  )}
+                  {idMismatch && (
+                    <button
+                      onClick={() => {
+                        const newName = `${this.state.extractedId}.jpg`;
+                        const oldName = this.state.imageFilename;
+                        this.setState((prevState) => {
+                          const updatedImages = [...prevState.images];
+                          const currentIndex = prevState.currentImageIndex;
+                          if (currentIndex >= 0 && currentIndex < updatedImages.length) {
+                            updatedImages[currentIndex] = {
+                              ...updatedImages[currentIndex],
+                              name: newName,
+                            };
+                          }
+                          const updatedHistory = prevState.uploadHistory.map(item =>
+                            item.name === oldName
+                              ? { ...item, name: newName }
+                              : item
+                          );
+                          return {
+                            images: updatedImages,
+                            uploadHistory: updatedHistory,
+                            imageFilename: newName,
+                          };
+                        });
+                      }}
+                      style={{
+                        marginLeft: "auto",
+                        padding: "4px 12px",
+                        backgroundColor: "#333",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "4px",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      Overwrite Name
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+            <div style={{
+              overflow: "auto",
+              height: "100%",
+            }}>
               <SVGViewer
                 dataFetched={this.state.dataFetched}
                 loading={this.state.loading}
@@ -1059,6 +1161,7 @@ export class MainView extends Component<MainProps, MainState> {
                 onResetZoom={this.handleResetZoom}
                 isModalOpen={this.state.isMeasurementsAndScaleModalOpen}
                 boundingBoxes={this.state.currentBoundingBoxes}
+                fitToContainerWidth={this.props.selectedViewType === "toepads"}
               />
             </div>
           </div>
