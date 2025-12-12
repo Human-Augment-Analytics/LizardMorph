@@ -51,7 +51,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   
   state: SVGViewerState = {
     hintDismissed: false,
-    landmarkSize: 3
+    landmarkSize: 2
   };
   
   // Performance optimization: Cache scale functions and dimensions
@@ -356,8 +356,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
 
         // Add the point
         const size = this.state.landmarkSize;
-        const fontSize = Math.max(8, size * 3);
-        const textOffset = size + 2;
+        const fontSize = Math.max(6, size * 2);
+        const textOffset = size + 1;
         
         g.append("circle")
           .attr("cx", d.x)
@@ -769,8 +769,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     if (scatterPlotGroup.empty()) return;
     
     const size = this.state.landmarkSize;
-    const fontSize = Math.max(8, size * 3); // Scale font size with landmark size
-    const textOffset = size + 2;
+    const fontSize = Math.max(6, size * 2); // Scale font size with landmark size
+    const textOffset = size + 1;
     
     // Update circle sizes
     scatterPlotGroup.selectAll<SVGCircleElement, Point>("circle")
