@@ -34,7 +34,9 @@ def parse_xml_for_frontend(file_path):
             for part in box.findall('.//part'):
                 x = float(part.get('x'))
                 y = float(part.get('y'))
-                coords.append({"x": x, "y": y})
+                # Get the landmark ID from the 'name' attribute (fixed IDs from backend)
+                landmark_id = int(part.get('name', 0))
+                coords.append({"id": landmark_id, "x": x, "y": y})
         
         # Add this image data to the list
         all_data.append({

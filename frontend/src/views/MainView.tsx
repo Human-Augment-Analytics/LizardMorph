@@ -281,7 +281,7 @@ export class MainView extends Component<MainProps, MainState> {
           
           const coords = result.coords.map((coord, index: number) => ({
             ...coord,
-            id: index + 1,
+            id: coord.id !== undefined ? coord.id : index + 1,
           }));
 
           const processedImage = {
@@ -885,7 +885,7 @@ export class MainView extends Component<MainProps, MainState> {
       const imageSets = await ApiService.fetchImageSet(filename);
       const coords = result.coords.map((coord: Point, index: number) => ({
         ...coord,
-        id: index + 1,
+        id: coord.id !== undefined ? coord.id : index + 1,
       }));
 
       const newImage: ProcessedImage = {
