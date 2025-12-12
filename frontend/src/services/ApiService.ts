@@ -12,12 +12,20 @@ export class ApiService {
     await SessionService.initializeSession();
   }
 
-  static async uploadMultipleImages(files: File[], viewType: string): Promise<AnnotationsData[]> {
+  static async uploadMultipleImages(
+    files: File[], 
+    viewType: string, 
+    toepadPredictorType?: string
+  ): Promise<AnnotationsData[]> {
     const formData = new FormData();
     files.forEach((file) => {
       formData.append("image", file);
     });
-    formData.append("view_type", viewType);
+    formData.append("view_type", viewType === "toepads" ? "toepad" : viewType);
+    // Add toepad predictor type if specified
+    if (viewType === "toepads" && toepadPredictorType) {
+      formData.append("toepad_predictor_type", toepadPredictorType);
+    }
     const res = await fetch(`${API_URL}/data`, {
       method: "POST",
       headers: {
@@ -78,17 +86,20 @@ export class ApiService {
 
   static async processExistingImage(
     filename: string,
-    viewType: string
+    viewType: string,
+    toepadPredictorType?: string
   ): Promise<AnnotationsData> {
-    const res = await fetch(
-      `${API_URL}/process_existing?filename=${encodeURIComponent(filename)}&view_type=${encodeURIComponent(viewType)}`,
-      {
-        method: "POST",
-        headers: {
-          ...SessionService.getSessionHeaders(),
-        },
-      }
-    );
+    const viewTypeParam = viewType === "toepads" ? "toepad" : viewType;
+    let url = `${API_URL}/process_existing?filename=${encodeURIComponent(filename)}&view_type=${encodeURIComponent(viewTypeParam)}`;
+    if (viewType === "toepads" && toepadPredictorType) {
+      url += `&toepad_predictor_type=${encodeURIComponent(toepadPredictorType)}`;
+    }
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        ...SessionService.getSessionHeaders(),
+      },
+    });
     if (!res.ok) throw new Error("Failed to process existing image");
     return res.json();
   }
@@ -147,6 +158,36 @@ export class ApiService {
   static async getSessionInfo(): Promise<SessionInfo> {
     return await SessionService.getSessionInfo();
   }
+
+  /**
+   * Extract ID from an image using YOLO detection and OCR
+   */
+  static async extractId(imageFilename: string): Promise<ExtractIdResult> {
+    const formData = new URLSearchParams();
+    formData.append("image_filename", imageFilename);
+
+    const res = await fetch(`${API_URL}/extract_id`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        ...SessionService.getSessionHeaders(),
+      },
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const errorResult = await res.json();
+      throw new Error(errorResult.error ?? "Failed to extract ID");
+    }
+    return res.json();
+  }
+}
+
+interface ExtractIdResult {
+  success: boolean;
+  id?: string;
+  confidence?: number;
+  error?: string;
 }
 
 interface SessionInfo {

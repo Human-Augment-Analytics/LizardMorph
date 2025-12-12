@@ -3,6 +3,7 @@ import * as d3 from "d3";
 import { SVGViewerStyles } from "./SVGViewer.style";
 import type { Point } from "../models/Point";
 import type { UploadHistoryItem } from "../models/UploadHistoryItem";
+import type { BoundingBox } from "../models/AnnotationsData";
 
 interface SVGViewerProps {
   dataFetched: boolean;
@@ -28,6 +29,10 @@ interface SVGViewerProps {
   isEditMode: boolean;
   onToggleEditMode: () => void;
   onResetZoom: () => void;
+  isModalOpen?: boolean;
+  boundingBoxes?: BoundingBox[];
+  maxWidth?: number; // Optional max width for constrained views like toepads
+  fitToContainerWidth?: boolean; // Scale to fit container width instead of height
 }
 
 interface SVGViewerState {
@@ -92,7 +97,10 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       this.props.originalScatterData.length > 0 &&
       (prevProps.imageWidth !== this.props.imageWidth ||
         prevProps.imageHeight !== this.props.imageHeight ||
-        this.props.needsScaling)
+        prevProps.maxWidth !== this.props.maxWidth ||
+        this.props.needsScaling ||
+        prevProps.boundingBoxes !== this.props.boundingBoxes ||
+        (this.props.boundingBoxes && this.props.boundingBoxes.length !== (prevProps.boundingBoxes?.length || 0)))
     ) {
       setTimeout(() => {
         this.renderSVG();
@@ -170,10 +178,33 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       svg.selectAll("*").remove(); // Clear SVG first to prevent duplication
 
       // Calculate dimensions maintaining aspect ratio
-      const windowHeight = window.innerHeight - window.innerHeight * 0.2;
-      const width =
-        windowHeight * (this.props.imageWidth / this.props.imageHeight);
-      const height = windowHeight;
+      let width: number;
+      let height: number;
+
+      if (this.props.fitToContainerWidth) {
+        // Scale based on container width (use available window width minus sidebar)
+        const containerWidth = window.innerWidth * 0.65; // Approximate available width
+        width = containerWidth;
+        height = width * (this.props.imageHeight / this.props.imageWidth);
+
+        // Cap height to window height if too tall
+        const maxHeight = window.innerHeight * 0.7;
+        if (height > maxHeight) {
+          height = maxHeight;
+          width = height * (this.props.imageWidth / this.props.imageHeight);
+        }
+      } else {
+      // Default: scale based on window height
+        const windowHeight = window.innerHeight - window.innerHeight * 0.2;
+        width = windowHeight * (this.props.imageWidth / this.props.imageHeight);
+        height = windowHeight;
+
+        // If maxWidth is provided, constrain to it
+        if (this.props.maxWidth && width > this.props.maxWidth) {
+          width = this.props.maxWidth;
+          height = width * (this.props.imageHeight / this.props.imageWidth);
+        }
+      }
 
       svg.attr("width", width).attr("height", height);
 
@@ -242,14 +273,79 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         .attr("height", height)
         .attr("preserveAspectRatio", "xMidYMid slice");
 
+      // Add bounding boxes to the zoom container (if available)
+      if (this.props.boundingBoxes && this.props.boundingBoxes.length > 0) {
+        const bboxGroup = zoomContainer
+          .append("g")
+          .attr("class", "bounding-boxes");
+        
+        // Scale functions for bounding boxes
+        const scaleX = d3.scaleLinear()
+          .domain([0, this.props.imageWidth])
+          .range([0, width]);
+        const scaleY = d3.scaleLinear()
+          .domain([0, this.props.imageHeight])
+          .range([0, height]);
+        
+        // Color scheme for different box types (toe, finger, scale)
+        const boxColors = ['#00ff00', '#0088ff', '#ff8800']; // Green, Blue, Orange
+        
+        this.props.boundingBoxes.forEach((bbox, index) => {
+          const scaledX = scaleX(bbox.left);
+          const scaledY = scaleY(bbox.top);
+          const scaledWidth = scaleX(bbox.width);
+          const scaledHeight = scaleY(bbox.height);
+          
+          // Calculate coverage for logging
+          const boxArea = bbox.width * bbox.height;
+          const imageArea = this.props.imageWidth * this.props.imageHeight;
+          const coverageRatio = boxArea / imageArea;
+          
+          console.log(`Rendering bounding box ${index}:`, {
+            original: { left: bbox.left, top: bbox.top, width: bbox.width, height: bbox.height },
+            scaled: { x: scaledX, y: scaledY, width: scaledWidth, height: scaledHeight },
+            coverage: `${(coverageRatio * 100).toFixed(1)}%`
+          });
+          
+          // Draw rectangle for bounding box
+          bboxGroup
+            .append("rect")
+            .attr("x", scaledX)
+            .attr("y", scaledY)
+            .attr("width", scaledWidth)
+            .attr("height", scaledHeight)
+            .attr("fill", "none")
+            .attr("stroke", boxColors[index % boxColors.length])
+            .attr("stroke-width", 3)
+            .attr("stroke-dasharray", "8,4")
+            .attr("opacity", 0.9)
+            .style("pointer-events", "none");
+        });
+      }
+
       // Add scatter points to the zoom container
       const scatterPlotGroup = zoomContainer
         .append("g")
         .attr("class", "scatter-points");
 
+      // Always scale from originalScatterData to match current SVG dimensions
+      // (this ensures correct scaling when maxWidth constraint is applied)
+      const scaleXForPoints = d3.scaleLinear()
+        .domain([0, this.props.imageWidth])
+        .range([0, width]);
+      const scaleYForPoints = d3.scaleLinear()
+        .domain([0, this.props.imageHeight])
+        .range([0, height]);
+
+      const scaledPointsForRender = this.props.originalScatterData.map((point: Point) => ({
+        ...point,
+        x: scaleXForPoints(point.x),
+        y: scaleYForPoints(point.y),
+      }));
+
       const pointGroups = scatterPlotGroup
         .selectAll("g")
-        .data(this.props.scatterData)
+        .data(scaledPointsForRender)
         .enter()
         .append("g")
         .attr("data-landmark-id", (d: Point) => d.id) // Add unique identifier to each group
@@ -915,4 +1011,3 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     );
   }
 }
-
