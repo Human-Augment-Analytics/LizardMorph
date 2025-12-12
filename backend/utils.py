@@ -10,7 +10,11 @@ import ntpath
 import numpy as np
 import pandas as pd
 import cv2
-import dlib
+try:
+    import dlib
+except ImportError:
+    dlib = None
+    print("Warning: dlib not found, some features will be unavailable")
 import os
 import shutil
 import random
@@ -418,17 +422,44 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
     # Note: Scale bars now use YOLO only (no dlib predictor needed)
     predictors = {}
     is_cropped_predictor = {}
+    predictors = {}
+    is_cropped_predictor = {}
+    
+    # Check for dlib if we need to load predictors
+    if (toe_predictor_path or finger_predictor_path) and dlib is None:
+         # Check if we actually need it (e.g. if we are processing toes/fingers)
+         # But we pre-load predictors, so we can't really proceed if we expect to load them.
+         # Scale bars don't need dlib, so maybe we can allow proceeding if only scale bars are expected?
+         # However, the user provides paths, so we should assume they want to use them.
+         # Let's print a warning and only fail if we actually try to use it later?
+         # No, the code below tries to load them immediately.
+         print("Error: dlib is not installed, but predictors were requested. Cannot load predictors.")
+         # If we are only doing scale bars (which use YOLO only), we might survive.
+         # But the logic below assumes predictors are loaded for toe/finger.
+    
     if toe_predictor_path and os.path.exists(toe_predictor_path):
-        predictors['toe'] = dlib.shape_predictor(toe_predictor_path)
-        # Check if predictor is cropped (by filename containing "cropped")
-        is_cropped_predictor['toe'] = 'cropped' in os.path.basename(toe_predictor_path).lower()
+        if dlib is None:
+            print("Warning: dlib not found, cannot load toe predictor")
+        else:
+            predictors['toe'] = dlib.shape_predictor(toe_predictor_path)
+            # Check if predictor is cropped (by filename containing "cropped")
+            is_cropped_predictor['toe'] = 'cropped' in os.path.basename(toe_predictor_path).lower()
     # Scale bars now use YOLO only - skip loading scale predictor
     # if scale_predictor_path and os.path.exists(scale_predictor_path):
     #     predictors['scale'] = dlib.shape_predictor(scale_predictor_path)
     #     is_cropped_predictor['scale'] = 'cropped' in os.path.basename(scale_predictor_path).lower()
     if finger_predictor_path and os.path.exists(finger_predictor_path):
-        predictors['finger'] = dlib.shape_predictor(finger_predictor_path)
-        is_cropped_predictor['finger'] = 'cropped' in os.path.basename(finger_predictor_path).lower()
+        if dlib is None:
+            print("Warning: dlib not found, cannot load finger predictor")
+        else:
+            predictors['finger'] = dlib.shape_predictor(finger_predictor_path)
+            is_cropped_predictor['finger'] = 'cropped' in os.path.basename(finger_predictor_path).lower()
+    
+    # Note: Scale bars don't require a predictor (they use YOLO only)
+    # But we still need at least one predictor for other object types unless we are strict about dlib
+    if not predictors and dlib is not None:
+        # If dlib is present but no predictors loaded, maybe that's an issue if paths were provided
+        pass
     
     # Note: Scale bars don't require a predictor (they use YOLO only)
     # But we still need at least one predictor for other object types
@@ -444,10 +475,22 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
     # Use PIL to load image (same as direct script), then convert to numpy array
     from PIL import Image
     # Increase PIL image size limit for large images (same as direct script)
+    # Increase PIL image size limit for large images (same as direct script)
     Image.MAX_IMAGE_PIXELS = None
     img_pil = Image.open(image_path)
+    
+    # Ensure image is in RGB mode for consistent handling
+    if img_pil.mode != 'RGB':
+        img_pil = img_pil.convert('RGB')
+        
     img_array = np.array(img_pil)
     img_raw = img_array.copy()  # RGB format, no filters
+    
+    # Ensure img_raw is uint8 and contiguous for dlib
+    if img_raw.dtype != np.uint8:
+        img_raw = img_raw.astype(np.uint8)
+    
+    img_raw = np.ascontiguousarray(img_raw)
     
     w = img_raw.shape[1]
     h = img_raw.shape[0]
@@ -480,25 +523,30 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                         cls_name = class_names.get(cls_id, '').lower() if class_names else ''
                         
                         # Map class name/ID to predictor type
-                        # YOLO class mapping: 0=finger, 1=toe, 2=ruler (matches test_toe_direct.py)
+                        # YOLO class mapping for 6-class model: 0=up_finger, 1=up_toe, 2=bot_finger, 3=bot_toe, 4=ruler, 5=id
+                        # Legacy 3/4-class model: 0=finger, 1=toe, 2=ruler, 3=id
                         # Try to match by class name first, then by class ID
                         predictor_type = None
-                        if 'toe' in cls_name:
+                        if 'toe' in cls_name:  # Matches 'toe', 'up_toe', 'bot_toe'
                             predictor_type = 'toe'
-                        elif 'finger' in cls_name:
+                        elif 'finger' in cls_name:  # Matches 'finger', 'up_finger', 'bot_finger'
                             predictor_type = 'finger'
                         elif 'scale' in cls_name or 'ruler' in cls_name:
                             predictor_type = 'scale'
+                        elif cls_name == 'id':  # ID tag class
+                            predictor_type = 'id'
                         else:
-                            # Fallback: map by class ID (actual order: 0=finger, 1=toe, 2=ruler)
-                            # This matches the YOLO_CLASSES in test_toe_direct.py
-                            if cls_id == 0 and 'finger' in predictors:
+                            # Fallback: map by class ID
+                            # New 6-class model: 0=up_finger, 1=up_toe, 2=bot_finger, 3=bot_toe, 4=ruler, 5=id
+                            # Legacy 3-class model: 0=finger, 1=toe, 2=ruler
+                            if cls_id in [0, 2]:  # up_finger or bot_finger (or legacy finger)
                                 predictor_type = 'finger'
-                            elif cls_id == 1 and 'toe' in predictors:
+                            elif cls_id in [1, 3]:  # up_toe or bot_toe (or legacy toe)
                                 predictor_type = 'toe'
-                            elif cls_id == 2:
-                                # Scale bars/rulers don't require a predictor (use YOLO only)
+                            elif cls_id == 4:  # ruler (6-class model)
                                 predictor_type = 'scale'
+                            elif cls_id == 5:  # id tag (6-class model)
+                                predictor_type = 'id'
                             else:
                                 # Last resort: try to use class ID as index into available predictors
                                 available_types = list(predictors.keys())
@@ -530,6 +578,42 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
         print(f"YOLO model path not available or doesn't exist: {yolo_model_path}")
     
     print(f"Total detections after YOLO: {len(detections)}")
+    
+    # Sort detections to ensure consistent landmark order:
+    # 0-1: scale bar, then: bot_finger, bot_toe, up_finger, up_toe
+    detection_order = {
+        'scale': 0,      # Scale bar landmarks first (0, 1)
+        'bot_finger': 1, # Lower finger next
+        'bot_toe': 2,    # Lower toe
+        'up_finger': 3,  # Upper finger
+        'up_toe': 4,     # Upper toe
+        'finger': 5,     # Fallback for generic finger
+        'toe': 6,        # Fallback for generic toe
+    }
+    
+    def get_detection_sort_key(d):
+        predictor_type = d['predictor_type']
+        class_name = d.get('class_name', '')
+        # Try exact class name first, then predictor type
+        if class_name in detection_order:
+            return detection_order[class_name]
+        return detection_order.get(predictor_type, 99)
+    
+    detections = sorted(detections, key=get_detection_sort_key)
+    
+    # Keep only one scale bar (the first one, which has highest priority)
+    scale_bar_found = False
+    filtered_detections = []
+    for detection in detections:
+        if detection['predictor_type'] == 'scale':
+            if not scale_bar_found:
+                filtered_detections.append(detection)
+                scale_bar_found = True
+            else:
+                print(f"Skipping duplicate scale bar detection")
+        else:
+            filtered_detections.append(detection)
+    detections = filtered_detections
     
     # Process each detection with its corresponding predictor
     print(f"Processing {len(detections)} detections")
@@ -584,18 +668,70 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                 predictor = predictors[predictor_type]
                 is_cropped = is_cropped_predictor.get(predictor_type, False)
                 
+                # Get the class name to check if it's an upper (up_) class
+                class_name = detection.get('class_name', '')
+                is_upper = class_name.startswith('up_')
+                
                 # Match visualize_yolo_prediction.py approach:
                 # - Use raw image (no filters) for prediction
                 # - Use YOLO bounding box directly (even for cropped predictors)
                 # - Single scale prediction (no multi-scale)
                 
-                # Use YOLO bounding box directly on full raw image
-                # This matches visualize_yolo_prediction.py behavior exactly
-                shape = predictor(img_raw, detected_rect)
-                
-                # Extract landmarks exactly like direct script: iterate through parts() in natural order
-                # This matches test_toe_direct.py: np.array([[p.x, p.y] for p in pred_shape.parts()])
-                pred_landmarks = np.array([[p.x, p.y] for p in shape.parts()])
+                if is_upper:
+                    # For upper toe/finger: rotate 180° AND flip horizontally to match lower orientation
+                    # This is needed for bilateral images where upper and lower have opposite orientations
+                    x1, y1 = detected_rect.left(), detected_rect.top()
+                    x2, y2 = detected_rect.right(), detected_rect.bottom()
+                    
+                    # Ensure coordinates are within image bounds
+                    x1 = max(0, x1)
+                    y1 = max(0, y1)
+                    x2 = min(w, x2)
+                    y2 = min(h, y2)
+                    
+                    # Crop the region
+                    cropped_region = img_raw[y1:y2, x1:x2]
+                    
+                    # Rotate 180° then flip horizontally (equivalent to vertical flip only)
+                    # This transforms upper orientation to match lower orientation
+                    rotated_region = cv2.rotate(cropped_region, cv2.ROTATE_180)
+                    flipped_region = cv2.flip(rotated_region, 1)  # 1 = horizontal flip
+                    
+                    # Create a rect for the transformed crop (starts at 0,0)
+                    crop_h, crop_w = flipped_region.shape[:2]
+                    crop_rect = dlib.rectangle(0, 0, crop_w, crop_h)
+                    
+                    # Run inference on transformed crop
+                    shape = predictor(flipped_region, crop_rect)
+                    pred_landmarks = np.array([[p.x, p.y] for p in shape.parts()])
+                    
+                    # Transform landmarks back:
+                    # 1. Flip horizontally: x -> crop_w - x
+                    # 2. Rotate 180°: (x, y) -> (crop_w - x, crop_h - y)
+                    # Combined: (x, y) -> (x, crop_h - y), then translate
+                    transformed_back_landmarks = []
+                    for lx, ly in pred_landmarks:
+                        # Undo horizontal flip: x -> crop_w - x
+                        fx = crop_w - lx
+                        fy = ly
+                        # Undo 180° rotation: (x, y) -> (crop_w - x, crop_h - y)
+                        rx = crop_w - fx
+                        ry = crop_h - fy
+                        # Translate to original image coordinates
+                        orig_x = x1 + rx
+                        orig_y = y1 + ry
+                        transformed_back_landmarks.append([orig_x, orig_y])
+                    pred_landmarks = np.array(transformed_back_landmarks)
+                    
+                    print(f"Applied 180° rotation + horizontal flip for {class_name}: crop size={crop_w}x{crop_h}")
+                else:
+                    # Use YOLO bounding box directly on full raw image
+                    # This matches visualize_yolo_prediction.py behavior exactly
+                    shape = predictor(img_raw, detected_rect)
+                    
+                    # Extract landmarks exactly like direct script: iterate through parts() in natural order
+                    # This matches test_toe_direct.py: np.array([[p.x, p.y] for p in pred_shape.parts()])
+                    pred_landmarks = np.array([[p.x, p.y] for p in shape.parts()])
                 
                 # Add landmarks to box - use natural order (no sorting, no clipping)
                 # Direct script doesn't clip landmarks, so we shouldn't either
