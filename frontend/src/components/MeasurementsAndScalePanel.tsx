@@ -87,60 +87,8 @@ export class MeasurementsAndScalePanel extends Component<MeasurementsAndScalePan
     return realDistance;
   }
 
-  private handleAddMeasurement = (): void => {
-    const newMeasurement: Measurement = {
-      id: `measurement-${Date.now()}`,
-      label: "",
-      pointAId: null,
-      pointBId: null,
-      calculatedDistance: null,
-    };
-
-    this.props.onMeasurementsChange([
-      ...this.props.measurements,
-      newMeasurement,
-    ]);
-  };
-
-  private handleDeleteMeasurement = (id: string): void => {
-    this.props.onMeasurementsChange(
-      this.props.measurements.filter((m) => m.id !== id)
-    );
-  };
-
-  private handleMeasurementChange = (
-    id: string,
-    updates: Partial<Measurement>
-  ): void => {
-    const updatedMeasurements = this.props.measurements.map((m) => {
-      if (m.id === id) {
-        const updated = { ...m, ...updates };
-        
-        if (updates.pointAId !== undefined || updates.pointBId !== undefined) {
-          const pointA = updated.pointAId
-            ? this.props.points.find((p) => p.id === updated.pointAId) || null
-            : null;
-          const pointB = updated.pointBId
-            ? this.props.points.find((p) => p.id === updated.pointBId) || null
-            : null;
-
-          updated.calculatedDistance = this.calculateDistance(
-            pointA,
-            pointB,
-            this.props.scaleSettings
-          );
-        }
-
-        return updated;
-      }
-      return m;
-    });
-
-    this.props.onMeasurementsChange(updatedMeasurements);
-  };
-
   render() {
-    const { points, measurements, scaleSettings, onScaleSettingsChange, isModal, onClose } = this.props;
+    const { points, scaleSettings, onScaleSettingsChange, isModal, onClose } = this.props;
 
     const handlePointAChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
       const pointAId = e.target.value ? parseInt(e.target.value, 10) : null;
@@ -183,11 +131,41 @@ export class MeasurementsAndScalePanel extends Component<MeasurementsAndScalePan
             onChange={handlePointAChange}
           >
             <option value="">Select landmark...</option>
-            {points.map((point) => (
-              <option key={point.id} value={point.id}>
-                Landmark {point.id}
-              </option>
-            ))}
+            <optgroup label="Scale (1-2)">
+              {points.filter(p => p.id >= 1 && p.id <= 2).map((point) => (
+                <option key={point.id} value={point.id}>
+                  {point.id}: Scale
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Bottom Finger (3-11)">
+              {points.filter(p => p.id >= 3 && p.id <= 11).map((point) => (
+                <option key={point.id} value={point.id}>
+                  {point.id}: Bottom Finger
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Bottom Toe (12-20)">
+              {points.filter(p => p.id >= 12 && p.id <= 20).map((point) => (
+                <option key={point.id} value={point.id}>
+                  {point.id}: Bottom Toe
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Top Finger (21-29)">
+              {points.filter(p => p.id >= 21 && p.id <= 29).map((point) => (
+                <option key={point.id} value={point.id}>
+                  {point.id}: Top Finger
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Top Toe (30-38)">
+              {points.filter(p => p.id >= 30 && p.id <= 38).map((point) => (
+                <option key={point.id} value={point.id}>
+                  {point.id}: Top Toe
+                </option>
+              ))}
+            </optgroup>
           </select>
         </div>
 
@@ -199,11 +177,41 @@ export class MeasurementsAndScalePanel extends Component<MeasurementsAndScalePan
             onChange={handlePointBChange}
           >
             <option value="">Select landmark...</option>
-            {points.map((point) => (
-              <option key={point.id} value={point.id}>
-                Landmark {point.id}
-              </option>
-            ))}
+            <optgroup label="Scale (1-2)">
+              {points.filter(p => p.id >= 1 && p.id <= 2).map((point) => (
+                <option key={point.id} value={point.id}>
+                  {point.id}: Scale
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Bottom Finger (3-11)">
+              {points.filter(p => p.id >= 3 && p.id <= 11).map((point) => (
+                <option key={point.id} value={point.id}>
+                  {point.id}: Bottom Finger
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Bottom Toe (12-20)">
+              {points.filter(p => p.id >= 12 && p.id <= 20).map((point) => (
+                <option key={point.id} value={point.id}>
+                  {point.id}: Bottom Toe
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Top Finger (21-29)">
+              {points.filter(p => p.id >= 21 && p.id <= 29).map((point) => (
+                <option key={point.id} value={point.id}>
+                  {point.id}: Top Finger
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Top Toe (30-38)">
+              {points.filter(p => p.id >= 30 && p.id <= 38).map((point) => (
+                <option key={point.id} value={point.id}>
+                  {point.id}: Top Toe
+                </option>
+              ))}
+            </optgroup>
           </select>
         </div>
 
@@ -248,129 +256,10 @@ export class MeasurementsAndScalePanel extends Component<MeasurementsAndScalePan
       </>
     );
 
-    const measurementsContent = (
-      <>
-        {measurements.length === 0 ? (
-          <div style={styles.emptyState}>
-            No measurements yet. Click "Add Measurement" to create one.
-          </div>
-        ) : (
-          measurements.map((measurement, index) => {
-            const pointA = measurement.pointAId
-              ? points.find((p) => p.id === measurement.pointAId)
-              : null;
-            const pointB = measurement.pointBId
-              ? points.find((p) => p.id === measurement.pointBId)
-              : null;
-
-            let calculatedDistance = measurement.calculatedDistance;
-            if (pointA && pointB) {
-              calculatedDistance = this.calculateDistance(
-                pointA,
-                pointB,
-                scaleSettings
-              );
-            }
-
-            return (
-              <div key={measurement.id} style={styles.measurementItem}>
-                <div style={styles.measurementHeader}>
-                  <span style={styles.measurementLabel}>
-                    Measurement #{index + 1}
-                  </span>
-                  <button
-                    style={styles.deleteButton}
-                    onClick={() => this.handleDeleteMeasurement(measurement.id)}
-                  >
-                    Delete
-                  </button>
-                </div>
-
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Label:</label>
-                  <input
-                    type="text"
-                    style={styles.input}
-                    value={measurement.label}
-                    onChange={(e) =>
-                      this.handleMeasurementChange(measurement.id, {
-                        label: e.target.value,
-                      })
-                    }
-                    placeholder="e.g., Head width"
-                  />
-                </div>
-
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Point A:</label>
-                  <select
-                    style={styles.select}
-                    value={measurement.pointAId ?? ""}
-                    onChange={(e) =>
-                      this.handleMeasurementChange(measurement.id, {
-                        pointAId: e.target.value
-                          ? parseInt(e.target.value, 10)
-                          : null,
-                      })
-                    }
-                  >
-                    <option value="">Select landmark...</option>
-                    {points.map((point) => (
-                      <option key={point.id} value={point.id}>
-                        Landmark {point.id}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Point B:</label>
-                  <select
-                    style={styles.select}
-                    value={measurement.pointBId ?? ""}
-                    onChange={(e) =>
-                      this.handleMeasurementChange(measurement.id, {
-                        pointBId: e.target.value
-                          ? parseInt(e.target.value, 10)
-                          : null,
-                      })
-                    }
-                  >
-                    <option value="">Select landmark...</option>
-                    {points.map((point) => (
-                      <option key={point.id} value={point.id}>
-                        Landmark {point.id}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {calculatedDistance !== null && (
-                  <div style={styles.distanceDisplay}>
-                    Distance: {calculatedDistance.toFixed(3)} {scaleSettings.units}
-                    {measurement.label && ` (${measurement.label})`}
-                  </div>
-                )}
-              </div>
-            );
-          })
-        )}
-
-        <button
-          style={styles.addButton}
-          onClick={this.handleAddMeasurement}
-        >
-          + Add Measurement
-        </button>
-      </>
-    );
-
     const modalContent = (
       <>
         <div style={styles.sectionTitle}>Set Scale</div>
         {scaleSettingsContent}
-        <div style={styles.sectionTitle}>Measurements</div>
-        {measurementsContent}
       </>
     );
 
