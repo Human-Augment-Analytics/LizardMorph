@@ -14,9 +14,17 @@ export class MainViewStyles {
   };
 
   static readonly svgContainer: CSSProperties = {
-    flex: 3,
+    flex: 1,
     overflow: "visible",
     position: "relative",
+  };
+
+  static readonly measurementsPanel: CSSProperties = {
+    width: "27vw",
+    borderLeft: "1px solid #ccc",
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
   };
 
   static readonly placeholderMessage: CSSProperties = {

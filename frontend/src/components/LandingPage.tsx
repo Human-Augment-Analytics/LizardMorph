@@ -110,7 +110,7 @@ export const LandingPage: React.FC = () => {
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
   
   const handleOptionClick = (viewType: LizardViewType) => {
-    if (viewType === "toepads" || viewType === "custom") {
+    if (viewType === "custom") {
       return; // Disabled
     }
     navigate(`/${viewType}`);
@@ -190,22 +190,32 @@ export const LandingPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Toepads View - Disabled */}
+        {/* Toepads View */}
         <div
           style={{
             ...LandingPageStyles.optionCard,
-            ...LandingPageStyles.optionCardDisabled,
+            ...(hoveredCard === "toepads" ? LandingPageStyles.optionCardHover : {}),
           }}
+          onClick={() => handleOptionClick("toepads")}
+          onMouseEnter={() => handleMouseEnter("toepads")}
+          onMouseLeave={handleMouseLeave}
         >
           <div style={LandingPageStyles.cardContent}>
-            <div style={{ ...LandingPageStyles.icon, ...LandingPageStyles.iconDisabled }}>
+            <div style={{
+              ...LandingPageStyles.icon,
+              ...(hoveredCard === "toepads" ? LandingPageStyles.iconHover : {})
+            }}>
               🦶
             </div>
-            <h3 style={LandingPageStyles.optionTitle}>Toepads View</h3>
+            <h3 style={{
+              ...LandingPageStyles.optionTitle,
+              ...(hoveredCard === "toepads" ? LandingPageStyles.optionTitleHover : {})
+            }}>
+              Toepad View
+            </h3>
             <p style={LandingPageStyles.optionDescription}>
-              Analyze lizard toe pad structures
+              Analyze lizard toe pad structures using YOLO detection and landmark prediction
             </p>
-            <div style={LandingPageStyles.comingSoon}>Coming Soon</div>
           </div>
         </div>
 

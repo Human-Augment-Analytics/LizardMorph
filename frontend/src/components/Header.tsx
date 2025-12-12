@@ -11,9 +11,29 @@ interface HeaderProps {
   onExportAll: () => void;
   onClearHistory: () => void;
   onBackToSelection: () => void;
+  onOpenMeasurementsModal?: () => void;
+  toepadPredictorType?: string;
+  onToepadPredictorTypeChange?: (type: string) => void;
 }
 
-export class Header extends Component<HeaderProps> {
+interface HeaderState {
+  isMenuOpen: boolean;
+}
+
+export class Header extends Component<HeaderProps, HeaderState> {
+  constructor(props: HeaderProps) {
+    super(props);
+    this.state = {
+      isMenuOpen: false,
+    };
+  }
+
+  toggleMenu = () => {
+    this.setState((prevState) => ({
+      isMenuOpen: !prevState.isMenuOpen,
+    }));
+  };
+
   render() {
     const {
       lizardCount,
@@ -23,7 +43,10 @@ export class Header extends Component<HeaderProps> {
       onUpload,
       onExportAll,
       onClearHistory,
+      onOpenMeasurementsModal,
     } = this.props;
+
+    const { isMenuOpen } = this.state;
 
     return (
       <div style={HeaderStyles.header}>
@@ -71,7 +94,6 @@ export class Header extends Component<HeaderProps> {
               multiple
               disabled={loading}
             />
-
             <button
               onClick={onExportAll}
               disabled={!dataFetched || loading}
@@ -85,32 +107,80 @@ export class Header extends Component<HeaderProps> {
               Export All Data
             </button>
 
-            <button
-              onClick={onClearHistory}
-              disabled={loading}
-              style={{
-                ...HeaderStyles.clearHistoryButton,
-                ...(loading ? HeaderStyles.clearHistoryButtonDisabled : {}),
-              }}
-            >
-              Clear History
-            </button>
+            <div style={HeaderStyles.dropdownContainer}>
+              <button
+                onClick={this.toggleMenu}
+                style={HeaderStyles.dropdownButton}
+              >
+                More...
+              </button>
+              {isMenuOpen && (
+                <div style={HeaderStyles.dropdownContent}>
+                  <button
+                    onClick={onClearHistory}
+                    disabled={loading}
+                    style={{
+                      ...HeaderStyles.clearHistoryButton,
+                      ...(loading
+                        ? HeaderStyles.clearHistoryButtonDisabled
+                        : {}),
+                    }}
+                  >
+                    Clear History
+                  </button>
+                  {onOpenMeasurementsModal && (
+                    <button
+                      onClick={onOpenMeasurementsModal}
+                      disabled={!dataFetched || loading}
+                      style={{
+                        ...HeaderStyles.measurementsButton,
+                        ...(!dataFetched || loading
+                          ? HeaderStyles.measurementsButtonDisabled
+                          : {}),
+                      }}
+                    >
+                      Measurements
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div 
-            style={{ ...HeaderStyles.titleContainer, cursor: 'pointer', flexDirection: 'column' as const }}
+          <div
+            style={{
+              ...HeaderStyles.titleContainer,
+              cursor: "pointer",
+              flexDirection: "column" as const,
+            }}
             onClick={this.props.onBackToSelection}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ ...HeaderStyles.logo, fontSize: '40px', marginRight: '12px' }}>
-                {this.props.selectedViewType === 'lateral' ? '🦖' : '🦎'}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <div
+                style={{
+                  ...HeaderStyles.logo,
+                  fontSize: "40px",
+                  marginRight: "12px",
+                }}
+              >
+                {this.props.selectedViewType === "lateral" ? "🦖" : this.props.selectedViewType === "toepads" ? "🦶" : "🦎"}
               </div>
               <h2 style={HeaderStyles.title}>
                 Lizard Anolis X-Ray Auto-Annotator
               </h2>
             </div>
             <p style={HeaderStyles.viewType}>
-              View Type: {this.props.selectedViewType ? this.props.selectedViewType.charAt(0).toUpperCase() + this.props.selectedViewType.slice(1) : ''}
+              View Type:{" "}
+              {this.props.selectedViewType
+                ? this.props.selectedViewType.charAt(0).toUpperCase() +
+                  this.props.selectedViewType.slice(1)
+                : ""}
             </p>
           </div>
 
