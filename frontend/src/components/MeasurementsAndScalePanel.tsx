@@ -13,6 +13,7 @@ interface MeasurementsAndScalePanelProps {
   onScaleSettingsChange: (settings: ScaleSettingsType) => void;
   isModal?: boolean;
   onClose?: () => void;
+  viewType?: string;
 }
 
 export class MeasurementsAndScalePanel extends Component<MeasurementsAndScalePanelProps> {
@@ -55,7 +56,10 @@ export class MeasurementsAndScalePanel extends Component<MeasurementsAndScalePan
     pointB: Point | null,
     scaleSettings: ScaleSettingsType
   ): number | null {
-    if (!pointA || !pointB || !scaleSettings.pointAId || !scaleSettings.pointBId || scaleSettings.value === null || scaleSettings.value <= 0) {
+    if (!pointA || !pointB ||
+      scaleSettings.pointAId === null || scaleSettings.pointAId === undefined ||
+      scaleSettings.pointBId === null || scaleSettings.pointBId === undefined ||
+      scaleSettings.value === null || scaleSettings.value <= 0) {
       return null;
     }
 
@@ -131,41 +135,11 @@ export class MeasurementsAndScalePanel extends Component<MeasurementsAndScalePan
             onChange={handlePointAChange}
           >
             <option value="">Select landmark...</option>
-            <optgroup label="Scale (1-2)">
-              {points.filter(p => p.id >= 1 && p.id <= 2).map((point) => (
-                <option key={point.id} value={point.id}>
-                  {point.id}: Scale
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="Bottom Finger (3-11)">
-              {points.filter(p => p.id >= 3 && p.id <= 11).map((point) => (
-                <option key={point.id} value={point.id}>
-                  {point.id}: Bottom Finger
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="Bottom Toe (12-20)">
-              {points.filter(p => p.id >= 12 && p.id <= 20).map((point) => (
-                <option key={point.id} value={point.id}>
-                  {point.id}: Bottom Toe
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="Top Finger (21-29)">
-              {points.filter(p => p.id >= 21 && p.id <= 29).map((point) => (
-                <option key={point.id} value={point.id}>
-                  {point.id}: Top Finger
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="Top Toe (30-38)">
-              {points.filter(p => p.id >= 30 && p.id <= 38).map((point) => (
-                <option key={point.id} value={point.id}>
-                  {point.id}: Top Toe
-                </option>
-              ))}
-            </optgroup>
+            {points.map((point) => (
+              <option key={point.id} value={point.id}>
+                Landmark {point.id}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -177,41 +151,11 @@ export class MeasurementsAndScalePanel extends Component<MeasurementsAndScalePan
             onChange={handlePointBChange}
           >
             <option value="">Select landmark...</option>
-            <optgroup label="Scale (1-2)">
-              {points.filter(p => p.id >= 1 && p.id <= 2).map((point) => (
-                <option key={point.id} value={point.id}>
-                  {point.id}: Scale
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="Bottom Finger (3-11)">
-              {points.filter(p => p.id >= 3 && p.id <= 11).map((point) => (
-                <option key={point.id} value={point.id}>
-                  {point.id}: Bottom Finger
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="Bottom Toe (12-20)">
-              {points.filter(p => p.id >= 12 && p.id <= 20).map((point) => (
-                <option key={point.id} value={point.id}>
-                  {point.id}: Bottom Toe
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="Top Finger (21-29)">
-              {points.filter(p => p.id >= 21 && p.id <= 29).map((point) => (
-                <option key={point.id} value={point.id}>
-                  {point.id}: Top Finger
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="Top Toe (30-38)">
-              {points.filter(p => p.id >= 30 && p.id <= 38).map((point) => (
-                <option key={point.id} value={point.id}>
-                  {point.id}: Top Toe
-                </option>
-              ))}
-            </optgroup>
+            {points.map((point) => (
+              <option key={point.id} value={point.id}>
+                Landmark {point.id}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -243,8 +187,10 @@ export class MeasurementsAndScalePanel extends Component<MeasurementsAndScalePan
           </select>
         </div>
 
-        {scaleSettings.pointAId &&
-          scaleSettings.pointBId &&
+        {scaleSettings.pointAId !== null &&
+          scaleSettings.pointAId !== undefined &&
+          scaleSettings.pointBId !== null &&
+          scaleSettings.pointBId !== undefined &&
           scaleSettings.value !== null &&
           scaleSettings.value > 0 && (
             <div style={styles.infoText}>

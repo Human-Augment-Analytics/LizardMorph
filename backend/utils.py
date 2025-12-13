@@ -656,13 +656,13 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                 left_x = np.clip(left_x, detected_rect.left(), detected_rect.right())
                 right_x = np.clip(right_x, detected_rect.left(), detected_rect.right())
                 
-                # Create two landmarks with fixed IDs 1 and 2 for scale
-                part0 = create_part(float(left_x), float(center_y), 1)
-                part1 = create_part(float(right_x), float(center_y), 2)
+                # Create two landmarks with fixed IDs 0 and 1 for scale
+                part0 = create_part(float(left_x), float(center_y), 0)
+                part1 = create_part(float(right_x), float(center_y), 1)
                 box.append(part0)
                 box.append(part1)
                 
-                print(f"Created scale bar landmarks (IDs 1-2): left=({left_x:.1f}, {center_y:.1f}), right=({right_x:.1f}, {center_y:.1f})")
+                print(f"Created scale bar landmarks (IDs 0-1): left=({left_x:.1f}, {center_y:.1f}), right=({right_x:.1f}, {center_y:.1f})")
             else:
                 # For toe and finger, use dlib predictor as before
                 predictor = predictors[predictor_type]
@@ -734,15 +734,15 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     pred_landmarks = np.array([[p.x, p.y] for p in shape.parts()])
                 
                 # Assign fixed landmark IDs based on detection type:
-                # Scale: 1-2, Bottom Finger: 3-11, Bottom Toe: 12-20, Top Finger: 21-29, Top Toe: 30-38
+                # Scale: 0-1, Bottom Finger: 2-10, Bottom Toe: 11-19, Top Finger: 20-28, Top Toe: 29-37
                 id_offset_map = {
-                    'bot_finger': 3,   # IDs 3-11 (9 landmarks)
-                    'bot_toe': 12,     # IDs 12-20 (9 landmarks)
-                    'up_finger': 21,   # IDs 21-29 (9 landmarks)
-                    'up_toe': 30,      # IDs 30-38 (9 landmarks)
+                    'bot_finger': 2,   # IDs 2-10 (9 landmarks)
+                    'bot_toe': 11,     # IDs 11-19 (9 landmarks)
+                    'up_finger': 20,   # IDs 20-28 (9 landmarks)
+                    'up_toe': 29,      # IDs 29-37 (9 landmarks)
                 }
                 # Get ID offset based on class_name, fallback to generic type
-                id_offset = id_offset_map.get(class_name, id_offset_map.get(f'bot_{predictor_type}', 3))
+                id_offset = id_offset_map.get(class_name, id_offset_map.get(f'bot_{predictor_type}', 2))
                 
                 # Add landmarks with fixed IDs
                 for i, (x, y) in enumerate(pred_landmarks):
