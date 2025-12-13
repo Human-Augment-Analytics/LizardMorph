@@ -93,6 +93,29 @@ def get_cached_yolo_model():
             logger.info("YOLO model loaded and cached")
     return _cached_yolo_model
 
+# Cache dlib predictors at startup to avoid reloading on each request
+_cached_dlib_predictors = {}
+
+def get_cached_dlib_predictors():
+    """Get cached dlib predictors, loading them on first call."""
+    global _cached_dlib_predictors
+    if not _cached_dlib_predictors:
+        try:
+            import dlib
+            if TOEPAD_TOE_PREDICTOR and os.path.exists(TOEPAD_TOE_PREDICTOR):
+                logger.info(f"Loading toe predictor: {TOEPAD_TOE_PREDICTOR}")
+                _cached_dlib_predictors['toe'] = dlib.shape_predictor(TOEPAD_TOE_PREDICTOR)
+                _cached_dlib_predictors['toe_is_cropped'] = 'cropped' in os.path.basename(TOEPAD_TOE_PREDICTOR).lower()
+            if TOEPAD_FINGER_PREDICTOR and os.path.exists(TOEPAD_FINGER_PREDICTOR):
+                logger.info(f"Loading finger predictor: {TOEPAD_FINGER_PREDICTOR}")
+                _cached_dlib_predictors['finger'] = dlib.shape_predictor(TOEPAD_FINGER_PREDICTOR)
+                _cached_dlib_predictors['finger_is_cropped'] = 'cropped' in os.path.basename(TOEPAD_FINGER_PREDICTOR).lower()
+            # Scale bars use YOLO only, no dlib predictor needed
+            logger.info(f"Dlib predictors loaded and cached: {list(k for k in _cached_dlib_predictors.keys() if not k.endswith('_is_cropped'))}")
+        except ImportError:
+            logger.warning("dlib not installed, skipping predictor caching")
+    return _cached_dlib_predictors
+
 
 app = Flask(__name__)
 
@@ -571,7 +594,9 @@ def upload():
                             toe_predictor_path=TOEPAD_TOE_PREDICTOR,
                             scale_predictor_path=TOEPAD_SCALE_PREDICTOR,
                             finger_predictor_path=TOEPAD_FINGER_PREDICTOR,
-                            target_predictor_type=toepad_predictor_type
+                            target_predictor_type=toepad_predictor_type,
+                            cached_yolo_model=get_cached_yolo_model(),
+                            cached_dlib_predictors=get_cached_dlib_predictors()
                         )
                         logger.info(f"YOLO processing completed for {unique_name}")
                     elif detector_file_path and os.path.exists(detector_file_path):
@@ -992,7 +1017,9 @@ def process_existing():
                     toe_predictor_path=TOEPAD_TOE_PREDICTOR,
                     scale_predictor_path=TOEPAD_SCALE_PREDICTOR,
                     finger_predictor_path=TOEPAD_FINGER_PREDICTOR,
-                    target_predictor_type=toepad_predictor_type
+                    target_predictor_type=toepad_predictor_type,
+                    cached_yolo_model=get_cached_yolo_model(),
+                    cached_dlib_predictors=get_cached_dlib_predictors()
                 )
             elif detector_file_path and os.path.exists(detector_file_path):
                 utils.predictions_to_xml_single_with_detector(

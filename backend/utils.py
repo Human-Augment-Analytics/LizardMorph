@@ -387,7 +387,9 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                                         conf_threshold: float = 0.25,
                                         padding_ratio: float = 0.3,
                                         scale_bar_length_mm: float = 10.0,
-                                        target_predictor_type: str = None):
+                                        target_predictor_type: str = None,
+                                        cached_yolo_model=None,
+                                        cached_dlib_predictors: dict = None):
     """
     Generates dlib format xml file for a single image using YOLO for bounding box detection
     and dlib shape predictor for landmark prediction. YOLO detects multiple objects (toe, finger, scale)
@@ -396,11 +398,8 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
     For scale bars: Uses YOLO only (no ml-morph/dlib predictor). Creates two landmarks by removing
     1mm from the left and right edges of the YOLO bounding box.
     
-    For cropped predictors (trained on cropped images), this function will:
-    1. Add padding to YOLO bounding boxes (default 30%)
-    2. Crop the image to the padded bounding box
-    3. Apply predictor to the cropped image (with full image rectangle)
-    4. Convert coordinates back to original image space
+    For all toe/finger detections: The image region is cropped to the YOLO bounding box
+    before running the dlib predictor, then coordinates are transformed back.
     
     Parameters:
     ----------
@@ -415,56 +414,39 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
         scale_bar_length_mm (float): Length of the scale bar in mm (default: 10.0). Used to calculate 1mm offset.
         target_predictor_type (str): Optional filter to only process specific type ('toe', 'finger', 'scale'). 
                                      If None, processes all detections. If specified, only processes that type.
+        cached_yolo_model: Optional pre-loaded YOLO model to avoid reloading
+        cached_dlib_predictors (dict): Optional pre-loaded dlib predictors dict with keys like 'toe', 'finger', 'toe_is_cropped', 'finger_is_cropped'
     """
     from ultralytics import YOLO
     
-    # Load all predictors and check if they are cropped predictors
-    # Note: Scale bars now use YOLO only (no dlib predictor needed)
-    predictors = {}
-    is_cropped_predictor = {}
+    # Use cached predictors if provided, otherwise load from paths
     predictors = {}
     is_cropped_predictor = {}
     
-    # Check for dlib if we need to load predictors
-    if (toe_predictor_path or finger_predictor_path) and dlib is None:
-         # Check if we actually need it (e.g. if we are processing toes/fingers)
-         # But we pre-load predictors, so we can't really proceed if we expect to load them.
-         # Scale bars don't need dlib, so maybe we can allow proceeding if only scale bars are expected?
-         # However, the user provides paths, so we should assume they want to use them.
-         # Let's print a warning and only fail if we actually try to use it later?
-         # No, the code below tries to load them immediately.
-         print("Error: dlib is not installed, but predictors were requested. Cannot load predictors.")
-         # If we are only doing scale bars (which use YOLO only), we might survive.
-         # But the logic below assumes predictors are loaded for toe/finger.
-    
-    if toe_predictor_path and os.path.exists(toe_predictor_path):
-        if dlib is None:
-            print("Warning: dlib not found, cannot load toe predictor")
+    if cached_dlib_predictors:
+        # Use cached predictors
+        if 'toe' in cached_dlib_predictors:
+            predictors['toe'] = cached_dlib_predictors['toe']
+            is_cropped_predictor['toe'] = cached_dlib_predictors.get('toe_is_cropped', False)
+        if 'finger' in cached_dlib_predictors:
+            predictors['finger'] = cached_dlib_predictors['finger']
+            is_cropped_predictor['finger'] = cached_dlib_predictors.get('finger_is_cropped', False)
+        print(f"Using cached dlib predictors: {list(predictors.keys())}")
+    else:
+        # Load predictors from paths (fallback when no cached predictors)
+        if (toe_predictor_path or finger_predictor_path) and dlib is None:
+            print("Error: dlib is not installed, but predictors were requested. Cannot load predictors.")
         else:
-            predictors['toe'] = dlib.shape_predictor(toe_predictor_path)
-            # Check if predictor is cropped (by filename containing "cropped")
-            is_cropped_predictor['toe'] = 'cropped' in os.path.basename(toe_predictor_path).lower()
-    # Scale bars now use YOLO only - skip loading scale predictor
-    # if scale_predictor_path and os.path.exists(scale_predictor_path):
-    #     predictors['scale'] = dlib.shape_predictor(scale_predictor_path)
-    #     is_cropped_predictor['scale'] = 'cropped' in os.path.basename(scale_predictor_path).lower()
-    if finger_predictor_path and os.path.exists(finger_predictor_path):
-        if dlib is None:
-            print("Warning: dlib not found, cannot load finger predictor")
-        else:
-            predictors['finger'] = dlib.shape_predictor(finger_predictor_path)
-            is_cropped_predictor['finger'] = 'cropped' in os.path.basename(finger_predictor_path).lower()
+            if toe_predictor_path and os.path.exists(toe_predictor_path):
+                predictors['toe'] = dlib.shape_predictor(toe_predictor_path)
+                is_cropped_predictor['toe'] = 'cropped' in os.path.basename(toe_predictor_path).lower()
+            if finger_predictor_path and os.path.exists(finger_predictor_path):
+                predictors['finger'] = dlib.shape_predictor(finger_predictor_path)
+                is_cropped_predictor['finger'] = 'cropped' in os.path.basename(finger_predictor_path).lower()
     
     # Note: Scale bars don't require a predictor (they use YOLO only)
-    # But we still need at least one predictor for other object types unless we are strict about dlib
-    if not predictors and dlib is not None:
-        # If dlib is present but no predictors loaded, maybe that's an issue if paths were provided
-        pass
-    
-    # Note: Scale bars don't require a predictor (they use YOLO only)
-    # But we still need at least one predictor for other object types
     if not predictors:
-        raise ValueError("At least one predictor path (toe or finger) must be provided and exist")
+        raise ValueError("At least one predictor (toe or finger) must be provided")
     
     root, images_e = initialize_xml()
 
@@ -497,11 +479,16 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
     
     # Detect bounding boxes using YOLO (CPU mode)
     detections = []
-    print(f"Starting YOLO detection on {image_path} with model {yolo_model_path}")
-    if yolo_model_path and os.path.exists(yolo_model_path):
+    print(f"Starting YOLO detection on {image_path}")
+    
+    # Use cached YOLO model if provided, otherwise load from path
+    model = cached_yolo_model
+    if model is None and yolo_model_path and os.path.exists(yolo_model_path):
+        print(f"Loading YOLO model from: {yolo_model_path}")
+        model = YOLO(yolo_model_path)
+    
+    if model is not None:
         try:
-            model = YOLO(yolo_model_path)
-            # Use CPU device explicitly
             # Use PIL Image for YOLO (matching direct script)
             results = model(img_pil, conf=conf_threshold, device='cpu', verbose=False)
             print(f"YOLO model returned {len(results)} result(s)")
@@ -725,13 +712,32 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     
                     print(f"Applied 180° rotation + horizontal flip for {class_name}: crop size={crop_w}x{crop_h}")
                 else:
-                    # Use YOLO bounding box directly on full raw image
-                    # This matches visualize_yolo_prediction.py behavior exactly
-                    shape = predictor(img_raw, detected_rect)
+                    # For bottom toe/finger: crop to YOLO bounding box for better accuracy
+                    # This matches how the models were trained (on cropped images)
+                    x1, y1 = detected_rect.left(), detected_rect.top()
+                    x2, y2 = detected_rect.right(), detected_rect.bottom()
                     
-                    # Extract landmarks exactly like direct script: iterate through parts() in natural order
-                    # This matches test_toe_direct.py: np.array([[p.x, p.y] for p in pred_shape.parts()])
+                    # Ensure coordinates are within image bounds
+                    x1 = max(0, x1)
+                    y1 = max(0, y1)
+                    x2 = min(w, x2)
+                    y2 = min(h, y2)
+                    
+                    # Crop the region
+                    cropped_region = img_raw[y1:y2, x1:x2]
+                    
+                    # Create a rect for the crop (full crop dimensions)
+                    crop_h, crop_w = cropped_region.shape[:2]
+                    crop_rect = dlib.rectangle(0, 0, crop_w, crop_h)
+                    
+                    # Run inference on cropped region
+                    shape = predictor(cropped_region, crop_rect)
                     pred_landmarks = np.array([[p.x, p.y] for p in shape.parts()])
+                    
+                    # Transform landmarks back to original image coordinates
+                    pred_landmarks = pred_landmarks + np.array([x1, y1])
+                    
+                    print(f"Cropped {class_name} to YOLO box: crop size={crop_w}x{crop_h}")
                 
                 # Assign fixed landmark IDs based on detection type:
                 # Scale: 0-1, Bottom Finger: 2-10, Bottom Toe: 11-19, Top Finger: 20-28, Top Toe: 29-37
