@@ -92,9 +92,9 @@ export class MainView extends Component<MainProps, MainState> {
     lizardCount: 0,
     zoomTransform: d3.zoomIdentity,
     scaleSettings: {
-      pointAId: null,
-      pointBId: null,
-      value: null,
+      pointAId: 0,
+      pointBId: 1,
+      value: 10,
       units: "mm",
     },
     measurements: [],
@@ -1175,6 +1175,7 @@ export class MainView extends Component<MainProps, MainState> {
             onMeasurementsChange={this.handleMeasurementsChange}
             isModal={true}
             onClose={this.handleCloseMeasurementsAndScaleModal}
+            viewType={this.props.selectedViewType}
           />
         )}
       </div>

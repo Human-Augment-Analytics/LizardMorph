@@ -57,7 +57,9 @@ export class ExportService {
     scaleSettings: ScaleSettings,
     coords: Point[]
   ): number | null {
-    if (!scaleSettings.pointAId || !scaleSettings.pointBId || scaleSettings.value === null || scaleSettings.value <= 0) {
+    if (scaleSettings.pointAId === null || scaleSettings.pointAId === undefined ||
+      scaleSettings.pointBId === null || scaleSettings.pointBId === undefined ||
+      scaleSettings.value === null || scaleSettings.value <= 0) {
       return null;
     }
 
