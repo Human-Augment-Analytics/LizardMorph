@@ -19,7 +19,8 @@ function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/dorsal" element={<MainViewWrapper selectedViewType="dorsal" />} />
         <Route path="/lateral" element={<MainViewWrapper selectedViewType="lateral" />} />
-        <Route path="/toepads" element={<Navigate to="/" replace />} />
+        <Route path="/toepads" element={<MainViewWrapper selectedViewType="toepads" />} />
+        <Route path="/toepad" element={<MainViewWrapper selectedViewType="toepads" />} />
         <Route path="/custom" element={<Navigate to="/" replace />} />
         <Route path="/yolo-test" element={<YoloTestPage />} />
         <Route path="/lizard-detection" element={<LizardDetectionPage />} />

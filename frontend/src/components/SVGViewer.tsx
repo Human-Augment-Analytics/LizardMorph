@@ -3,6 +3,7 @@ import * as d3 from "d3";
 import { SVGViewerStyles } from "./SVGViewer.style";
 import type { Point } from "../models/Point";
 import type { UploadHistoryItem } from "../models/UploadHistoryItem";
+import type { BoundingBox } from "../models/AnnotationsData";
 
 interface SVGViewerProps {
   dataFetched: boolean;
@@ -28,11 +29,17 @@ interface SVGViewerProps {
   isEditMode: boolean;
   onToggleEditMode: () => void;
   onResetZoom: () => void;
+  isModalOpen?: boolean;
+  boundingBoxes?: BoundingBox[];
+  maxWidth?: number; // Optional max width for constrained views like toepads
+  fitToContainerWidth?: boolean; // Scale to fit container width instead of height
 }
 
 interface SVGViewerState {
   hintDismissed: boolean;
   landmarkSize: number;
+  showBoundingBoxes: boolean;
+  showControls: boolean;
 }
 
 interface PositionHistory {
@@ -46,7 +53,9 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   
   state: SVGViewerState = {
     hintDismissed: false,
-    landmarkSize: 3
+    landmarkSize: 2,
+    showBoundingBoxes: false,
+    showControls: false
   };
   
   // Performance optimization: Cache scale functions and dimensions
@@ -92,7 +101,10 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       this.props.originalScatterData.length > 0 &&
       (prevProps.imageWidth !== this.props.imageWidth ||
         prevProps.imageHeight !== this.props.imageHeight ||
-        this.props.needsScaling)
+        prevProps.maxWidth !== this.props.maxWidth ||
+        this.props.needsScaling ||
+        prevProps.boundingBoxes !== this.props.boundingBoxes ||
+        (this.props.boundingBoxes && this.props.boundingBoxes.length !== (prevProps.boundingBoxes?.length || 0)))
     ) {
       setTimeout(() => {
         this.renderSVG();
@@ -170,10 +182,33 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       svg.selectAll("*").remove(); // Clear SVG first to prevent duplication
 
       // Calculate dimensions maintaining aspect ratio
-      const windowHeight = window.innerHeight - window.innerHeight * 0.2;
-      const width =
-        windowHeight * (this.props.imageWidth / this.props.imageHeight);
-      const height = windowHeight;
+      let width: number;
+      let height: number;
+
+      if (this.props.fitToContainerWidth) {
+        // Scale based on container width (use available window width minus sidebar)
+        const containerWidth = window.innerWidth * 0.65; // Approximate available width
+        width = containerWidth;
+        height = width * (this.props.imageHeight / this.props.imageWidth);
+
+        // Cap height to window height if too tall
+        const maxHeight = window.innerHeight * 0.7;
+        if (height > maxHeight) {
+          height = maxHeight;
+          width = height * (this.props.imageWidth / this.props.imageHeight);
+        }
+      } else {
+      // Default: scale based on window height
+        const windowHeight = window.innerHeight - window.innerHeight * 0.2;
+        width = windowHeight * (this.props.imageWidth / this.props.imageHeight);
+        height = windowHeight;
+
+        // If maxWidth is provided, constrain to it
+        if (this.props.maxWidth && width > this.props.maxWidth) {
+          width = this.props.maxWidth;
+          height = width * (this.props.imageHeight / this.props.imageWidth);
+        }
+      }
 
       svg.attr("width", width).attr("height", height);
 
@@ -242,14 +277,79 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         .attr("height", height)
         .attr("preserveAspectRatio", "xMidYMid slice");
 
+      // Add bounding boxes to the zoom container (if available and visible)
+      if (this.state.showBoundingBoxes && this.props.boundingBoxes && this.props.boundingBoxes.length > 0) {
+        const bboxGroup = zoomContainer
+          .append("g")
+          .attr("class", "bounding-boxes");
+        
+        // Scale functions for bounding boxes
+        const scaleX = d3.scaleLinear()
+          .domain([0, this.props.imageWidth])
+          .range([0, width]);
+        const scaleY = d3.scaleLinear()
+          .domain([0, this.props.imageHeight])
+          .range([0, height]);
+        
+        // Color scheme for different box types (toe, finger, scale)
+        const boxColors = ['#00ff00', '#0088ff', '#ff8800']; // Green, Blue, Orange
+        
+        this.props.boundingBoxes.forEach((bbox, index) => {
+          const scaledX = scaleX(bbox.left);
+          const scaledY = scaleY(bbox.top);
+          const scaledWidth = scaleX(bbox.width);
+          const scaledHeight = scaleY(bbox.height);
+          
+          // Calculate coverage for logging
+          const boxArea = bbox.width * bbox.height;
+          const imageArea = this.props.imageWidth * this.props.imageHeight;
+          const coverageRatio = boxArea / imageArea;
+          
+          console.log(`Rendering bounding box ${index}:`, {
+            original: { left: bbox.left, top: bbox.top, width: bbox.width, height: bbox.height },
+            scaled: { x: scaledX, y: scaledY, width: scaledWidth, height: scaledHeight },
+            coverage: `${(coverageRatio * 100).toFixed(1)}%`
+          });
+          
+          // Draw rectangle for bounding box
+          bboxGroup
+            .append("rect")
+            .attr("x", scaledX)
+            .attr("y", scaledY)
+            .attr("width", scaledWidth)
+            .attr("height", scaledHeight)
+            .attr("fill", "none")
+            .attr("stroke", boxColors[index % boxColors.length])
+            .attr("stroke-width", 3)
+            .attr("stroke-dasharray", "8,4")
+            .attr("opacity", 0.9)
+            .style("pointer-events", "none");
+        });
+      }
+
       // Add scatter points to the zoom container
       const scatterPlotGroup = zoomContainer
         .append("g")
         .attr("class", "scatter-points");
 
+      // Always scale from originalScatterData to match current SVG dimensions
+      // (this ensures correct scaling when maxWidth constraint is applied)
+      const scaleXForPoints = d3.scaleLinear()
+        .domain([0, this.props.imageWidth])
+        .range([0, width]);
+      const scaleYForPoints = d3.scaleLinear()
+        .domain([0, this.props.imageHeight])
+        .range([0, height]);
+
+      const scaledPointsForRender = this.props.originalScatterData.map((point: Point) => ({
+        ...point,
+        x: scaleXForPoints(point.x),
+        y: scaleYForPoints(point.y),
+      }));
+
       const pointGroups = scatterPlotGroup
         .selectAll("g")
-        .data(this.props.scatterData)
+        .data(scaledPointsForRender)
         .enter()
         .append("g")
         .attr("data-landmark-id", (d: Point) => d.id) // Add unique identifier to each group
@@ -260,8 +360,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
 
         // Add the point
         const size = this.state.landmarkSize;
-        const fontSize = Math.max(8, size * 3);
-        const textOffset = size + 2;
+        const fontSize = Math.max(6, size * 2);
+        const textOffset = size + 1;
         
         g.append("circle")
           .attr("cx", d.x)
@@ -673,8 +773,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     if (scatterPlotGroup.empty()) return;
     
     const size = this.state.landmarkSize;
-    const fontSize = Math.max(8, size * 3); // Scale font size with landmark size
-    const textOffset = size + 2;
+    const fontSize = Math.max(6, size * 2); // Scale font size with landmark size
+    const textOffset = size + 1;
     
     // Update circle sizes
     scatterPlotGroup.selectAll<SVGCircleElement, Point>("circle")
@@ -711,6 +811,19 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   private toggleOutlineMode = (): void => {
     this.isOutlineMode = !this.isOutlineMode;
     this.updateLandmarkOutline();
+  };
+
+  // Toggle bounding boxes visibility
+  private toggleBoundingBoxes = (): void => {
+    this.setState({ showBoundingBoxes: !this.state.showBoundingBoxes }, () => {
+      // Re-render SVG to show/hide bounding boxes
+      this.renderSVG();
+    });
+  };
+
+  // Toggle controls panel
+  private toggleControls = (): void => {
+    this.setState({ showControls: !this.state.showControls });
   };
 
   // Update landmark transparency
@@ -769,6 +882,12 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       this.toggleOutlineMode();
     }
     
+    // Toggle bounding boxes with 'B' key
+    if (event.key.toLowerCase() === 'b' && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      this.toggleBoundingBoxes();
+    }
+
     // Undo with Ctrl+Z
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
       event.preventDefault();
@@ -823,73 +942,112 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           </div>
         )}
 
-        {/* Landmark size slider */}
+        {/* Info icon and expandable controls panel */}
         {dataFetched && (
           <div style={{
             position: 'absolute',
             top: '10px',
             right: '10px',
-            background: 'rgba(0,0,0,0.8)',
-            color: 'white',
-            padding: '10px',
-            borderRadius: '6px',
-            fontSize: '12px',
             zIndex: 1000,
-            minWidth: '200px'
           }}>
-            <div style={{ marginBottom: '8px', fontWeight: 'bold' }}>
-              Landmark Size
-            </div>
-            <input
-              type="range"
-              min="0.5"
-              max="10"
-              step="0.5"
-              value={this.state.landmarkSize}
-              onChange={this.handleLandmarkSizeChange}
+            {/* Info icon button */}
+            <button
+              onClick={this.toggleControls}
               style={{
-                width: '100%',
-                marginBottom: '4px'
-              }}
-            />
-            <div style={{ textAlign: 'center', fontSize: '10px', opacity: 0.8 }}>
-              {this.state.landmarkSize.toFixed(1)}px
-            </div>
-          </div>
-        )}
-
-        {/* Right-click hint */}
-        {dataFetched && !this.state.hintDismissed && (
-          <div style={{
-            position: 'absolute', 
-            bottom: '10px',
-            left: '10px',
-            background: 'rgba(0,0,0,0.7)',
-            color: 'white',
-            padding: '6px 10px',
-            borderRadius: '4px',
-            fontSize: '11px',
-            zIndex: 1000,
-            opacity: 0.8,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}>
-            <span>Right-click: edit/view mode | Press 'T': transparency | Press 'O': outline | Ctrl/Cmd+Z: undo</span>
-            <button 
-              onClick={() => this.setState({ hintDismissed: true })}
-              style={{
-                background: 'none',
-                border: 'none',
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                background: this.state.showControls ? 'rgba(33, 150, 243, 0.9)' : 'rgba(0,0,0,0.7)',
                 color: 'white',
+                border: 'none',
                 cursor: 'pointer',
-                padding: '0',
-                fontSize: '14px',
-                opacity: 0.7
+                fontSize: '18px',
+                fontWeight: 'bold',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'background 0.2s',
               }}
+              title="Show/hide controls (keyboard shortcuts info)"
             >
-              ×
+              ℹ
             </button>
+
+            {/* Expandable controls panel */}
+            {this.state.showControls && (
+              <div style={{
+                marginTop: '8px',
+                background: 'rgba(0,0,0,0.85)',
+                color: 'white',
+                padding: '12px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                minWidth: '220px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+              }}>
+                {/* Landmark Size slider */}
+                <div style={{ marginBottom: '12px' }}>
+                  <div style={{ marginBottom: '6px', fontWeight: 'bold', fontSize: '11px', opacity: 0.9 }}>
+                    Landmark Size
+                  </div>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="10"
+                    step="0.5"
+                    value={this.state.landmarkSize}
+                    onChange={this.handleLandmarkSizeChange}
+                    style={{
+                      width: '100%',
+                      marginBottom: '2px'
+                    }}
+                  />
+                  <div style={{ textAlign: 'center', fontSize: '10px', opacity: 0.7 }}>
+                    {this.state.landmarkSize.toFixed(1)}px
+                  </div>
+                </div>
+
+                {/* Bounding box toggle */}
+                <div style={{ 
+                  marginBottom: '12px',
+                  display: 'flex',
+                  alignItems: 'center', 
+                  justifyContent: 'space-between'
+                }}>
+                  <span style={{ fontSize: '11px' }}>Bounding Boxes</span>
+                  <button
+                    onClick={this.toggleBoundingBoxes}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '10px',
+                      background: this.state.showBoundingBoxes ? '#4CAF50' : '#666',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {this.state.showBoundingBoxes ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+
+                {/* Keyboard shortcuts */}
+                <div style={{
+                  borderTop: '1px solid rgba(255,255,255,0.2)',
+                  paddingTop: '10px',
+                  fontSize: '10px',
+                  opacity: 0.8,
+                  lineHeight: 1.6
+                }}>
+                  <div style={{ fontWeight: 'bold', marginBottom: '4px', fontSize: '11px' }}>Keyboard Shortcuts</div>
+                  <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>B</kbd> Toggle bounding boxes</div>
+                  <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>T</kbd> Toggle transparency</div>
+                  <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>O</kbd> Toggle outline mode</div>
+                  <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>Right-click</kbd> Edit/view mode</div>
+                  <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>Ctrl+Z</kbd> Undo</div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -915,4 +1073,3 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     );
   }
 }
-

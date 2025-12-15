@@ -10,7 +10,11 @@ import ntpath
 import numpy as np
 import pandas as pd
 import cv2
-import dlib
+try:
+    import dlib
+except ImportError:
+    dlib = None
+    print("Warning: dlib not found, some features will be unavailable")
 import os
 import shutil
 import random
@@ -373,6 +377,411 @@ def shape_to_np(shape):
 
     # return the list of (x, y)-coordinates
     return coords
+
+
+def predictions_to_xml_single_with_yolo(image_path: str, output: str, 
+                                        yolo_model_path: str = None,
+                                        toe_predictor_path: str = None,
+                                        scale_predictor_path: str = None,
+                                        finger_predictor_path: str = None,
+                                        conf_threshold: float = 0.25,
+                                        padding_ratio: float = 0.3,
+                                        scale_bar_length_mm: float = 10.0,
+                                        target_predictor_type: str = None,
+                                        cached_yolo_model=None,
+                                        cached_dlib_predictors: dict = None):
+    """
+    Generates dlib format xml file for a single image using YOLO for bounding box detection
+    and dlib shape predictor for landmark prediction. YOLO detects multiple objects (toe, finger, scale)
+    and each detection is processed with its corresponding predictor.
+    
+    For scale bars: Uses YOLO only (no ml-morph/dlib predictor). Creates two landmarks by removing
+    1mm from the left and right edges of the YOLO bounding box.
+    
+    For all toe/finger detections: The image region is cropped to the YOLO bounding box
+    before running the dlib predictor, then coordinates are transformed back.
+    
+    Parameters:
+    ----------
+        image_path (str): Path to the input image
+        output (str): Path for the output XML file
+        yolo_model_path (str): Path to the YOLO model file (.pt)
+        toe_predictor_path (str): Path to the toe dlib shape predictor file (.dat)
+        scale_predictor_path (str): Path to the scale dlib shape predictor file (.dat) - NOT USED for scale bars
+        finger_predictor_path (str): Path to the finger dlib shape predictor file (.dat)
+        conf_threshold (float): Confidence threshold for YOLO detections
+        padding_ratio (float): Padding ratio for bounding boxes when using cropped predictors (default: 0.3 = 30%)
+        scale_bar_length_mm (float): Length of the scale bar in mm (default: 10.0). Used to calculate 1mm offset.
+        target_predictor_type (str): Optional filter to only process specific type ('toe', 'finger', 'scale'). 
+                                     If None, processes all detections. If specified, only processes that type.
+        cached_yolo_model: Optional pre-loaded YOLO model to avoid reloading
+        cached_dlib_predictors (dict): Optional pre-loaded dlib predictors dict with keys like 'toe', 'finger', 'toe_is_cropped', 'finger_is_cropped'
+    """
+    from ultralytics import YOLO
+    
+    # Use cached predictors if provided, otherwise load from paths
+    predictors = {}
+    is_cropped_predictor = {}
+    
+    if cached_dlib_predictors:
+        # Use cached predictors
+        if 'toe' in cached_dlib_predictors:
+            predictors['toe'] = cached_dlib_predictors['toe']
+            is_cropped_predictor['toe'] = cached_dlib_predictors.get('toe_is_cropped', False)
+        if 'finger' in cached_dlib_predictors:
+            predictors['finger'] = cached_dlib_predictors['finger']
+            is_cropped_predictor['finger'] = cached_dlib_predictors.get('finger_is_cropped', False)
+        print(f"Using cached dlib predictors: {list(predictors.keys())}")
+    else:
+        # Load predictors from paths (fallback when no cached predictors)
+        if (toe_predictor_path or finger_predictor_path) and dlib is None:
+            print("Error: dlib is not installed, but predictors were requested. Cannot load predictors.")
+        else:
+            if toe_predictor_path and os.path.exists(toe_predictor_path):
+                predictors['toe'] = dlib.shape_predictor(toe_predictor_path)
+                is_cropped_predictor['toe'] = 'cropped' in os.path.basename(toe_predictor_path).lower()
+            if finger_predictor_path and os.path.exists(finger_predictor_path):
+                predictors['finger'] = dlib.shape_predictor(finger_predictor_path)
+                is_cropped_predictor['finger'] = 'cropped' in os.path.basename(finger_predictor_path).lower()
+    
+    # Note: Scale bars don't require a predictor (they use YOLO only)
+    if not predictors:
+        raise ValueError("At least one predictor (toe or finger) must be provided")
+    
+    root, images_e = initialize_xml()
+
+    image_e = ET.Element('image')
+    image_e.set('file', str(image_path))
+    
+    # Load raw image for prediction (matching visualize_yolo_prediction.py exactly)
+    # Use PIL to load image (same as direct script), then convert to numpy array
+    from PIL import Image
+    # Increase PIL image size limit for large images (same as direct script)
+    # Increase PIL image size limit for large images (same as direct script)
+    Image.MAX_IMAGE_PIXELS = None
+    img_pil = Image.open(image_path)
+    
+    # Ensure image is in RGB mode for consistent handling
+    if img_pil.mode != 'RGB':
+        img_pil = img_pil.convert('RGB')
+        
+    img_array = np.array(img_pil)
+    img_raw = img_array.copy()  # RGB format, no filters
+    
+    # Ensure img_raw is uint8 and contiguous for dlib
+    if img_raw.dtype != np.uint8:
+        img_raw = img_raw.astype(np.uint8)
+    
+    img_raw = np.ascontiguousarray(img_raw)
+    
+    w = img_raw.shape[1]
+    h = img_raw.shape[0]
+    
+    # Detect bounding boxes using YOLO (CPU mode)
+    detections = []
+    print(f"Starting YOLO detection on {image_path}")
+    
+    # Use cached YOLO model if provided, otherwise load from path
+    model = cached_yolo_model
+    if model is None and yolo_model_path and os.path.exists(yolo_model_path):
+        print(f"Loading YOLO model from: {yolo_model_path}")
+        model = YOLO(yolo_model_path)
+    
+    if model is not None:
+        try:
+            # Use PIL Image for YOLO (matching direct script)
+            results = model(img_pil, conf=conf_threshold, device='cpu', verbose=False)
+            print(f"YOLO model returned {len(results)} result(s)")
+            
+            # Get class names from model
+            class_names = model.names if hasattr(model, 'names') else {}
+            print(f"YOLO class names: {class_names}")
+            
+            for result in results:
+                if result.boxes is not None and len(result.boxes) > 0:
+                    print(f"Found {len(result.boxes)} detections")
+                    for box in result.boxes:
+                        # Get bounding box coordinates
+                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                        dlib_rect = dlib.rectangle(int(x1), int(y1), int(x2), int(y2))
+                        
+                        # Get class ID and name
+                        cls_id = int(box.cls[0].cpu().numpy())
+                        cls_name = class_names.get(cls_id, '').lower() if class_names else ''
+                        
+                        # Map class name/ID to predictor type
+                        # YOLO class mapping for 6-class model: 0=up_finger, 1=up_toe, 2=bot_finger, 3=bot_toe, 4=ruler, 5=id
+                        # Legacy 3/4-class model: 0=finger, 1=toe, 2=ruler, 3=id
+                        # Try to match by class name first, then by class ID
+                        predictor_type = None
+                        if 'toe' in cls_name:  # Matches 'toe', 'up_toe', 'bot_toe'
+                            predictor_type = 'toe'
+                        elif 'finger' in cls_name:  # Matches 'finger', 'up_finger', 'bot_finger'
+                            predictor_type = 'finger'
+                        elif 'scale' in cls_name or 'ruler' in cls_name:
+                            predictor_type = 'scale'
+                        elif cls_name == 'id':  # ID tag class
+                            predictor_type = 'id'
+                        else:
+                            # Fallback: map by class ID
+                            # New 6-class model: 0=up_finger, 1=up_toe, 2=bot_finger, 3=bot_toe, 4=ruler, 5=id
+                            # Legacy 3-class model: 0=finger, 1=toe, 2=ruler
+                            if cls_id in [0, 2]:  # up_finger or bot_finger (or legacy finger)
+                                predictor_type = 'finger'
+                            elif cls_id in [1, 3]:  # up_toe or bot_toe (or legacy toe)
+                                predictor_type = 'toe'
+                            elif cls_id == 4:  # ruler (6-class model)
+                                predictor_type = 'scale'
+                            elif cls_id == 5:  # id tag (6-class model)
+                                predictor_type = 'id'
+                            else:
+                                # Last resort: try to use class ID as index into available predictors
+                                available_types = list(predictors.keys())
+                                if cls_id < len(available_types):
+                                    predictor_type = available_types[cls_id]
+                        
+                        # Allow scale bars even without a predictor (they use YOLO only)
+                        # For other types, require a predictor
+                        if predictor_type:
+                            if predictor_type == 'scale' or predictor_type in predictors:
+                                detections.append({
+                                    'rect': dlib_rect,
+                                    'predictor_type': predictor_type,
+                                    'class_id': cls_id,
+                                    'class_name': cls_name
+                                })
+                                print(f"Added detection: type={predictor_type}, class_id={cls_id}, class_name={cls_name}, rect=({dlib_rect.left()}, {dlib_rect.top()}, {dlib_rect.width()}, {dlib_rect.height()})")
+                            else:
+                                print(f"Skipped detection: predictor_type={predictor_type} not in available predictors={list(predictors.keys())}")
+                        else:
+                            print(f"Skipped detection: could not determine predictor_type for class_id={cls_id}, class_name={cls_name}")
+                else:
+                    print("No boxes found in YOLO result")
+        except Exception as e:
+            print(f"Error during YOLO detection: {e}")
+            import traceback
+            traceback.print_exc()
+    else:
+        print(f"YOLO model path not available or doesn't exist: {yolo_model_path}")
+    
+    print(f"Total detections after YOLO: {len(detections)}")
+    
+    # Sort detections to ensure consistent landmark order:
+    # 0-1: scale bar, then: bot_finger, bot_toe, up_finger, up_toe
+    detection_order = {
+        'scale': 0,      # Scale bar landmarks first (0, 1)
+        'bot_finger': 1, # Lower finger next
+        'bot_toe': 2,    # Lower toe
+        'up_finger': 3,  # Upper finger
+        'up_toe': 4,     # Upper toe
+        'finger': 5,     # Fallback for generic finger
+        'toe': 6,        # Fallback for generic toe
+    }
+    
+    def get_detection_sort_key(d):
+        predictor_type = d['predictor_type']
+        class_name = d.get('class_name', '')
+        # Try exact class name first, then predictor type
+        if class_name in detection_order:
+            return detection_order[class_name]
+        return detection_order.get(predictor_type, 99)
+    
+    detections = sorted(detections, key=get_detection_sort_key)
+    
+    # Keep only one scale bar (the first one, which has highest priority)
+    scale_bar_found = False
+    filtered_detections = []
+    for detection in detections:
+        if detection['predictor_type'] == 'scale':
+            if not scale_bar_found:
+                filtered_detections.append(detection)
+                scale_bar_found = True
+            else:
+                print(f"Skipping duplicate scale bar detection")
+        else:
+            filtered_detections.append(detection)
+    detections = filtered_detections
+    
+    # Process each detection with its corresponding predictor
+    print(f"Processing {len(detections)} detections")
+    if detections:
+        for idx, detection in enumerate(detections):
+            print(f"Processing detection {idx+1}/{len(detections)}: {detection['predictor_type']}")
+            detected_rect = detection['rect']
+            predictor_type = detection['predictor_type']
+            
+            # For toe and finger, check if predictor is available before processing
+            if predictor_type != 'scale' and predictor_type not in predictors:
+                print(f"Warning: Predictor for {predictor_type} not available, skipping detection")
+                continue
+            
+            # Create box element for this detection
+            box = ET.Element("box")
+            box.set("top", str(int(detected_rect.top())))
+            box.set("left", str(int(detected_rect.left())))
+            box.set("width", str(int(detected_rect.width())))
+            box.set("height", str(int(detected_rect.height())))
+            
+            # Special handling for scale bars: use YOLO only, no ml-morph predictor
+            if predictor_type == 'scale':
+                print(f"Processing scale bar with YOLO only (no ml-morph)")
+                # Calculate pixels per mm based on scale bar length
+                # The YOLO bounding box width represents the scale bar plus 1mm padding on each side
+                # So total width = scale_bar_length_mm + 2mm (1mm left + 1mm right padding)
+                total_length_mm = scale_bar_length_mm + 2.0
+                pixels_per_mm = detected_rect.width() / total_length_mm
+                offset_pixels = pixels_per_mm * 1.0  # Remove 1mm from each side
+                
+                # Calculate center Y coordinate
+                center_y = detected_rect.top() + detected_rect.height() / 2.0
+                
+                # Create two landmarks: one at left + 1mm, one at right - 1mm
+                left_x = detected_rect.left() + offset_pixels
+                right_x = detected_rect.right() - offset_pixels
+                
+                # Ensure points are within the bounding box
+                left_x = np.clip(left_x, detected_rect.left(), detected_rect.right())
+                right_x = np.clip(right_x, detected_rect.left(), detected_rect.right())
+                
+                # Create two landmarks with fixed IDs 0 and 1 for scale
+                part0 = create_part(float(left_x), float(center_y), 0)
+                part1 = create_part(float(right_x), float(center_y), 1)
+                box.append(part0)
+                box.append(part1)
+                
+                print(f"Created scale bar landmarks (IDs 0-1): left=({left_x:.1f}, {center_y:.1f}), right=({right_x:.1f}, {center_y:.1f})")
+            else:
+                # For toe and finger, use dlib predictor as before
+                predictor = predictors[predictor_type]
+                is_cropped = is_cropped_predictor.get(predictor_type, False)
+                
+                # Get the class name to check if it's an upper (up_) class
+                class_name = detection.get('class_name', '')
+                is_upper = class_name.startswith('up_')
+                
+                # Match visualize_yolo_prediction.py approach:
+                # - Use raw image (no filters) for prediction
+                # - Use YOLO bounding box directly (even for cropped predictors)
+                # - Single scale prediction (no multi-scale)
+                
+                if is_upper:
+                    # For upper toe/finger: rotate 180° AND flip horizontally to match lower orientation
+                    # This is needed for bilateral images where upper and lower have opposite orientations
+                    x1, y1 = detected_rect.left(), detected_rect.top()
+                    x2, y2 = detected_rect.right(), detected_rect.bottom()
+                    
+                    # Ensure coordinates are within image bounds
+                    x1 = max(0, x1)
+                    y1 = max(0, y1)
+                    x2 = min(w, x2)
+                    y2 = min(h, y2)
+                    
+                    # Crop the region
+                    cropped_region = img_raw[y1:y2, x1:x2]
+                    
+                    # Rotate 180° then flip horizontally (equivalent to vertical flip only)
+                    # This transforms upper orientation to match lower orientation
+                    rotated_region = cv2.rotate(cropped_region, cv2.ROTATE_180)
+                    flipped_region = cv2.flip(rotated_region, 1)  # 1 = horizontal flip
+                    
+                    # Create a rect for the transformed crop (starts at 0,0)
+                    crop_h, crop_w = flipped_region.shape[:2]
+                    crop_rect = dlib.rectangle(0, 0, crop_w, crop_h)
+                    
+                    # Run inference on transformed crop
+                    shape = predictor(flipped_region, crop_rect)
+                    pred_landmarks = np.array([[p.x, p.y] for p in shape.parts()])
+                    
+                    # Transform landmarks back:
+                    # 1. Flip horizontally: x -> crop_w - x
+                    # 2. Rotate 180°: (x, y) -> (crop_w - x, crop_h - y)
+                    # Combined: (x, y) -> (x, crop_h - y), then translate
+                    transformed_back_landmarks = []
+                    for lx, ly in pred_landmarks:
+                        # Undo horizontal flip: x -> crop_w - x
+                        fx = crop_w - lx
+                        fy = ly
+                        # Undo 180° rotation: (x, y) -> (crop_w - x, crop_h - y)
+                        rx = crop_w - fx
+                        ry = crop_h - fy
+                        # Translate to original image coordinates
+                        orig_x = x1 + rx
+                        orig_y = y1 + ry
+                        transformed_back_landmarks.append([orig_x, orig_y])
+                    pred_landmarks = np.array(transformed_back_landmarks)
+                    
+                    print(f"Applied 180° rotation + horizontal flip for {class_name}: crop size={crop_w}x{crop_h}")
+                else:
+                    # For bottom toe/finger: crop to YOLO bounding box for better accuracy
+                    # This matches how the models were trained (on cropped images)
+                    x1, y1 = detected_rect.left(), detected_rect.top()
+                    x2, y2 = detected_rect.right(), detected_rect.bottom()
+                    
+                    # Ensure coordinates are within image bounds
+                    x1 = max(0, x1)
+                    y1 = max(0, y1)
+                    x2 = min(w, x2)
+                    y2 = min(h, y2)
+                    
+                    # Crop the region
+                    cropped_region = img_raw[y1:y2, x1:x2]
+                    
+                    # Create a rect for the crop (full crop dimensions)
+                    crop_h, crop_w = cropped_region.shape[:2]
+                    crop_rect = dlib.rectangle(0, 0, crop_w, crop_h)
+                    
+                    # Run inference on cropped region
+                    shape = predictor(cropped_region, crop_rect)
+                    pred_landmarks = np.array([[p.x, p.y] for p in shape.parts()])
+                    
+                    # Transform landmarks back to original image coordinates
+                    pred_landmarks = pred_landmarks + np.array([x1, y1])
+                    
+                    print(f"Cropped {class_name} to YOLO box: crop size={crop_w}x{crop_h}")
+                
+                # Assign fixed landmark IDs based on detection type:
+                # Scale: 0-1, Bottom Finger: 2-10, Bottom Toe: 11-19, Top Finger: 20-28, Top Toe: 29-37
+                id_offset_map = {
+                    'bot_finger': 2,   # IDs 2-10 (9 landmarks)
+                    'bot_toe': 11,     # IDs 11-19 (9 landmarks)
+                    'up_finger': 20,   # IDs 20-28 (9 landmarks)
+                    'up_toe': 29,      # IDs 29-37 (9 landmarks)
+                }
+                # Get ID offset based on class_name, fallback to generic type
+                id_offset = id_offset_map.get(class_name, id_offset_map.get(f'bot_{predictor_type}', 2))
+                
+                # Add landmarks with fixed IDs
+                for i, (x, y) in enumerate(pred_landmarks):
+                    fixed_id = id_offset + i
+                    part = create_part(float(x), float(y), fixed_id)
+                    box.append(part)
+                
+                print(f"Created {len(pred_landmarks)} landmarks for {class_name} with IDs {id_offset}-{id_offset + len(pred_landmarks) - 1}")
+            
+            box[:] = sorted(box, key=lambda child: (child.tag, float(child.get("name"))))
+            image_e.append(box)
+    else:
+        # Fallback: use default rectangle with first available predictor
+        predictor = list(predictors.values())[0]
+        # Use raw image for fallback too (matching visualize_yolo_prediction.py)
+        rect = dlib.rectangle(1, 1, w - 1, h - 1)
+        shape = predictor(img_raw, rect)
+        landmarks_array = shape_to_np(shape)
+        
+        box = create_box(img_raw.shape)
+        part_length = range(0, shape.num_parts)
+        
+        for item, i in enumerate(sorted(part_length, key=str)):
+            x = float(landmarks_array[item][0])
+            y = float(landmarks_array[item][1])
+            part = create_part(x, y, i)
+            box.append(part)
+        
+        box[:] = sorted(box, key=lambda child: (child.tag, float(child.get("name"))))
+        image_e.append(box)
+    
+    images_e.append(image_e)
+    pretty_xml(root, output)
 
 
 # Importing to pandas tools

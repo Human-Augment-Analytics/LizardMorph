@@ -18,20 +18,39 @@ def parse_xml_for_frontend(file_path):
         image_file = image.get('file')
         image_name = os.path.basename(image_file)
         coords = []
+        bounding_boxes = []
 
-        for part in image.findall('.//part'):
-            x = float(part.get('x'))
-            y = float(part.get('y'))
-            coords.append({"x": x, "y": y})
+        # Extract bounding boxes from box elements
+        for box in image.findall('.//box'):
+            box_data = {
+                "top": float(box.get('top', 0)),
+                "left": float(box.get('left', 0)),
+                "width": float(box.get('width', 0)),
+                "height": float(box.get('height', 0))
+            }
+            bounding_boxes.append(box_data)
+            
+            # Extract parts (landmarks) within this box
+            for part in box.findall('.//part'):
+                x = float(part.get('x'))
+                y = float(part.get('y'))
+                # Get the landmark ID from the 'name' attribute (fixed IDs from backend)
+                landmark_id = int(part.get('name', 0))
+                coords.append({"id": landmark_id, "x": x, "y": y})
         
         # Add this image data to the list
-        all_data.append({'name': image_name, "coords": coords})
+        all_data.append({
+            'name': image_name, 
+            "coords": coords,
+            "bounding_boxes": bounding_boxes
+        })
     
     # For backward compatibility, return only the first image data
     # Frontend expects an object, not an array
     if all_data:
         return all_data[0]
-    return {'name': '', 'coords': []}
+    return {'name': '', 'coords': [], 'bounding_boxes': []}
+
 
 def read_tps_file(file_path):
     """Read a TPS file and return data as a list of x and y coordinate lists with their corresponding images."""

@@ -5,12 +5,16 @@ import type { Point } from "../models/Point";
 import type { ImageSet } from "../models/ImageSet";
 import type { ProcessedImage } from "../models/ProcessedImage";
 import type { UploadHistoryItem } from "../models/UploadHistoryItem";
+import type { ScaleSettings } from "../models/ScaleSettings";
+import type { Measurement } from "../models/Measurement";
 import type { LizardViewType } from "../components/LandingPage";
+import type { BoundingBox } from "../models/AnnotationsData";
 
 import { Header } from "../components/Header";
 import { NavigationControls } from "../components/NavigationControls";
 import { ImageVersionControls } from "../components/ImageVersionControls";
 import { HistoryPanel } from "../components/HistoryPanel";
+import { MeasurementsAndScalePanel } from "../components/MeasurementsAndScalePanel";
 import { SessionInfo } from "../components/SessionInfo";
 import { MainViewStyles } from "./MainView.style";
 import { SVGViewer } from "../components/SVGViewer";
@@ -38,6 +42,8 @@ interface MainState {
   imageSet: ImageSet;
   lizardCount: number;
   zoomTransform: d3.ZoomTransform;
+  scaleSettings: ScaleSettings;
+  measurements: Measurement[];
   isEditMode: boolean;
   sessionReady: boolean;
   uploadProgress: { [key: string]: number };
@@ -46,6 +52,11 @@ interface MainState {
     scatterData: Point[],
     originalScatterData: Point[]
   ) => void;
+  isMeasurementsAndScaleModalOpen: boolean;
+  toepadPredictorType: string;
+  currentBoundingBoxes: BoundingBox[];
+  extractedId: string | null;
+  extractedIdConfidence: number | null;
 }
 
 interface MainProps {
@@ -80,11 +91,23 @@ export class MainView extends Component<MainProps, MainState> {
     },
     lizardCount: 0,
     zoomTransform: d3.zoomIdentity,
+    scaleSettings: {
+      pointAId: 0,
+      pointBId: 1,
+      value: 10,
+      units: "mm",
+    },
+    measurements: [],
     isEditMode: false,
     sessionReady: false,
     uploadProgress: {},
     onPointSelect: () => {},
     onScatterDataUpdate: () => {},
+    isMeasurementsAndScaleModalOpen: false,
+    toepadPredictorType: "toe",
+    currentBoundingBoxes: [],
+    extractedId: null,
+    extractedIdConfidence: null,
   };
   componentDidMount(): void {
     this.initializeApp();
@@ -129,7 +152,21 @@ export class MainView extends Component<MainProps, MainState> {
   private intervalId: NodeJS.Timeout | null = null;
 
   // Effect to count unique images in upload folder
-  componentDidUpdate(_prevProps: MainProps, prevState: MainState): void {
+  componentDidUpdate(prevProps: MainProps, prevState: MainState): void {
+    // Filter history when viewType changes
+    if (prevProps.selectedViewType !== this.props.selectedViewType) {
+      this.setState((currentState) => ({
+        uploadHistory: currentState.uploadHistory.filter(
+          item => item.viewType === this.props.selectedViewType || !item.viewType
+        ),
+        // Also filter images to only show those for current viewType
+        images: currentState.images.filter((_img, idx) => {
+          const historyItem = currentState.uploadHistory.find(h => h.index === idx);
+          return historyItem?.viewType === this.props.selectedViewType || !historyItem?.viewType;
+        }),
+      }));
+    }
+    
     if (prevState.images !== this.state.images) {
       this.countUniqueImages();
     }
@@ -179,6 +216,7 @@ export class MainView extends Component<MainProps, MainState> {
         name: file.name,
         timestamp: "Uploading...",
         index: -1,
+        viewType: this.props.selectedViewType,
       });
     });
     
@@ -199,7 +237,11 @@ export class MainView extends Component<MainProps, MainState> {
           }));
 
           // Upload the file (replace with your actual upload logic)
-          const results = await ApiService.uploadMultipleImages([file], this.props.selectedViewType);
+          const results = await ApiService.uploadMultipleImages(
+            [file], 
+            this.props.selectedViewType,
+            this.props.selectedViewType === "toepads" ? this.state.toepadPredictorType : undefined
+          );
           
           // Check if we got a valid result
           if (!results || results.length === 0) {
@@ -239,7 +281,7 @@ export class MainView extends Component<MainProps, MainState> {
           
           const coords = result.coords.map((coord, index: number) => ({
             ...coord,
-            id: index + 1,
+            id: coord.id !== undefined ? coord.id : index + 1,
           }));
 
           const processedImage = {
@@ -248,7 +290,14 @@ export class MainView extends Component<MainProps, MainState> {
             originalCoords: JSON.parse(JSON.stringify(coords)),
             imageSets,
             timestamp: new Date().toLocaleString(),
+            boundingBoxes: result.bounding_boxes || [],
           };
+          
+          console.log("Processed image with bounding boxes:", {
+            name: processedImage.name,
+            boundingBoxes: processedImage.boundingBoxes,
+            boundingBoxesCount: processedImage.boundingBoxes?.length || 0
+          });
 
           // Update progress to 100% when processing is complete
           this.setState((prevState) => ({
@@ -269,6 +318,7 @@ export class MainView extends Component<MainProps, MainState> {
                     name: processedImage.name,
                     timestamp: processedImage.timestamp,
                     index: updatedImages.length - 1,
+                    viewType: this.props.selectedViewType,
                   }
                 : item
             );
@@ -304,8 +354,34 @@ export class MainView extends Component<MainProps, MainState> {
                 prevState.images.length === 0 ? true : prevState.dataFetched,
               selectedPoint:
                 prevState.images.length === 0 ? null : prevState.selectedPoint,
+              currentBoundingBoxes:
+                prevState.images.length === 0
+                  ? (processedImage.boundingBoxes || [])
+                  : prevState.currentBoundingBoxes,
             };
           });
+
+          // Extract ID for toepad view type (only for the first/current image)
+          if (this.props.selectedViewType === "toepads") {
+            try {
+              const idResult = await ApiService.extractId(result.name);
+              if (idResult.success && idResult.id) {
+                console.log("Extracted ID:", idResult.id, "confidence:", idResult.confidence);
+
+                const confidence = idResult.confidence ?? 0;
+                const extractedId = idResult.id;
+
+                // Store the extracted ID (UI will show overwrite option if it differs)
+                this.setState({
+                  extractedId: extractedId,
+                  extractedIdConfidence: confidence,
+                });
+              }
+            } catch (idErr) {
+              console.warn("Failed to extract ID:", idErr);
+              // Don't fail the whole upload if ID extraction fails
+            }
+          }
         } catch (err) {
           console.error(`Error processing ${file.name}:`, err);
           // Update progress to show error state
@@ -557,7 +633,9 @@ export class MainView extends Component<MainProps, MainState> {
         this.state.currentImageIndex,
         this.state.scatterData,
         this.state.originalScatterData,
-        this.createImageWithPointsBlob
+        this.createImageWithPointsBlob,
+        this.state.measurements,
+        this.state.scaleSettings
       );
 
       if (result.failedFiles > 0) {
@@ -579,13 +657,50 @@ export class MainView extends Component<MainProps, MainState> {
 
   private readonly handleClearHistory = async (): Promise<void> => {
     const confirmed = window.confirm(
-      "Are you sure you want to clear all history? This will delete all uploaded images, processed files, and session data. This action cannot be undone."
+      `Are you sure you want to clear all history for ${this.props.selectedViewType} view? This will delete all uploaded images, processed files, and session data for this view type. This action cannot be undone.`
     );
 
     if (confirmed) {
       try {
         this.setState({ loading: true });
+        // Clear backend session (this clears all files, but we'll filter frontend history)
         await this.clearHistory();
+        
+        // Filter frontend history to only keep items for other viewTypes
+        this.setState((prevState) => {
+          const historyToKeep = prevState.uploadHistory.filter(
+            item => item.viewType !== this.props.selectedViewType
+          );
+          const indicesToKeep = new Set(historyToKeep.map(item => item.index).filter(idx => idx >= 0));
+          
+          // Filter images to only keep those referenced by remaining history items
+          const filteredImages = prevState.images.filter((_img, idx) => indicesToKeep.has(idx));
+          
+          // Reindex history items to match new image indices
+          const reindexedHistory = historyToKeep.map(item => {
+            if (item.index >= 0) {
+              const newIndex = Array.from(indicesToKeep).indexOf(item.index);
+              return { ...item, index: newIndex >= 0 ? newIndex : -1 };
+            }
+            return item;
+          });
+          
+          return {
+            uploadHistory: reindexedHistory,
+            images: filteredImages,
+            currentImageIndex: filteredImages.length > 0 ? 0 : 0,
+            scatterData: filteredImages.length > 0 ? filteredImages[0].coords : [],
+            originalScatterData: filteredImages.length > 0 ? filteredImages[0].originalCoords : [],
+            imageSet: filteredImages.length > 0 ? filteredImages[0].imageSets : {
+              original: "",
+              inverted: "",
+              color_contrasted: "",
+            },
+            currentImageURL: filteredImages.length > 0 ? filteredImages[0].imageSets.original : null,
+            imageFilename: filteredImages.length > 0 ? filteredImages[0].name : null,
+          };
+        });
+        
         alert("History cleared successfully");
       } catch (error) {
         alert("Error clearing history");
@@ -705,6 +820,7 @@ export class MainView extends Component<MainProps, MainState> {
         selectedPoint: null,
         scatterData: newImage.coords,
         originalScatterData: newImage.originalCoords || newImage.coords,
+        currentBoundingBoxes: newImage.boundingBoxes || [],
       };
     });
   };
@@ -724,6 +840,7 @@ export class MainView extends Component<MainProps, MainState> {
             name: file,
             timestamp: "From uploads folder",
             index: -1, // Will be set when loaded
+            viewType: this.props.selectedViewType,
           });
         }
       });
@@ -760,11 +877,15 @@ export class MainView extends Component<MainProps, MainState> {
       }
 
       // If not loaded, process it
-      const result = await ApiService.processExistingImage(filename, this.props.selectedViewType);
+      const result = await ApiService.processExistingImage(
+        filename, 
+        this.props.selectedViewType,
+        this.props.selectedViewType === "toepads" ? this.state.toepadPredictorType : undefined
+      );
       const imageSets = await ApiService.fetchImageSet(filename);
       const coords = result.coords.map((coord: Point, index: number) => ({
         ...coord,
-        id: index + 1,
+        id: coord.id !== undefined ? coord.id : index + 1,
       }));
 
       const newImage: ProcessedImage = {
@@ -773,6 +894,7 @@ export class MainView extends Component<MainProps, MainState> {
         originalCoords: JSON.parse(JSON.stringify(coords)),
         imageSets,
         timestamp: "From uploads folder",
+        boundingBoxes: result.bounding_boxes || [],
       };
 
       this.setState((prevState) => {
@@ -784,6 +906,7 @@ export class MainView extends Component<MainProps, MainState> {
           name: filename,
           timestamp: "From uploads folder",
           index: updatedImages.length - 1,
+          viewType: this.props.selectedViewType,
         };
 
         const updatedHistory = prevState.uploadHistory.map((item) =>
@@ -801,6 +924,7 @@ export class MainView extends Component<MainProps, MainState> {
           currentImageURL: imageSets.original,
           needsScaling: true,
           selectedPoint: null,
+          currentBoundingBoxes: result.bounding_boxes || [],
         };
       });
     } catch (error) {
@@ -828,12 +952,32 @@ export class MainView extends Component<MainProps, MainState> {
     this.setState({ zoomTransform: transform });
   };
 
+  private readonly handleScaleSettingsChange = (scaleSettings: ScaleSettings): void => {
+    this.setState({ scaleSettings });
+  };
+
+  private readonly handleMeasurementsChange = (measurements: Measurement[]): void => {
+    this.setState({ measurements });
+  };
+
   private readonly handleToggleEditMode = (): void => {
     this.setState((prevState) => ({ isEditMode: !prevState.isEditMode }));
   };
 
   private readonly handleResetZoom = (): void => {
     this.setState({ zoomTransform: d3.zoomIdentity });
+  };
+
+  private readonly handleOpenMeasurementsAndScaleModal = (): void => {
+    this.setState({ isMeasurementsAndScaleModalOpen: true });
+  };
+
+  private readonly handleCloseMeasurementsAndScaleModal = (): void => {
+    this.setState({ isMeasurementsAndScaleModalOpen: false });
+  };
+
+  private readonly handleToepadPredictorTypeChange = (type: string): void => {
+    this.setState({ toepadPredictorType: type });
   };
 
   // Add cleanup functionality to clear history when the app closes, including beforeunload event handler
@@ -872,11 +1016,16 @@ export class MainView extends Component<MainProps, MainState> {
           onExportAll={this.handleScatterData}
           onClearHistory={this.handleClearHistory}
           onBackToSelection={() => window.location.href = '/'}
+          onOpenMeasurementsModal={this.handleOpenMeasurementsAndScaleModal}
+          toepadPredictorType={this.state.toepadPredictorType}
+          onToepadPredictorTypeChange={this.handleToepadPredictorTypeChange}
         />
         <div style={MainViewStyles.mainContentArea}>
           {" "}
           <HistoryPanel
-            uploadHistory={this.state.uploadHistory}
+            uploadHistory={this.state.uploadHistory.filter(
+              item => item.viewType === this.props.selectedViewType || !item.viewType
+            )}
             currentImageIndex={this.state.currentImageIndex}
             uploadProgress={this.state.uploadProgress}
             onSelectImage={this.changeCurrentImage}
@@ -910,13 +1059,91 @@ export class MainView extends Component<MainProps, MainState> {
               onToggleEditMode={this.handleToggleEditMode}
               onResetZoom={this.handleResetZoom}
             />
-            <div style={{ overflow: "auto", height: "100%" }}>
+            {/* Display extracted ID for toepad view */}
+            {this.props.selectedViewType === "toepads" && this.state.extractedId && (() => {
+              const filenameWithoutExt = this.state.imageFilename?.replace(/\.[^/.]+$/, "") ?? "";
+              const idMismatch = this.state.extractedId !== filenameWithoutExt;
+
+              return (
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  marginTop: "10px",
+                  padding: "8px 16px",
+                  backgroundColor: idMismatch ? "#f9a825" : "#2e7d32",
+                  borderRadius: "6px",
+                  color: idMismatch ? "#333" : "white",
+                  fontWeight: "bold",
+                }}>
+                  <span>🏷️ Specimen ID:</span>
+                  <span style={{ fontSize: "18px" }}>{this.state.extractedId}</span>
+                  {this.state.extractedIdConfidence !== null && (
+                    <span style={{
+                      fontSize: "12px",
+                      backgroundColor: "rgba(255,255,255,0.3)",
+                      padding: "2px 8px",
+                      borderRadius: "4px",
+                    }}>
+                      {(this.state.extractedIdConfidence * 100).toFixed(0)}% conf
+                    </span>
+                  )}
+                  {idMismatch && (
+                    <button
+                      onClick={() => {
+                        const newName = `${this.state.extractedId}.jpg`;
+                        const oldName = this.state.imageFilename;
+                        this.setState((prevState) => {
+                          const updatedImages = [...prevState.images];
+                          const currentIndex = prevState.currentImageIndex;
+                          if (currentIndex >= 0 && currentIndex < updatedImages.length) {
+                            updatedImages[currentIndex] = {
+                              ...updatedImages[currentIndex],
+                              name: newName,
+                            };
+                          }
+                          const updatedHistory = prevState.uploadHistory.map(item =>
+                            item.name === oldName
+                              ? { ...item, name: newName }
+                              : item
+                          );
+                          return {
+                            images: updatedImages,
+                            uploadHistory: updatedHistory,
+                            imageFilename: newName,
+                          };
+                        });
+                      }}
+                      style={{
+                        marginLeft: "auto",
+                        padding: "4px 12px",
+                        backgroundColor: "#333",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "4px",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      Overwrite Name
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+            <div style={{
+              overflow: "auto",
+              height: "100%",
+            }}>
               <SVGViewer
                 dataFetched={this.state.dataFetched}
                 loading={this.state.loading}
                 dataLoading={this.state.dataLoading}
                 dataError={this.state.dataError}
-                uploadHistory={this.state.uploadHistory}
+                uploadHistory={this.state.uploadHistory.filter(
+                  item => item.viewType === this.props.selectedViewType || !item.viewType
+                )}
                 scatterData={this.state.scatterData}
                 originalScatterData={this.state.originalScatterData}
                 selectedPoint={this.state.selectedPoint}
@@ -932,10 +1159,25 @@ export class MainView extends Component<MainProps, MainState> {
                 isEditMode={this.state.isEditMode}
                 onToggleEditMode={this.handleToggleEditMode}
                 onResetZoom={this.handleResetZoom}
+                isModalOpen={this.state.isMeasurementsAndScaleModalOpen}
+                boundingBoxes={this.state.currentBoundingBoxes}
+                fitToContainerWidth={this.props.selectedViewType === "toepads"}
               />
             </div>
           </div>
         </div>
+        {this.state.isMeasurementsAndScaleModalOpen && (
+          <MeasurementsAndScalePanel
+            points={this.state.originalScatterData}
+            scaleSettings={this.state.scaleSettings}
+            onScaleSettingsChange={this.handleScaleSettingsChange}
+            measurements={this.state.measurements}
+            onMeasurementsChange={this.handleMeasurementsChange}
+            isModal={true}
+            onClose={this.handleCloseMeasurementsAndScaleModal}
+            viewType={this.props.selectedViewType}
+          />
+        )}
       </div>
     );
   }

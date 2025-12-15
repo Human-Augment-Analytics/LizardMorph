@@ -4,6 +4,7 @@
 backend/*.dat
 backend/test/
 backend/landmark_visualizations/
+models/
 test.xml
 images/
 *svm
