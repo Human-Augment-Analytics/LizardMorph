@@ -390,7 +390,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         g.append("text")
           .attr("x", d.x + textOffset)
           .attr("y", d.y - textOffset)
-          .text(d.id)
+          .text(d.id + 1)
           .attr("font-size", `${fontSize}px`)
           .attr("fill", "white")
           .attr("stroke", "black")
@@ -574,7 +574,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     event: d3.D3DragEvent<SVGGElement, Point, Point>
   ): void => {
     // Only allow dragging if we're actually dragging (isDragging is true)
-    if (!this.isDragging || !this.draggedLandmarkId || !this.dragStartPosition) return;
+    if (!this.isDragging || this.draggedLandmarkId === null || !this.dragStartPosition) return;
     
     // Check if we've moved enough to consider this a drag (not just a click)
     const currentPoint = d3.pointer(event, this.svgRef.current);
