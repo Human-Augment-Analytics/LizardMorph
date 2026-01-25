@@ -41,8 +41,8 @@ export class ExportService {
             const customMeasurement = measurements.find(
               (m) => m.pointAId === pointA.id && m.pointBId === pointB.id
             );
-            const label = customMeasurement?.label || `Landmark ${pointA.id}-${pointB.id}`;
-            csvContent += `${label},${image.name},${pointA.id},${pointB.id},${distance ? distance.toFixed(3) : "N/A"},${scaleSettings.units}\n`;
+            const label = customMeasurement?.label || `Landmark ${pointA.id + 1}-${pointB.id + 1}`;
+            csvContent += `${label},${image.name},${pointA.id + 1},${pointB.id + 1},${distance ? distance.toFixed(3) : "N/A"},${scaleSettings.units}\n`;
           }
         }
       }
