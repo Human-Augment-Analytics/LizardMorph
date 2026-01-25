@@ -137,7 +137,7 @@ export class MeasurementsAndScalePanel extends Component<MeasurementsAndScalePan
             <option value="">Select landmark...</option>
             {points.map((point) => (
               <option key={point.id} value={point.id}>
-                Landmark {point.id}
+                Landmark {point.id + 1}
               </option>
             ))}
           </select>
@@ -153,7 +153,7 @@ export class MeasurementsAndScalePanel extends Component<MeasurementsAndScalePan
             <option value="">Select landmark...</option>
             {points.map((point) => (
               <option key={point.id} value={point.id}>
-                Landmark {point.id}
+                Landmark {point.id + 1}
               </option>
             ))}
           </select>
@@ -195,8 +195,8 @@ export class MeasurementsAndScalePanel extends Component<MeasurementsAndScalePan
           scaleSettings.value > 0 && (
             <div style={styles.infoText}>
               Scale set: {scaleSettings.value} {scaleSettings.units} between
-              Landmark {scaleSettings.pointAId} and Landmark{" "}
-              {scaleSettings.pointBId}
+            Landmark {scaleSettings.pointAId + 1} and Landmark{" "}
+            {scaleSettings.pointBId + 1}
             </div>
           )}
       </>
