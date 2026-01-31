@@ -664,80 +664,105 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                 # - Use YOLO bounding box directly (even for cropped predictors)
                 # - Single scale prediction (no multi-scale)
                 
-                if is_upper:
-                    # For upper toe/finger: rotate 180° AND flip horizontally to match lower orientation
-                    # This is needed for bilateral images where upper and lower have opposite orientations
-                    x1, y1 = detected_rect.left(), detected_rect.top()
-                    x2, y2 = detected_rect.right(), detected_rect.bottom()
-                    
-                    # Ensure coordinates are within image bounds
-                    x1 = max(0, x1)
-                    y1 = max(0, y1)
-                    x2 = min(w, x2)
-                    y2 = min(h, y2)
-                    
-                    # Crop the region
-                    cropped_region = img_raw[y1:y2, x1:x2]
-                    
-                    # Rotate 180° then flip horizontally (equivalent to vertical flip only)
-                    # This transforms upper orientation to match lower orientation
-                    rotated_region = cv2.rotate(cropped_region, cv2.ROTATE_180)
-                    flipped_region = cv2.flip(rotated_region, 1)  # 1 = horizontal flip
+                # Determine rotation needed based on class and target orientation
+                # Average Toe: Points UP (Base High Y -> Tip Low Y)
+                # Average Finger: Points LEFT (Base High X -> Tip Low X)
+                
+                # Input Assumptions (Standard Lizard Head-Up):
+                # 'bot_toe': Points DOWN (Posterior) -> Needs 180° rotation to point UP
+                # 'up_toe': Points UP? (Anterior?) -> Keep as is (UP)
+                # 'up_finger': Points UP (Anterior) -> Needs 90° CCW to point LEFT
+                # 'bot_finger': Points DOWN (Posterior?) -> Needs 90° CW to point LEFT
+                
+                if 'toe' in predictor_type:
+                    if is_upper:
+                        # 'up_toe' points UP. Target UP. No rotation.
+                        rotation_code = None
+                    else:
+                        # 'bot_toe' points DOWN. Target UP. Rotate 180.
+                        rotation_code = cv2.ROTATE_180
+                elif 'finger' in predictor_type:
+                    if is_upper:
+                        # 'up_finger' points UP. Target LEFT. Rotate 90 CCW.
+                        rotation_code = cv2.ROTATE_90_COUNTERCLOCKWISE
+                    else:
+                        # 'bot_finger' points DOWN (assumed). Target LEFT. Rotate 90 CW.
+                        rotation_code = cv2.ROTATE_90_CLOCKWISE
+                else:
+                    rotation_code = None
+
+                x1, y1 = detected_rect.left(), detected_rect.top()
+                x2, y2 = detected_rect.right(), detected_rect.bottom()
+                
+                # Ensure coordinates are within image bounds
+                x1 = max(0, x1)
+                y1 = max(0, y1)
+                x2 = min(w, x2)
+                y2 = min(h, y2)
+                
+                # Crop the region
+                cropped_region = img_raw[y1:y2, x1:x2]
+                
+                # Apply rotation if needed
+                if rotation_code is not None:
+                    rotated_region = cv2.rotate(cropped_region, rotation_code)
                     
                     # Create a rect for the transformed crop (starts at 0,0)
-                    crop_h, crop_w = flipped_region.shape[:2]
+                    crop_h, crop_w = rotated_region.shape[:2]
                     crop_rect = dlib.rectangle(0, 0, crop_w, crop_h)
                     
                     # Run inference on transformed crop
-                    shape = predictor(flipped_region, crop_rect)
+                    shape = predictor(rotated_region, crop_rect)
                     pred_landmarks = np.array([[p.x, p.y] for p in shape.parts()])
                     
-                    # Transform landmarks back:
-                    # 1. Flip horizontally: x -> crop_w - x
-                    # 2. Rotate 180°: (x, y) -> (crop_w - x, crop_h - y)
-                    # Combined: (x, y) -> (x, crop_h - y), then translate
+                    # Transform landmarks back
                     transformed_back_landmarks = []
+                    
+                    orig_h, orig_w = cropped_region.shape[:2]
+                    
                     for lx, ly in pred_landmarks:
-                        # Undo horizontal flip: x -> crop_w - x
-                        fx = crop_w - lx
-                        fy = ly
-                        # Undo 180° rotation: (x, y) -> (crop_w - x, crop_h - y)
-                        rx = crop_w - fx
-                        ry = crop_h - fy
-                        # Translate to original image coordinates
-                        orig_x = x1 + rx
-                        orig_y = y1 + ry
-                        transformed_back_landmarks.append([orig_x, orig_y])
+                        # Transform coordinates back based on rotation
+                        if rotation_code == cv2.ROTATE_180:
+                            # 180°: (x, y) -> (w - 1 - x, h - 1 - y) in rotation space
+                            # Reverse: same transform
+                            orig_x_local = orig_w - 1 - lx
+                            orig_y_local = orig_h - 1 - ly
+                        elif rotation_code == cv2.ROTATE_90_COUNTERCLOCKWISE:
+                            # 90° CCW: (x, y) -> (y, w - 1 - x)
+                            # Reverse: (y, w - 1 - x) -> (radius_y, radius_x) ? 
+                            # Let's derive: x_new = y_old, y_new = w_old - 1 - x_old
+                            # So y_old = x_new, x_old = w_old - 1 - y_new
+                            # Dimensions also swap: w_new = h_old, h_new = w_old
+                            # So orig_x_local (x_old) = orig_w - 1 - ly
+                            # orig_y_local (y_old) = lx
+                            orig_x_local = orig_w - 1 - ly
+                            orig_y_local = lx
+                        elif rotation_code == cv2.ROTATE_90_CLOCKWISE:
+                            # 90° CW: (x, y) -> (h - 1 - y, x)
+                            # Reverse: x_new = h_old - 1 - y_old, y_new = x_old
+                            # y_old = h_old - 1 - x_new
+                            # x_old = y_new
+                            orig_x_local = ly
+                            orig_y_local = orig_h - 1 - lx
+                        
+                        # Translate to original global coordinates
+                        final_x = x1 + orig_x_local
+                        final_y = y1 + orig_y_local
+                        transformed_back_landmarks.append([final_x, final_y])
+                        
                     pred_landmarks = np.array(transformed_back_landmarks)
-                    
-                    print(f"Applied 180° rotation + horizontal flip for {class_name}: crop size={crop_w}x{crop_h}")
+                    print(f"Applied rotation {rotation_code} for {class_name}")
                 else:
-                    # For bottom toe/finger: crop to YOLO bounding box for better accuracy
-                    # This matches how the models were trained (on cropped images)
-                    x1, y1 = detected_rect.left(), detected_rect.top()
-                    x2, y2 = detected_rect.right(), detected_rect.bottom()
-                    
-                    # Ensure coordinates are within image bounds
-                    x1 = max(0, x1)
-                    y1 = max(0, y1)
-                    x2 = min(w, x2)
-                    y2 = min(h, y2)
-                    
-                    # Crop the region
-                    cropped_region = img_raw[y1:y2, x1:x2]
-                    
-                    # Create a rect for the crop (full crop dimensions)
+                    # No rotation needed, just run on crop
                     crop_h, crop_w = cropped_region.shape[:2]
                     crop_rect = dlib.rectangle(0, 0, crop_w, crop_h)
                     
-                    # Run inference on cropped region
                     shape = predictor(cropped_region, crop_rect)
                     pred_landmarks = np.array([[p.x, p.y] for p in shape.parts()])
                     
-                    # Transform landmarks back to original image coordinates
+                    # Translate to original global coordinates
                     pred_landmarks = pred_landmarks + np.array([x1, y1])
-                    
-                    print(f"Cropped {class_name} to YOLO box: crop size={crop_w}x{crop_h}")
+                    print(f"No rotation applied for {class_name}")
                 
                 # Assign fixed landmark IDs based on detection type:
                 # Scale: 0-1, Bottom Finger: 2-10, Bottom Toe: 11-19, Top Finger: 20-28, Top Toe: 29-37
