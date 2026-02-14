@@ -379,7 +379,259 @@ def shape_to_np(shape):
     return coords
 
 
-def predictions_to_xml_single_with_yolo(image_path: str, output: str, 
+def get_dlib_rect(corners, img_shape, padding_ratio=0.3):
+    """
+    Convert OBB corners (4x2 array) to an axis-aligned dlib.rectangle via cv2.boundingRect,
+    with padding to match training (generate_yolo_bbox_xml.py expand_box).
+    """
+    x, y, w, h = cv2.boundingRect(corners.astype(np.int32))
+    img_h, img_w = img_shape[:2]
+    px = int(w * padding_ratio)
+    py = int(h * padding_ratio)
+    x1 = max(0, x - px)
+    y1 = max(0, y - py)
+    x2 = min(img_w, x + w + px)
+    y2 = min(img_h, y + h + py)
+    return dlib.rectangle(int(x1), int(y1), int(x2), int(y2))
+
+
+def compute_pca_angle(landmarks):
+    """
+    Compute rotation angle to align the principal axis of landmarks to vertical (90 degrees).
+
+    Uses PCA: finds the eigenvector with the largest eigenvalue of the 2x2 covariance matrix,
+    then computes the rotation needed to align that axis to vertical.
+
+    Parameters:
+        landmarks (np.ndarray): Nx2 array of (x, y) landmark coordinates
+    Returns:
+        float: Rotation angle in degrees (OpenCV convention for getRotationMatrix2D)
+    """
+    cov = np.cov(landmarks.T)
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    # Principal axis = eigenvector with largest eigenvalue
+    principal = eigenvectors[:, np.argmax(eigenvalues)]
+    theta = np.degrees(np.arctan2(principal[1], principal[0]))
+    # Rotation to align principal axis to vertical (90 degrees)
+    rotation = theta - 90.0
+    return rotation
+
+
+def ensure_tip_up(landmarks, angle, tip_index=[0, 1], base_indices=[8]):
+    """
+    Resolve PCA's 180-degree sign ambiguity by ensuring the toe tip points up after rotation.
+
+    Simulates the rotation on tip and base landmarks using OpenCV's rotation convention.
+    In image coordinates, Y increases downward, so "tip up" means tip_y < base_y.
+    If the tip would end up below the base, adds 180 degrees.
+
+    Parameters:
+        landmarks (np.ndarray): Nx2 array of landmark coordinates
+        angle (float): Rotation angle in degrees
+        tip_index (int or list): Index/indices of tip landmark(s) to average (default: 8)
+        base_indices (list): Indices of base landmarks to average (default: [0, 1])
+    Returns:
+        float: Corrected rotation angle
+    """
+    if base_indices is None:
+        base_indices = [0, 1]
+
+    if isinstance(tip_index, (list, tuple)):
+        tip = np.mean(landmarks[tip_index], axis=0)
+    else:
+        tip = landmarks[tip_index]
+    base = np.mean(landmarks[base_indices], axis=0)
+    centroid = np.mean(landmarks, axis=0)
+
+    # Simulate rotation using OpenCV convention:
+    # M = [[cos(a), sin(a), tx], [-sin(a), cos(a), ty]]
+    rad = np.radians(angle)
+    cos_a, sin_a = np.cos(rad), np.sin(rad)
+
+    # Rotated Y coordinates (only need Y to check up/down)
+    dx_tip, dy_tip = tip[0] - centroid[0], tip[1] - centroid[1]
+    tip_y_rot = -sin_a * dx_tip + cos_a * dy_tip
+
+    dx_base, dy_base = base[0] - centroid[0], base[1] - centroid[1]
+    base_y_rot = -sin_a * dx_base + cos_a * dy_base
+
+    # In image coords, "tip up" means tip_y < base_y
+    if tip_y_rot > base_y_rot:
+        return angle + 180.0
+    return angle
+
+
+def rotate_image_expanded(image, angle, center=None):
+    """
+    Rotate image around a center point with canvas expansion to prevent clipping.
+    Empty regions are filled with white (255, 255, 255).
+
+    Parameters:
+        image (np.ndarray): Input image
+        angle (float): Rotation angle in degrees (OpenCV convention)
+        center (tuple): (x, y) rotation center. If None, uses image center.
+    Returns:
+        tuple: (rotated_image, affine_matrix) where affine_matrix is the 2x3 transformation matrix
+    """
+    h, w = image.shape[:2]
+    if center is None:
+        center = (w // 2, h // 2)
+
+    rad = np.radians(angle)
+
+    new_w = int(np.ceil(h * abs(np.sin(rad)) + w * abs(np.cos(rad))))
+    new_h = int(np.ceil(h * abs(np.cos(rad)) + w * abs(np.sin(rad))))
+
+    M = cv2.getRotationMatrix2D(center, angle, 1.0)
+    # Adjust translation to center content on the expanded canvas
+    M[0, 2] += (new_w - w) / 2.0
+    M[1, 2] += (new_h - h) / 2.0
+
+    rotated = cv2.warpAffine(image, M, (new_w, new_h),
+                              borderMode=cv2.BORDER_CONSTANT,
+                              borderValue=(255, 255, 255))
+    return rotated, M
+
+
+
+def transform_landmarks(landmarks, matrix):
+    """
+    Apply a 2x3 affine transformation matrix to landmark coordinates.
+    """
+    # Augment landmarks with ones for matrix multiplication
+    ones = np.ones((landmarks.shape[0], 1))
+    points_ones = np.hstack([landmarks, ones])
+    # Apply transformation: (3xN).T = Nx3. Matrix is 2x3. Result Nx2.
+    transformed = matrix.dot(points_ones.T).T
+    return transformed
+
+
+def find_orientation_cv(image_crop):
+    """
+    Find the orientation of the primary object in the crop using Otsu thresholding + PCA.
+    Returns the angle needed to rotate the object to vertical (90 degrees).
+    """
+    if image_crop is None or image_crop.size == 0:
+        print(f"  [find_orientation_cv] Empty image, returning 0.0")
+        return 0.0
+
+    # Gray & Blur
+    if len(image_crop.shape) == 3:
+        gray = cv2.cvtColor(image_crop, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image_crop
+
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    # Otsu Threshold — assumes object is darker than background (BINARY_INV)
+    ret, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    print(f"  [find_orientation_cv] Otsu threshold: {ret:.1f}, image size: {gray.shape[1]}x{gray.shape[0]}")
+
+    # Find Contours
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    if not contours:
+        print(f"  [find_orientation_cv] No contours found, returning 0.0")
+        return 0.0
+
+    # Max Area Contour
+    c = max(contours, key=cv2.contourArea)
+    area = cv2.contourArea(c)
+    total_area = gray.shape[0] * gray.shape[1]
+    print(f"  [find_orientation_cv] Largest contour area: {area:.0f} ({100*area/total_area:.1f}% of image), total contours: {len(contours)}")
+
+    if area < 100:  # Too small
+        print(f"  [find_orientation_cv] Contour too small (<100px), returning 0.0")
+        return 0.0
+
+    # PCA Orientation
+    sz = len(c)
+    data_pts = np.empty((sz, 2), dtype=np.float64)
+    for i in range(data_pts.shape[0]):
+        data_pts[i, 0] = c[i, 0, 0]
+        data_pts[i, 1] = c[i, 0, 1]
+
+    mean = np.empty((0))
+    mean, eigenvectors, eigenvalues = cv2.PCACompute2(data_pts, mean)
+
+    angle_pca_rad = np.arctan2(eigenvectors[0, 1], eigenvectors[0, 0])
+    angle_pca_deg = np.degrees(angle_pca_rad)
+
+    # Target = 90 (vertical)
+    rotation_needed = angle_pca_deg - 90.0
+
+    # Normalize to [-90, 90] to resolve PCA's 180° ambiguity.
+    # We only care about making the axis vertical, not which end points up
+    # (tip direction is handled separately by ensure_tip_up after prediction).
+    while rotation_needed > 90.0:
+        rotation_needed -= 180.0
+    while rotation_needed < -90.0:
+        rotation_needed += 180.0
+
+    print(f"  [find_orientation_cv] PCA eigenvalues: [{eigenvalues[0][0]:.0f}, {eigenvalues[1][0]:.0f}], ratio: {eigenvalues[0][0]/max(eigenvalues[1][0],1):.1f}")
+    print(f"  [find_orientation_cv] Principal axis angle: {angle_pca_deg:.1f}deg, rotation needed: {rotation_needed:.1f}deg")
+
+    return rotation_needed
+
+
+def calc_shape_error(shape_points, average_points):
+    """
+    Calculate Procrustes-like shape error between predicted and average landmarks.
+    Both shapes are centered and scale-normalized before computing MSE.
+
+    Parameters:
+        shape_points (np.ndarray): Nx2 predicted landmark coordinates
+        average_points (np.ndarray): Nx2 average landmark coordinates
+    Returns:
+        float: Mean squared error after normalization
+    """
+    if average_points is None or len(shape_points) != len(average_points):
+        return float('inf')
+
+    shape_centered = shape_points - np.mean(shape_points, axis=0)
+    avg_centered = average_points - np.mean(average_points, axis=0)
+
+    shape_scale = np.sqrt(np.sum(shape_centered**2))
+    avg_scale = np.sqrt(np.sum(avg_centered**2))
+
+    shape_norm = shape_centered / shape_scale if shape_scale > 0 else shape_centered
+    avg_norm = avg_centered / avg_scale if avg_scale > 0 else avg_centered
+
+    return np.mean(np.sum((shape_norm - avg_norm)**2, axis=1))
+
+
+def score_landmark_quality(landmarks):
+    """Score how well landmarks form an elongated, ordered pattern.
+
+    Used to select the best rotation angle during multi-angle prediction.
+    Higher score = more elongated and consistently ordered landmarks.
+
+    Returns PCA eigenvalue ratio * monotonicity correlation.
+    """
+    if len(landmarks) < 3:
+        return 0.0
+
+    cov = np.cov(landmarks.T)
+    eigenvalues = np.sort(np.linalg.eigvalsh(cov))[::-1]
+
+    if eigenvalues[1] < 1e-6:
+        return eigenvalues[0]  # Nearly degenerate
+
+    ratio = eigenvalues[0] / eigenvalues[1]
+
+    # Check sequential ordering along principal axis
+    eigenvectors = np.linalg.eigh(cov)[1]
+    principal = eigenvectors[:, np.argmax(np.linalg.eigvalsh(cov))]
+    projections = landmarks @ principal
+    indices = np.arange(len(landmarks))
+    corr = np.corrcoef(projections, indices)[0, 1]
+    if corr < 0:
+        corr = -corr  # Direction doesn't matter, just ordering
+
+    return ratio * max(0.0, corr)
+
+
+def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                                         yolo_model_path: str = None,
                                         toe_predictor_path: str = None,
                                         scale_predictor_path: str = None,
@@ -415,22 +667,19 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
         target_predictor_type (str): Optional filter to only process specific type ('toe', 'finger', 'scale'). 
                                      If None, processes all detections. If specified, only processes that type.
         cached_yolo_model: Optional pre-loaded YOLO model to avoid reloading
-        cached_dlib_predictors (dict): Optional pre-loaded dlib predictors dict with keys like 'toe', 'finger', 'toe_is_cropped', 'finger_is_cropped'
+        cached_dlib_predictors (dict): Optional pre-loaded dlib predictors dict with keys like 'toe', 'finger'
     """
     from ultralytics import YOLO
     
     # Use cached predictors if provided, otherwise load from paths
     predictors = {}
-    is_cropped_predictor = {}
-    
+
     if cached_dlib_predictors:
         # Use cached predictors
         if 'toe' in cached_dlib_predictors:
             predictors['toe'] = cached_dlib_predictors['toe']
-            is_cropped_predictor['toe'] = cached_dlib_predictors.get('toe_is_cropped', False)
         if 'finger' in cached_dlib_predictors:
             predictors['finger'] = cached_dlib_predictors['finger']
-            is_cropped_predictor['finger'] = cached_dlib_predictors.get('finger_is_cropped', False)
         print(f"Using cached dlib predictors: {list(predictors.keys())}")
     else:
         # Load predictors from paths (fallback when no cached predictors)
@@ -439,10 +688,8 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
         else:
             if toe_predictor_path and os.path.exists(toe_predictor_path):
                 predictors['toe'] = dlib.shape_predictor(toe_predictor_path)
-                is_cropped_predictor['toe'] = 'cropped' in os.path.basename(toe_predictor_path).lower()
             if finger_predictor_path and os.path.exists(finger_predictor_path):
                 predictors['finger'] = dlib.shape_predictor(finger_predictor_path)
-                is_cropped_predictor['finger'] = 'cropped' in os.path.basename(finger_predictor_path).lower()
     
     # Note: Scale bars don't require a predictor (they use YOLO only)
     if not predictors:
@@ -453,360 +700,250 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
     image_e = ET.Element('image')
     image_e.set('file', str(image_path))
     
-    # Load raw image for prediction (matching visualize_yolo_prediction.py exactly)
-    # Use PIL to load image (same as direct script), then convert to numpy array
+    # Load image via PIL (same as YOLO training pipeline)
     from PIL import Image
-    # Increase PIL image size limit for large images (same as direct script)
-    # Increase PIL image size limit for large images (same as direct script)
     Image.MAX_IMAGE_PIXELS = None
     img_pil = Image.open(image_path)
-    
+
     # Ensure image is in RGB mode for consistent handling
     if img_pil.mode != 'RGB':
         img_pil = img_pil.convert('RGB')
-        
-    img_array = np.array(img_pil)
-    img_raw = img_array.copy()  # RGB format, no filters
-    
-    # Ensure img_raw is uint8 and contiguous for dlib
-    if img_raw.dtype != np.uint8:
-        img_raw = img_raw.astype(np.uint8)
-    
-    img_raw = np.ascontiguousarray(img_raw)
-    
-    w = img_raw.shape[1]
-    h = img_raw.shape[0]
-    
-    # Detect bounding boxes using YOLO (CPU mode)
-    detections = []
-    print(f"Starting YOLO detection on {image_path}")
-    
+
+    # Convert to BGR numpy array for OpenCV/dlib operations
+    img_raw_bgr = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+
+    h_img, w_img = img_raw_bgr.shape[:2]
+
+    print(f"\n{'='*60}")
+    print(f"Starting prediction pipeline for: {os.path.basename(image_path)}")
+    print(f"Image size: {w_img}x{h_img}")
+    print(f"Predictors loaded: {list(predictors.keys())}")
+    print(f"Padding ratio: {padding_ratio}, Conf threshold: {conf_threshold}")
+    print(f"{'='*60}")
+
     # Use cached YOLO model if provided, otherwise load from path
     model = cached_yolo_model
     if model is None and yolo_model_path and os.path.exists(yolo_model_path):
         print(f"Loading YOLO model from: {yolo_model_path}")
         model = YOLO(yolo_model_path)
-    
+
     if model is not None:
         try:
-            # Use PIL Image for YOLO (matching direct script)
-            results = model(img_pil, conf=conf_threshold, device='cpu', verbose=False)
+            # Downsample for YOLO detection if image is large
+            YOLO_MAX_DIM = 4096
+            max_dim = max(h_img, w_img)
+            if max_dim > YOLO_MAX_DIM:
+                ds_scale = YOLO_MAX_DIM / max_dim
+                small_bgr = cv2.resize(img_raw_bgr, (int(w_img * ds_scale), int(h_img * ds_scale)),
+                                       interpolation=cv2.INTER_AREA)
+                print(f"Downsampled for YOLO: {w_img}x{h_img} -> {small_bgr.shape[1]}x{small_bgr.shape[0]} (scale={ds_scale:.3f})")
+            else:
+                ds_scale = 1.0
+                small_bgr = img_raw_bgr
+            inv_scale = 1.0 / ds_scale
+
+            # Run YOLO on the downsampled image
+            small_rgb_pil = Image.fromarray(cv2.cvtColor(small_bgr, cv2.COLOR_BGR2RGB))
+            results = model(small_rgb_pil, conf=conf_threshold, imgsz=1280, device='cpu', verbose=False)
             print(f"YOLO model returned {len(results)} result(s)")
-            
-            # Get class names from model
+
             class_names = model.names if hasattr(model, 'names') else {}
             print(f"YOLO class names: {class_names}")
-            
-            for result in results:
-                if result.boxes is not None and len(result.boxes) > 0:
-                    print(f"Found {len(result.boxes)} detections")
-                    for box in result.boxes:
-                        # Get bounding box coordinates
-                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                        dlib_rect = dlib.rectangle(int(x1), int(y1), int(x2), int(y2))
-                        
-                        # Get class ID and name
-                        cls_id = int(box.cls[0].cpu().numpy())
-                        cls_name = class_names.get(cls_id, '').lower() if class_names else ''
-                        
-                        # Map class name/ID to predictor type
-                        # YOLO class mapping for 6-class model: 0=up_finger, 1=up_toe, 2=bot_finger, 3=bot_toe, 4=ruler, 5=id
-                        # Legacy 3/4-class model: 0=finger, 1=toe, 2=ruler, 3=id
-                        # Try to match by class name first, then by class ID
-                        predictor_type = None
-                        if 'toe' in cls_name:  # Matches 'toe', 'up_toe', 'bot_toe'
-                            predictor_type = 'toe'
-                        elif 'finger' in cls_name:  # Matches 'finger', 'up_finger', 'bot_finger'
-                            predictor_type = 'finger'
-                        elif 'scale' in cls_name or 'ruler' in cls_name:
-                            predictor_type = 'scale'
-                        elif cls_name == 'id':  # ID tag class
-                            predictor_type = 'id'
-                        else:
-                            # Fallback: map by class ID
-                            # New 6-class model: 0=up_finger, 1=up_toe, 2=bot_finger, 3=bot_toe, 4=ruler, 5=id
-                            # Legacy 3-class model: 0=finger, 1=toe, 2=ruler
-                            if cls_id in [0, 2]:  # up_finger or bot_finger (or legacy finger)
-                                predictor_type = 'finger'
-                            elif cls_id in [1, 3]:  # up_toe or bot_toe (or legacy toe)
-                                predictor_type = 'toe'
-                            elif cls_id == 4:  # ruler (6-class model)
-                                predictor_type = 'scale'
-                            elif cls_id == 5:  # id tag (6-class model)
-                                predictor_type = 'id'
-                            else:
-                                # Last resort: try to use class ID as index into available predictors
-                                available_types = list(predictors.keys())
-                                if cls_id < len(available_types):
-                                    predictor_type = available_types[cls_id]
-                        
-                        # Allow scale bars even without a predictor (they use YOLO only)
-                        # For other types, require a predictor
-                        if predictor_type:
-                            if predictor_type == 'scale' or predictor_type in predictors:
-                                detections.append({
-                                    'rect': dlib_rect,
-                                    'predictor_type': predictor_type,
-                                    'class_id': cls_id,
-                                    'class_name': cls_name
-                                })
-                                print(f"Added detection: type={predictor_type}, class_id={cls_id}, class_name={cls_name}, rect=({dlib_rect.left()}, {dlib_rect.top()}, {dlib_rect.width()}, {dlib_rect.height()})")
-                            else:
-                                print(f"Skipped detection: predictor_type={predictor_type} not in available predictors={list(predictors.keys())}")
-                        else:
-                            print(f"Skipped detection: could not determine predictor_type for class_id={cls_id}, class_name={cls_name}")
-                else:
-                    print("No boxes found in YOLO result")
+
+            obj_count = 0
+            res = results[0]
+            names = res.names
+
+            def _get_padded_crop(img_bgr, corners_orig):
+                """Crop padded bbox from full-res image, return (crop_rgb, x_off, y_off)."""
+                x, y, bw, bh = cv2.boundingRect(corners_orig.astype(np.int32))
+                ih, iw = img_bgr.shape[:2]
+                px = int(bw * padding_ratio)
+                py = int(bh * padding_ratio)
+                x1 = max(0, x - px)
+                y1 = max(0, y - py)
+                x2 = min(iw, x + bw + px)
+                y2 = min(ih, y + bh + py)
+                crop = img_bgr[y1:y2, x1:x2]
+                crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+                crop_rgb = np.ascontiguousarray(crop_rgb, dtype=np.uint8)
+                return crop_rgb, x1, y1
+
+            def _predict_on_crop(predictor, img_bgr, corners_orig):
+                """Run dlib predictor on a cropped region, return landmarks in original coords."""
+                crop_rgb, x_off, y_off = _get_padded_crop(img_bgr, corners_orig)
+                crop_h, crop_w = crop_rgb.shape[:2]
+                rect = dlib.rectangle(0, 0, crop_w, crop_h)
+                shape = predictor(crop_rgb, rect)
+                points = []
+                for k in range(shape.num_parts):
+                    p = shape.part(k)
+                    points.append((float(p.x + x_off), float(p.y + y_off)))
+                return np.array(points, dtype=float)
+
+            def _generate_landmark_xml(landmarks_global):
+                """Generate XML box element from landmark coordinates."""
+                min_lx, min_ly = np.min(landmarks_global, axis=0)
+                max_lx, max_ly = np.max(landmarks_global, axis=0)
+                bbox_w = max_lx - min_lx
+                bbox_h = max_ly - min_ly
+
+                box_xml = ET.Element('box')
+                box_xml.set('top', str(int(min_ly)))
+                box_xml.set('left', str(int(min_lx)))
+                box_xml.set('width', str(int(bbox_w)))
+                box_xml.set('height', str(int(bbox_h)))
+
+                for pt_i, point in enumerate(landmarks_global):
+                    part = ET.SubElement(box_xml, 'part')
+                    part.set('name', str(pt_i))
+                    part.set('x', str(int(point[0])))
+                    part.set('y', str(int(point[1])))
+                return box_xml
+
+            # --- Pass 1: Standard inference on downsampled image ---
+            print(f"\n--- Standard inference pass ---")
+            if res.obb is not None and len(res.obb) > 0:
+                print(f"OBB detections: {len(res.obb)}")
+                for idx in range(len(res.obb)):
+                    cls_id = int(res.obb.cls[idx].item())
+                    det_conf = float(res.obb.conf[idx].item())
+                    if det_conf < conf_threshold:
+                        continue
+                    cls_name = names[cls_id]
+                    corners_small = res.obb.xyxyxyxy[idx].cpu().numpy().astype(np.float32)
+
+                    # Scale corners back to original image coords
+                    corners = corners_small * inv_scale
+
+                    # Scale bar handling
+                    if 'ruler' in cls_name.lower() or 'scale' in cls_name.lower():
+                        xs = [c[0] for c in corners]
+                        ys = [c[1] for c in corners]
+                        x1s, y1s, x2s, y2s = min(xs), min(ys), max(xs), max(ys)
+                        detected_rect = dlib.rectangle(int(x1s), int(y1s), int(x2s), int(y2s))
+
+                        box_xml = ET.Element("box")
+                        box_xml.set("top", str(int(detected_rect.top())))
+                        box_xml.set("left", str(int(detected_rect.left())))
+                        box_xml.set("width", str(int(detected_rect.width())))
+                        box_xml.set("height", str(int(detected_rect.height())))
+
+                        obb_wh = tuple(res.obb.xywhr[idx].tolist()[2:4])
+                        ruler_pixel_width = max(obb_wh[0], obb_wh[1]) * inv_scale
+                        print(f"Processing scale bar with OBB true width: {ruler_pixel_width:.0f}px (axis-aligned: {detected_rect.width()}px)")
+                        total_length_mm = scale_bar_length_mm + 2.0
+                        pixels_per_mm = ruler_pixel_width / total_length_mm
+                        offset_pixels = pixels_per_mm * 1.0
+
+                        center_y = detected_rect.top() + detected_rect.height() / 2.0
+                        left_x = detected_rect.left() + offset_pixels
+                        right_x = detected_rect.right() - offset_pixels
+                        left_x = np.clip(left_x, detected_rect.left(), detected_rect.right())
+                        right_x = np.clip(right_x, detected_rect.left(), detected_rect.right())
+
+                        part0 = create_part(float(left_x), float(center_y), 0)
+                        part1 = create_part(float(right_x), float(center_y), 1)
+                        box_xml.append(part0)
+                        box_xml.append(part1)
+
+                        print(f"Created scale bar landmarks (IDs 0-1): left=({left_x:.1f}, {center_y:.1f}), right=({right_x:.1f}, {center_y:.1f})")
+                        image_e.append(box_xml)
+                        obj_count += 1
+                        continue
+
+                    # Only process bot_finger (0) and bot_toe (1) on original
+                    if cls_id not in [0, 1]:
+                        continue
+
+                    # Filter by target_predictor_type
+                    if target_predictor_type and target_predictor_type.lower() not in cls_name.lower():
+                        continue
+
+                    curr_predictor = predictors.get('finger') if cls_id == 0 else predictors.get('toe')
+                    if curr_predictor is None:
+                        continue
+
+                    # Crop padded bbox from full-res image and predict
+                    landmarks_global = _predict_on_crop(curr_predictor, img_raw_bgr, corners)
+
+                    print(f"\n  === Detection: {cls_name} (conf={det_conf:.3f}) ===")
+                    print(f"  Landmarks bbox: x=[{landmarks_global[:,0].min():.0f},{landmarks_global[:,0].max():.0f}], y=[{landmarks_global[:,1].min():.0f},{landmarks_global[:,1].max():.0f}]")
+
+                    image_e.append(_generate_landmark_xml(landmarks_global))
+                    obj_count += 1
+
+            # --- Pass 2: Flipped inference on downsampled image ---
+            print(f"\n--- Flipped inference pass ---")
+            small_flipped = cv2.flip(small_bgr, 0)
+            small_flipped_pil = Image.fromarray(cv2.cvtColor(small_flipped, cv2.COLOR_BGR2RGB))
+            results_flipped = model(small_flipped_pil, conf=conf_threshold, imgsz=1280, device='cpu', verbose=False)
+            res_flipped = results_flipped[0]
+
+            if res_flipped.obb is not None and len(res_flipped.obb) > 0:
+                print(f"Flipped OBB detections: {len(res_flipped.obb)}")
+                # Flip the full-res image once for all flipped detections
+                flipped_bgr = cv2.flip(img_raw_bgr, 0)
+
+                for idx in range(len(res_flipped.obb)):
+                    cls_id = int(res_flipped.obb.cls[idx].item())
+                    det_conf = float(res_flipped.obb.conf[idx].item())
+                    if det_conf < conf_threshold:
+                        continue
+
+                    # Only process bot_finger (0) and bot_toe (1) on flipped
+                    if cls_id not in [0, 1]:
+                        continue
+
+                    # Map bot -> up for display
+                    actual_cls_name = 'up_finger' if cls_id == 0 else 'up_toe'
+
+                    # Filter by target_predictor_type
+                    if target_predictor_type and target_predictor_type.lower() not in actual_cls_name.lower():
+                        continue
+
+                    curr_predictor = predictors.get('finger') if cls_id == 0 else predictors.get('toe')
+                    if curr_predictor is None:
+                        continue
+
+                    corners_small = res_flipped.obb.xyxyxyxy[idx].cpu().numpy().astype(np.float32)
+                    corners_flipped = corners_small * inv_scale
+
+                    # Crop from flipped full-res image and predict
+                    crop_rgb, x_off, y_off = _get_padded_crop(flipped_bgr, corners_flipped)
+                    crop_h, crop_w = crop_rgb.shape[:2]
+                    rect = dlib.rectangle(0, 0, crop_w, crop_h)
+                    shape = curr_predictor(crop_rgb, rect)
+
+                    # Map landmarks back: crop coords -> flipped image -> original image (flip Y back)
+                    points = []
+                    for k in range(shape.num_parts):
+                        p = shape.part(k)
+                        points.append((float(p.x + x_off), float(h_img - 1 - (p.y + y_off))))
+
+                    landmarks_global = np.array(points, dtype=float)
+                    print(f"\n  === Detection (flipped): {actual_cls_name} (conf={det_conf:.3f}) ===")
+                    print(f"  Landmarks bbox: x=[{landmarks_global[:,0].min():.0f},{landmarks_global[:,0].max():.0f}], y=[{landmarks_global[:,1].min():.0f},{landmarks_global[:,1].max():.0f}]")
+
+                    image_e.append(_generate_landmark_xml(landmarks_global))
+                    obj_count += 1
+
+            print(f"\nTotal detections: {obj_count}")
         except Exception as e:
             print(f"Error during YOLO detection: {e}")
             import traceback
             traceback.print_exc()
     else:
         print(f"YOLO model path not available or doesn't exist: {yolo_model_path}")
-    
-    print(f"Total detections after YOLO: {len(detections)}")
-    
-    # Sort detections to ensure consistent landmark order:
-    # 0-1: scale bar, then: bot_finger, bot_toe, up_finger, up_toe
-    detection_order = {
-        'scale': 0,      # Scale bar landmarks first (0, 1)
-        'bot_finger': 1, # Lower finger next
-        'bot_toe': 2,    # Lower toe
-        'up_finger': 3,  # Upper finger
-        'up_toe': 4,     # Upper toe
-        'finger': 5,     # Fallback for generic finger
-        'toe': 6,        # Fallback for generic toe
-    }
-    
-    def get_detection_sort_key(d):
-        predictor_type = d['predictor_type']
-        class_name = d.get('class_name', '')
-        # Try exact class name first, then predictor type
-        if class_name in detection_order:
-            return detection_order[class_name]
-        return detection_order.get(predictor_type, 99)
-    
-    detections = sorted(detections, key=get_detection_sort_key)
-    
-    # Keep only one scale bar (the first one, which has highest priority)
-    scale_bar_found = False
-    filtered_detections = []
-    for detection in detections:
-        if detection['predictor_type'] == 'scale':
-            if not scale_bar_found:
-                filtered_detections.append(detection)
-                scale_bar_found = True
-            else:
-                print(f"Skipping duplicate scale bar detection")
-        else:
-            filtered_detections.append(detection)
-    detections = filtered_detections
-    
-    # Process each detection with its corresponding predictor
-    print(f"Processing {len(detections)} detections")
-    if detections:
-        for idx, detection in enumerate(detections):
-            print(f"Processing detection {idx+1}/{len(detections)}: {detection['predictor_type']}")
-            detected_rect = detection['rect']
-            predictor_type = detection['predictor_type']
-            
-            # For toe and finger, check if predictor is available before processing
-            if predictor_type != 'scale' and predictor_type not in predictors:
-                print(f"Warning: Predictor for {predictor_type} not available, skipping detection")
-                continue
-            
-            # Create box element for this detection
-            box = ET.Element("box")
-            box.set("top", str(int(detected_rect.top())))
-            box.set("left", str(int(detected_rect.left())))
-            box.set("width", str(int(detected_rect.width())))
-            box.set("height", str(int(detected_rect.height())))
-            
-            # Special handling for scale bars: use YOLO only, no ml-morph predictor
-            if predictor_type == 'scale':
-                print(f"Processing scale bar with YOLO only (no ml-morph)")
-                # Calculate pixels per mm based on scale bar length
-                # The YOLO bounding box width represents the scale bar plus 1mm padding on each side
-                # So total width = scale_bar_length_mm + 2mm (1mm left + 1mm right padding)
-                total_length_mm = scale_bar_length_mm + 2.0
-                pixels_per_mm = detected_rect.width() / total_length_mm
-                offset_pixels = pixels_per_mm * 1.0  # Remove 1mm from each side
-                
-                # Calculate center Y coordinate
-                center_y = detected_rect.top() + detected_rect.height() / 2.0
-                
-                # Create two landmarks: one at left + 1mm, one at right - 1mm
-                left_x = detected_rect.left() + offset_pixels
-                right_x = detected_rect.right() - offset_pixels
-                
-                # Ensure points are within the bounding box
-                left_x = np.clip(left_x, detected_rect.left(), detected_rect.right())
-                right_x = np.clip(right_x, detected_rect.left(), detected_rect.right())
-                
-                # Create two landmarks with fixed IDs 0 and 1 for scale
-                part0 = create_part(float(left_x), float(center_y), 0)
-                part1 = create_part(float(right_x), float(center_y), 1)
-                box.append(part0)
-                box.append(part1)
-                
-                print(f"Created scale bar landmarks (IDs 0-1): left=({left_x:.1f}, {center_y:.1f}), right=({right_x:.1f}, {center_y:.1f})")
-            else:
-                # For toe and finger, use dlib predictor as before
-                predictor = predictors[predictor_type]
-                is_cropped = is_cropped_predictor.get(predictor_type, False)
-                
-                # Get the class name to check if it's an upper (up_) class
-                class_name = detection.get('class_name', '')
-                is_upper = class_name.startswith('up_')
-                
-                # Match visualize_yolo_prediction.py approach:
-                # - Use raw image (no filters) for prediction
-                # - Use YOLO bounding box directly (even for cropped predictors)
-                # - Single scale prediction (no multi-scale)
-                
-                # Determine rotation needed based on class and target orientation
-                # Average Toe: Points UP (Base High Y -> Tip Low Y)
-                # Average Finger: Points LEFT (Base High X -> Tip Low X)
-                
-                # Input Assumptions (Standard Lizard Head-Up):
-                # 'bot_toe': Points DOWN (Posterior) -> Needs 180° rotation to point UP
-                # 'up_toe': Points UP? (Anterior?) -> Keep as is (UP)
-                # 'up_finger': Points UP (Anterior) -> Needs 90° CCW to point LEFT
-                # 'bot_finger': Points DOWN (Posterior?) -> Needs 90° CW to point LEFT
-                
-                if 'toe' in predictor_type:
-                    if is_upper:
-                        # 'up_toe' points UP. Target UP. No rotation.
-                        rotation_code = None
-                    else:
-                        # 'bot_toe' points DOWN. Target UP. Rotate 180.
-                        rotation_code = cv2.ROTATE_180
-                elif 'finger' in predictor_type:
-                    if is_upper:
-                        # 'up_finger' points UP. Target LEFT. Rotate 90 CCW.
-                        rotation_code = cv2.ROTATE_90_COUNTERCLOCKWISE
-                    else:
-                        # 'bot_finger' points DOWN (assumed). Target LEFT. Rotate 90 CW.
-                        rotation_code = cv2.ROTATE_90_CLOCKWISE
-                else:
-                    rotation_code = None
-
-                x1, y1 = detected_rect.left(), detected_rect.top()
-                x2, y2 = detected_rect.right(), detected_rect.bottom()
-                
-                # Ensure coordinates are within image bounds
-                x1 = max(0, x1)
-                y1 = max(0, y1)
-                x2 = min(w, x2)
-                y2 = min(h, y2)
-                
-                # Crop the region
-                cropped_region = img_raw[y1:y2, x1:x2]
-                
-                # Apply rotation if needed
-                if rotation_code is not None:
-                    rotated_region = cv2.rotate(cropped_region, rotation_code)
-                    
-                    # Create a rect for the transformed crop (starts at 0,0)
-                    crop_h, crop_w = rotated_region.shape[:2]
-                    crop_rect = dlib.rectangle(0, 0, crop_w, crop_h)
-                    
-                    # Run inference on transformed crop
-                    shape = predictor(rotated_region, crop_rect)
-                    pred_landmarks = np.array([[p.x, p.y] for p in shape.parts()])
-                    
-                    # Transform landmarks back
-                    transformed_back_landmarks = []
-                    
-                    orig_h, orig_w = cropped_region.shape[:2]
-                    
-                    for lx, ly in pred_landmarks:
-                        # Transform coordinates back based on rotation
-                        if rotation_code == cv2.ROTATE_180:
-                            # 180°: (x, y) -> (w - 1 - x, h - 1 - y) in rotation space
-                            # Reverse: same transform
-                            orig_x_local = orig_w - 1 - lx
-                            orig_y_local = orig_h - 1 - ly
-                        elif rotation_code == cv2.ROTATE_90_COUNTERCLOCKWISE:
-                            # 90° CCW: (x, y) -> (y, w - 1 - x)
-                            # Reverse: (y, w - 1 - x) -> (radius_y, radius_x) ? 
-                            # Let's derive: x_new = y_old, y_new = w_old - 1 - x_old
-                            # So y_old = x_new, x_old = w_old - 1 - y_new
-                            # Dimensions also swap: w_new = h_old, h_new = w_old
-                            # So orig_x_local (x_old) = orig_w - 1 - ly
-                            # orig_y_local (y_old) = lx
-                            orig_x_local = orig_w - 1 - ly
-                            orig_y_local = lx
-                        elif rotation_code == cv2.ROTATE_90_CLOCKWISE:
-                            # 90° CW: (x, y) -> (h - 1 - y, x)
-                            # Reverse: x_new = h_old - 1 - y_old, y_new = x_old
-                            # y_old = h_old - 1 - x_new
-                            # x_old = y_new
-                            orig_x_local = ly
-                            orig_y_local = orig_h - 1 - lx
-                        
-                        # Translate to original global coordinates
-                        final_x = x1 + orig_x_local
-                        final_y = y1 + orig_y_local
-                        transformed_back_landmarks.append([final_x, final_y])
-                        
-                    pred_landmarks = np.array(transformed_back_landmarks)
-                    print(f"Applied rotation {rotation_code} for {class_name}")
-                else:
-                    # No rotation needed, just run on crop
-                    crop_h, crop_w = cropped_region.shape[:2]
-                    crop_rect = dlib.rectangle(0, 0, crop_w, crop_h)
-                    
-                    shape = predictor(cropped_region, crop_rect)
-                    pred_landmarks = np.array([[p.x, p.y] for p in shape.parts()])
-                    
-                    # Translate to original global coordinates
-                    pred_landmarks = pred_landmarks + np.array([x1, y1])
-                    print(f"No rotation applied for {class_name}")
-                
-                # Assign fixed landmark IDs based on detection type:
-                # Scale: 0-1, Bottom Finger: 2-10, Bottom Toe: 11-19, Top Finger: 20-28, Top Toe: 29-37
-                id_offset_map = {
-                    'bot_finger': 2,   # IDs 2-10 (9 landmarks)
-                    'bot_toe': 11,     # IDs 11-19 (9 landmarks)
-                    'up_finger': 20,   # IDs 20-28 (9 landmarks)
-                    'up_toe': 29,      # IDs 29-37 (9 landmarks)
-                }
-                # Get ID offset based on class_name, fallback to generic type
-                id_offset = id_offset_map.get(class_name, id_offset_map.get(f'bot_{predictor_type}', 2))
-                
-                # Add landmarks with fixed IDs
-                for i, (x, y) in enumerate(pred_landmarks):
-                    fixed_id = id_offset + i
-                    part = create_part(float(x), float(y), fixed_id)
-                    box.append(part)
-                
-                print(f"Created {len(pred_landmarks)} landmarks for {class_name} with IDs {id_offset}-{id_offset + len(pred_landmarks) - 1}")
-            
-            box[:] = sorted(box, key=lambda child: (child.tag, float(child.get("name"))))
-            image_e.append(box)
-    else:
-        # Fallback: use default rectangle with first available predictor
-        predictor = list(predictors.values())[0]
-        # Use raw image for fallback too (matching visualize_yolo_prediction.py)
-        rect = dlib.rectangle(1, 1, w - 1, h - 1)
-        shape = predictor(img_raw, rect)
-        landmarks_array = shape_to_np(shape)
-        
-        box = create_box(img_raw.shape)
-        part_length = range(0, shape.num_parts)
-        
-        for item, i in enumerate(sorted(part_length, key=str)):
-            x = float(landmarks_array[item][0])
-            y = float(landmarks_array[item][1])
-            part = create_part(x, y, i)
-            box.append(part)
-        
-        box[:] = sorted(box, key=lambda child: (child.tag, float(child.get("name"))))
-        image_e.append(box)
-    
     images_e.append(image_e)
-    pretty_xml(root, output)
+    if output:
+         # Write XML
+         tree = ET.ElementTree(root)
+         minidom_xml = minidom.parseString(ET.tostring(root)).toprettyxml(indent="   ")
+         with open(output, "w") as f:
+             f.write(minidom_xml)
+             
+    return obj_count
 
 
 # Importing to pandas tools
@@ -873,6 +1010,10 @@ def dlib_xml_to_pandas(xml_file: str, parse=False):
 
                     landmark_list.append(data)
     dataset = pd.DataFrame(landmark_list)
+    if dataset.empty or "id" not in dataset.columns:
+        basename = ntpath.splitext(xml_file)[0]
+        pd.DataFrame().to_csv(f"{basename}.csv")
+        return pd.DataFrame()
     df = dataset.groupby(["id", "box_id"], sort=False).max()
     df = df[natural_sort(df)]
     basename = ntpath.splitext(xml_file)[0]

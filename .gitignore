@@ -37,6 +37,8 @@ backend/tps_download
 backend/image_download
 backend/invert_image
 backend/outputs
+backend/inference_results
+
 
 # Editor directories
 .idea
@@ -58,3 +60,6 @@ Thumbs.db
 
 # Monitoring configuration files with sensitive data
 monitoring/web.yml
+
+# AI configuration
+.claude
