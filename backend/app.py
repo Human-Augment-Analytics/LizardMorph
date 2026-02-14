@@ -41,13 +41,11 @@ TOEPADS_DETECTOR_FILE = os.getenv("TOEPADS_DETECTOR_FILE", None)
 CUSTOM_DETECTOR_FILE = os.getenv("CUSTOM_DETECTOR_FILE", None)
 
 # Lizard Toepad model files
-# Note: To use cropped predictors (e.g., toe_predictor_cropped.dat), set the environment variable:
-# TOEPAD_TOE_PREDICTOR="../models/lizard-toe-pad/toe_predictor_cropped.dat"
-# The inference code will automatically detect cropped predictors by filename and apply appropriate preprocessing.
-TOEPAD_YOLO_MODEL = os.getenv("TOEPAD_YOLO_MODEL", "../models/lizard-toe-pad/yolo_bounding_box.pt")
-TOEPAD_TOE_PREDICTOR = os.getenv("TOEPAD_TOE_PREDICTOR", "../models/lizard-toe-pad/lizard_toe.dat")
+# YOLO-OBB 2-class model: bot_finger, bot_toe (use flip inference for up_finger, up_toe)
+TOEPAD_YOLO_MODEL = os.getenv("TOEPAD_YOLO_MODEL", "../models/lizard-toe-pad/yolo_obb_2class.pt")
+TOEPAD_TOE_PREDICTOR = os.getenv("TOEPAD_TOE_PREDICTOR", "../models/lizard-toe-pad/toe_predictor_yolo_bbox.dat")
 TOEPAD_SCALE_PREDICTOR = os.getenv("TOEPAD_SCALE_PREDICTOR", "../models/lizard-toe-pad/lizard_scale.dat")
-TOEPAD_FINGER_PREDICTOR = os.getenv("TOEPAD_FINGER_PREDICTOR", "../models/lizard-toe-pad/lizard_finger.dat")
+TOEPAD_FINGER_PREDICTOR = os.getenv("TOEPAD_FINGER_PREDICTOR", "../models/lizard-toe-pad/finger_predictor_yolo_bbox.dat")
 
 
 
@@ -105,13 +103,11 @@ def get_cached_dlib_predictors():
             if TOEPAD_TOE_PREDICTOR and os.path.exists(TOEPAD_TOE_PREDICTOR):
                 logger.info(f"Loading toe predictor: {TOEPAD_TOE_PREDICTOR}")
                 _cached_dlib_predictors['toe'] = dlib.shape_predictor(TOEPAD_TOE_PREDICTOR)
-                _cached_dlib_predictors['toe_is_cropped'] = 'cropped' in os.path.basename(TOEPAD_TOE_PREDICTOR).lower()
             if TOEPAD_FINGER_PREDICTOR and os.path.exists(TOEPAD_FINGER_PREDICTOR):
                 logger.info(f"Loading finger predictor: {TOEPAD_FINGER_PREDICTOR}")
                 _cached_dlib_predictors['finger'] = dlib.shape_predictor(TOEPAD_FINGER_PREDICTOR)
-                _cached_dlib_predictors['finger_is_cropped'] = 'cropped' in os.path.basename(TOEPAD_FINGER_PREDICTOR).lower()
             # Scale bars use YOLO only, no dlib predictor needed
-            logger.info(f"Dlib predictors loaded and cached: {list(k for k in _cached_dlib_predictors.keys() if not k.endswith('_is_cropped'))}")
+            logger.info(f"Dlib predictors loaded and cached: {list(_cached_dlib_predictors.keys())}")
         except ImportError:
             logger.warning("dlib not installed, skipping predictor caching")
     return _cached_dlib_predictors
@@ -588,13 +584,12 @@ def upload():
                     if view_type.lower() == "toepad" and yolo_model_path and os.path.exists(yolo_model_path):
                         logger.info(f"Using YOLO detection for toepad view: {yolo_model_path}")
                         utils.predictions_to_xml_single_with_yolo(
-                            image_path, 
-                            xml_output_path, 
+                            image_path,
+                            xml_output_path,
                             yolo_model_path,
                             toe_predictor_path=TOEPAD_TOE_PREDICTOR,
                             scale_predictor_path=TOEPAD_SCALE_PREDICTOR,
                             finger_predictor_path=TOEPAD_FINGER_PREDICTOR,
-                            target_predictor_type=toepad_predictor_type,
                             cached_yolo_model=get_cached_yolo_model(),
                             cached_dlib_predictors=get_cached_dlib_predictors()
                         )
