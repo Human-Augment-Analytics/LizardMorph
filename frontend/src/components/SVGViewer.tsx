@@ -225,12 +225,12 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         // Only calculate scale once per image load
         const scaleX = d3
           .scaleLinear()
-          .domain([0, this.props.imageWidth])
+          .domain([0.5, this.props.imageWidth + 0.5])
           .range([0, width]);
 
         const scaleY = d3
           .scaleLinear()
-          .domain([0, this.props.imageHeight])
+          .domain([0.5, this.props.imageHeight + 0.5])
           .range([0, height]); // Scale the data
         const scaledData = this.props.originalScatterData.map(
           (point: Point) => {
@@ -285,10 +285,10 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         
         // Scale functions for bounding boxes
         const scaleX = d3.scaleLinear()
-          .domain([0, this.props.imageWidth])
+          .domain([0.5, this.props.imageWidth + 0.5])
           .range([0, width]);
         const scaleY = d3.scaleLinear()
-          .domain([0, this.props.imageHeight])
+          .domain([0.5, this.props.imageHeight + 0.5])
           .range([0, height]);
         
         // Color scheme for different box types (toe, finger, scale)
@@ -335,10 +335,10 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       // Always scale from originalScatterData to match current SVG dimensions
       // (this ensures correct scaling when maxWidth constraint is applied)
       const scaleXForPoints = d3.scaleLinear()
-        .domain([0, this.props.imageWidth])
+        .domain([0.5, this.props.imageWidth + 0.5])
         .range([0, width]);
       const scaleYForPoints = d3.scaleLinear()
-        .domain([0, this.props.imageHeight])
+        .domain([0.5, this.props.imageHeight + 0.5])
         .range([0, height]);
 
       const scaledPointsForRender = this.props.originalScatterData.map((point: Point) => ({
@@ -360,8 +360,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
 
         // Add the point
         const size = this.state.landmarkSize;
-        const fontSize = Math.max(6, size * 2);
-        const textOffset = size + 1;
+        // const fontSize = Math.max(6, size * 2);
+        // const textOffset = size + 1;
         
         g.append("circle")
           .attr("cx", d.x)
@@ -387,6 +387,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           .style("pointer-events", "all");
 
         // Add the number label
+        /*
         g.append("text")
           .attr("x", d.x + textOffset)
           .attr("y", d.y - textOffset)
@@ -397,6 +398,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           .attr("stroke-width", "0.5px")
           .attr("opacity", this.isTransparentMode ? 0.6 : 1.0)
           .style("pointer-events", "none"); // Prevent text from interfering with drag
+        */
       });
 
       // Set data-landmark-id on the groups for proper drag selection
@@ -416,7 +418,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       // Add zoom behavior, preserving the current zoom state
       const zoom = d3
         .zoom<SVGSVGElement, unknown>()
-        .scaleExtent([0.5, 5])
+        .scaleExtent([0.5, 20])
         .on("zoom", (event) => {
           zoomContainer.attr("transform", event.transform.toString());
           this.props.onZoomChange(event.transform);
@@ -908,10 +910,10 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       this.cachedScales.svgWidth = width;
       this.cachedScales.svgHeight = height;
       
-      this.cachedScales.scaleXToImg = d3.scaleLinear().domain([0, width]).range([0, this.props.imageWidth]);
-      this.cachedScales.scaleYToImg = d3.scaleLinear().domain([0, height]).range([0, this.props.imageHeight]);
-      this.cachedScales.scaleXDisplay = d3.scaleLinear().domain([0, this.props.imageWidth]).range([0, width]);
-      this.cachedScales.scaleYDisplay = d3.scaleLinear().domain([0, this.props.imageHeight]).range([0, height]);
+      this.cachedScales.scaleXToImg = d3.scaleLinear().domain([0, width]).range([0.5, this.props.imageWidth + 0.5]);
+      this.cachedScales.scaleYToImg = d3.scaleLinear().domain([0, height]).range([0.5, this.props.imageHeight + 0.5]);
+      this.cachedScales.scaleXDisplay = d3.scaleLinear().domain([0.5, this.props.imageWidth + 0.5]).range([0, width]);
+      this.cachedScales.scaleYDisplay = d3.scaleLinear().domain([0.5, this.props.imageHeight + 0.5]).range([0, height]);
     }
   };
 

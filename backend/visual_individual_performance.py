@@ -130,18 +130,23 @@ def create_image(tps_file_path, output_folder):
             height_inches = height_pixels / dpi
             
             fig, ax = plt.subplots(figsize=(width_inches, height_inches), dpi=dpi)
-            ax.imshow(image)
+            # Set extent to match 1-based coordinates (starts at 0.5)
+            # origin='upper' implies extent=(left, right, bottom, top)
+            ax.imshow(image, extent=[0.5, width_pixels + 0.5, height_pixels + 0.5, 0.5])
             ax.axis('off')
+            
+            # Ensure equal aspect ratio ("even zoom in")
+            ax.set_aspect('equal')
             
             print(f"Plotting {len(x_coords)} points")
             
             # Plot points
             ax.scatter(x_coords, y_coords, s=50, color='red', marker='o', edgecolors='black')
             
-            # Add point labels
-            for j, (x, y) in enumerate(zip(x_coords, y_coords)):
-                ax.text(x + 5, y - 5, str(j + 1), color='white', fontsize=8, 
-                       bbox=dict(facecolor='black', alpha=0.7, pad=1))
+            # Add point labels - Commented out as per user request ("numbers blocking view")
+            # for j, (x, y) in enumerate(zip(x_coords, y_coords)):
+            #     ax.text(x + 5, y - 5, str(j + 1), color='white', fontsize=8, 
+            #            bbox=dict(facecolor='black', alpha=0.7, pad=1))
             
             # Save the image
             output_basename = os.path.splitext(os.path.basename(image_name))[0]
