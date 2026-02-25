@@ -801,7 +801,10 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     part.set('y', str(int(point[1])))
                 return box_xml
 
-            # --- Pass 1: Standard inference on downsampled image ---
+            # --- Collect all detections first ---
+            detections = {'bot_finger': [], 'bot_toe': [], 'up_finger': [], 'up_toe': [], 'scale': []}
+
+            # Pass 1: Standard inference (bot_finger, bot_toe, scale)
             print(f"\n--- Standard inference pass ---")
             if res.obb is not None and len(res.obb) > 0:
                 print(f"OBB detections: {len(res.obb)}")
@@ -812,68 +815,16 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                         continue
                     cls_name = names[cls_id]
                     corners_small = res.obb.xyxyxyxy[idx].cpu().numpy().astype(np.float32)
-
-                    # Scale corners back to original image coords
                     corners = corners_small * inv_scale
 
-                    # Scale bar handling
                     if 'ruler' in cls_name.lower() or 'scale' in cls_name.lower():
-                        xs = [c[0] for c in corners]
-                        ys = [c[1] for c in corners]
-                        x1s, y1s, x2s, y2s = min(xs), min(ys), max(xs), max(ys)
-                        detected_rect = dlib.rectangle(int(x1s), int(y1s), int(x2s), int(y2s))
+                        detections['scale'].append({'conf': det_conf, 'corners': corners, 'obb_wh': tuple(res.obb.xywhr[idx].tolist()[2:4])})
+                    elif cls_id == 0:
+                        detections['bot_finger'].append({'conf': det_conf, 'corners': corners})
+                    elif cls_id == 1:
+                        detections['bot_toe'].append({'conf': det_conf, 'corners': corners})
 
-                        box_xml = ET.Element("box")
-                        box_xml.set("top", str(int(detected_rect.top())))
-                        box_xml.set("left", str(int(detected_rect.left())))
-                        box_xml.set("width", str(int(detected_rect.width())))
-                        box_xml.set("height", str(int(detected_rect.height())))
-
-                        obb_wh = tuple(res.obb.xywhr[idx].tolist()[2:4])
-                        ruler_pixel_width = max(obb_wh[0], obb_wh[1]) * inv_scale
-                        print(f"Processing scale bar with OBB true width: {ruler_pixel_width:.0f}px (axis-aligned: {detected_rect.width()}px)")
-                        total_length_mm = scale_bar_length_mm + 2.0
-                        pixels_per_mm = ruler_pixel_width / total_length_mm
-                        offset_pixels = pixels_per_mm * 1.0
-
-                        center_y = detected_rect.top() + detected_rect.height() / 2.0
-                        left_x = detected_rect.left() + offset_pixels
-                        right_x = detected_rect.right() - offset_pixels
-                        left_x = np.clip(left_x, detected_rect.left(), detected_rect.right())
-                        right_x = np.clip(right_x, detected_rect.left(), detected_rect.right())
-
-                        part0 = create_part(float(left_x), float(center_y), 0)
-                        part1 = create_part(float(right_x), float(center_y), 1)
-                        box_xml.append(part0)
-                        box_xml.append(part1)
-
-                        print(f"Created scale bar landmarks (IDs 0-1): left=({left_x:.1f}, {center_y:.1f}), right=({right_x:.1f}, {center_y:.1f})")
-                        image_e.append(box_xml)
-                        obj_count += 1
-                        continue
-
-                    # Only process bot_finger (0) and bot_toe (1) on original
-                    if cls_id not in [0, 1]:
-                        continue
-
-                    # Filter by target_predictor_type
-                    if target_predictor_type and target_predictor_type.lower() not in cls_name.lower():
-                        continue
-
-                    curr_predictor = predictors.get('finger') if cls_id == 0 else predictors.get('toe')
-                    if curr_predictor is None:
-                        continue
-
-                    # Crop padded bbox from full-res image and predict
-                    landmarks_global = _predict_on_crop(curr_predictor, img_raw_bgr, corners)
-
-                    print(f"\n  === Detection: {cls_name} (conf={det_conf:.3f}) ===")
-                    print(f"  Landmarks bbox: x=[{landmarks_global[:,0].min():.0f},{landmarks_global[:,0].max():.0f}], y=[{landmarks_global[:,1].min():.0f},{landmarks_global[:,1].max():.0f}]")
-
-                    image_e.append(_generate_landmark_xml(landmarks_global))
-                    obj_count += 1
-
-            # --- Pass 2: Flipped inference on downsampled image ---
+            # Pass 2: Flipped inference (up_finger, up_toe)
             print(f"\n--- Flipped inference pass ---")
             small_flipped = cv2.flip(small_bgr, 0)
             small_flipped_pil = Image.fromarray(cv2.cvtColor(small_flipped, cv2.COLOR_BGR2RGB))
@@ -882,51 +833,104 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
 
             if res_flipped.obb is not None and len(res_flipped.obb) > 0:
                 print(f"Flipped OBB detections: {len(res_flipped.obb)}")
-                # Flip the full-res image once for all flipped detections
-                flipped_bgr = cv2.flip(img_raw_bgr, 0)
-
                 for idx in range(len(res_flipped.obb)):
                     cls_id = int(res_flipped.obb.cls[idx].item())
                     det_conf = float(res_flipped.obb.conf[idx].item())
                     if det_conf < conf_threshold:
                         continue
-
-                    # Only process bot_finger (0) and bot_toe (1) on flipped
-                    if cls_id not in [0, 1]:
-                        continue
-
-                    # Map bot -> up for display
-                    actual_cls_name = 'up_finger' if cls_id == 0 else 'up_toe'
-
-                    # Filter by target_predictor_type
-                    if target_predictor_type and target_predictor_type.lower() not in actual_cls_name.lower():
-                        continue
-
-                    curr_predictor = predictors.get('finger') if cls_id == 0 else predictors.get('toe')
-                    if curr_predictor is None:
-                        continue
-
+                    cls_name = names[cls_id]
                     corners_small = res_flipped.obb.xyxyxyxy[idx].cpu().numpy().astype(np.float32)
-                    corners_flipped = corners_small * inv_scale
+                    corners_flipped = corners_small * inv_scale # This is coords in FLIPPED image
 
-                    # Crop from flipped full-res image and predict
-                    crop_rgb, x_off, y_off = _get_padded_crop(flipped_bgr, corners_flipped)
-                    crop_h, crop_w = crop_rgb.shape[:2]
-                    rect = dlib.rectangle(0, 0, crop_w, crop_h)
-                    shape = curr_predictor(crop_rgb, rect)
+                    if cls_id == 0: # bot_finger in flipped -> up_finger
+                        detections['up_finger'].append({'conf': det_conf, 'corners': corners_flipped})
+                    elif cls_id == 1: # bot_toe in flipped -> up_toe
+                        detections['up_toe'].append({'conf': det_conf, 'corners': corners_flipped})
 
-                    # Map landmarks back: crop coords -> flipped image -> original image (flip Y back)
-                    points = []
-                    for k in range(shape.num_parts):
-                        p = shape.part(k)
-                        points.append((float(p.x + x_off), float(h_img - 1 - (p.y + y_off))))
+            # --- Process best detections ---
+            flipped_bgr = None # Load lazily if needed
 
-                    landmarks_global = np.array(points, dtype=float)
-                    print(f"\n  === Detection (flipped): {actual_cls_name} (conf={det_conf:.3f}) ===")
-                    print(f"  Landmarks bbox: x=[{landmarks_global[:,0].min():.0f},{landmarks_global[:,0].max():.0f}], y=[{landmarks_global[:,1].min():.0f},{landmarks_global[:,1].max():.0f}]")
+            for category, det_list in detections.items():
+                if not det_list:
+                    continue
+                
+                # Sort by confidence (descending) and take top 1
+                det_list.sort(key=lambda x: x['conf'], reverse=True)
+                best_det = det_list[0]
+                
+                print(f"Processing best {category} (conf={best_det['conf']:.3f})")
 
-                    image_e.append(_generate_landmark_xml(landmarks_global))
+                if category == 'scale':
+                    # Process scale bar
+                    corners = best_det['corners']
+                    xs = [c[0] for c in corners]
+                    ys = [c[1] for c in corners]
+                    x1s, y1s, x2s, y2s = min(xs), min(ys), max(xs), max(ys)
+                    detected_rect = dlib.rectangle(int(x1s), int(y1s), int(x2s), int(y2s))
+
+                    box_xml = ET.Element("box")
+                    box_xml.set("top", str(int(detected_rect.top())))
+                    box_xml.set("left", str(int(detected_rect.left())))
+                    box_xml.set("width", str(int(detected_rect.width())))
+                    box_xml.set("height", str(int(detected_rect.height())))
+                    
+                    obb_wh = best_det['obb_wh']
+                    ruler_pixel_width = max(obb_wh[0], obb_wh[1]) * inv_scale
+
+                    total_length_mm = scale_bar_length_mm + 2.0
+                    pixels_per_mm = ruler_pixel_width / total_length_mm
+                    offset_pixels = pixels_per_mm * 1.0
+
+                    center_y = detected_rect.top() + detected_rect.height() / 2.0
+                    left_x = detected_rect.left() + offset_pixels
+                    right_x = detected_rect.right() - offset_pixels
+                    left_x = np.clip(left_x, detected_rect.left(), detected_rect.right())
+                    right_x = np.clip(right_x, detected_rect.left(), detected_rect.right())
+                    
+                    part0 = create_part(float(left_x), float(center_y), 0)
+                    part1 = create_part(float(right_x), float(center_y), 1)
+                    box_xml.append(part0)
+                    box_xml.append(part1)
+                    image_e.append(box_xml)
                     obj_count += 1
+
+                elif category in ['bot_finger', 'bot_toe']:
+                    # Filter by target_predictor_type
+                    if target_predictor_type and target_predictor_type.lower() not in category:
+                         continue
+
+                    curr_predictor = predictors.get('finger') if 'finger' in category else predictors.get('toe')
+                    if curr_predictor:
+                         landmarks_global = _predict_on_crop(curr_predictor, img_raw_bgr, best_det['corners'])
+                         image_e.append(_generate_landmark_xml(landmarks_global))
+                         obj_count += 1
+
+                elif category in ['up_finger', 'up_toe']:
+                    # Filter by target_predictor_type
+                    if target_predictor_type and target_predictor_type.lower() not in category:
+                         continue
+
+                    # Load flipped image if not already loaded
+                    if flipped_bgr is None:
+                        flipped_bgr = cv2.flip(img_raw_bgr, 0)
+                    
+                    curr_predictor = predictors.get('finger') if 'finger' in category else predictors.get('toe')
+                    if curr_predictor:
+                         # Crop from flipped full-res image
+                         crop_rgb, x_off, y_off = _get_padded_crop(flipped_bgr, best_det['corners'])
+                         crop_h, crop_w = crop_rgb.shape[:2]
+                         rect = dlib.rectangle(0, 0, crop_w, crop_h)
+                         shape = curr_predictor(crop_rgb, rect)
+                         
+                         # Map back
+                         points = []
+                         for k in range(shape.num_parts):
+                             p = shape.part(k)
+                             points.append((float(p.x + x_off), float(h_img - 1 - (p.y + y_off))))
+                         
+                         landmarks_global = np.array(points, dtype=float)
+                         image_e.append(_generate_landmark_xml(landmarks_global))
+                         obj_count += 1
 
             print(f"\nTotal detections: {obj_count}")
         except Exception as e:
