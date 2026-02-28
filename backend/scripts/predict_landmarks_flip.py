@@ -141,9 +141,9 @@ def draw_results(img, detections, landmarks_list):
 
 def main():
     parser = argparse.ArgumentParser(description="Run inference with flip strategy + landmarks")
-    parser.add_argument('--model', default='../models/lizard-toe-pad/yolo_obb_2class.pt', help="Path to YOLO model")
-    parser.add_argument('--finger-predictor', default='../models/lizard-toe-pad/finger_predictor_yolo_bbox.dat', help="Path to finger shape predictor")
-    parser.add_argument('--toe-predictor', default='../models/lizard-toe-pad/toe_predictor_yolo_bbox.dat', help="Path to toe shape predictor")
+    parser.add_argument('--model', default='../models/lizard-toe-pad/yolo_obb_6class_h7.pt', help="Path to YOLO model")
+    parser.add_argument('--finger-predictor', default='../models/lizard-toe-pad/finger_predictor_obb.dat', help="Path to finger shape predictor")
+    parser.add_argument('--toe-predictor', default='../models/lizard-toe-pad/toe_predictor_obb.dat', help="Path to toe shape predictor")
     parser.add_argument('--source', required=True, help="Image file or directory")
     parser.add_argument('--output-dir', default='inference_results', help="Output directory")
     args = parser.parse_args()

@@ -10,6 +10,8 @@ Porto, A. and Voje, K.L., 2020. ML‐morph: A fast, accurate and general approac
 - **Frontend**: Located in `frontend/`, built with React.
 - **Backend**: Located in `backend/`, powered by Flask.
 
+For full setup instructions including conda environment, environment variables, and model files, see [SETUP.md](SETUP.md).
+
 ### Setup Instructions
 
 #### Backend

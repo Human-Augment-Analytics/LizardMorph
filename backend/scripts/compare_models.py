@@ -1,6 +1,6 @@
-import sys
 import os
 import xml.etree.ElementTree as ET
+import argparse
 
 # Ensure backend directory is in path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -38,17 +38,20 @@ def parse_xml_to_dict(xml_path):
             data[label].append(box_data)
     return data
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python compare_models.py <image_path>")
-        sys.exit(1)
-        
-    image_path = sys.argv[1]
-    pt_model_path = "/Users/leyangloh/dev/LizardMorph/models/lizard-toe-pad/yolo_obb_6class_h7.pt"
-    onnx_model_path = "/Users/leyangloh/dev/LizardMorph/models/lizard-toe-pad/yolo_obb_6class_h7.onnx"
+    parser = argparse.ArgumentParser(description="Compare PyTorch and ONNX models")
+    parser.add_argument("image", help="Path to input image")
+    parser.add_argument("--pt_model", default="../models/lizard-toe-pad/yolo_obb_6class_h7.pt")
+    parser.add_argument("--onnx_model", default="../models/lizard-toe-pad/yolo_obb_6class_h7.onnx")
+    parser.add_argument("--toe_pred", default="../models/lizard-toe-pad/toe_predictor_obb.dat")
+    parser.add_argument("--finger_pred", default="../models/lizard-toe-pad/finger_predictor_obb.dat")
+    args = parser.parse_args()
     
-    toe_predictor = "/Users/leyangloh/dev/LizardMorph/models/lizard-toe-pad/toe_predictor_obb.dat"
-    finger_predictor = "/Users/leyangloh/dev/LizardMorph/models/lizard-toe-pad/finger_predictor_obb.dat"
+    image_path = args.image
+    pt_model_path = args.pt_model
+    onnx_model_path = args.onnx_model
+    
+    toe_predictor = args.toe_pred
+    finger_predictor = args.finger_pred
     
     pt_xml = "output_pt.xml"
     onnx_xml = "output_onnx.xml"
