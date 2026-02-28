@@ -4,7 +4,7 @@
 backend/*.dat
 backend/test/
 backend/landmark_visualizations/
-models/
+/models/
 test.xml
 images/
 *svm
@@ -32,14 +32,13 @@ backend/sessions
 
 # Output directories
 backend/upload
-backend/color_constrasted
-backend/tps_download
-backend/image_download
-backend/invert_image
-backend/outputs
-backend/inference_results
-outputs/
-sessions/
+backend/color_constrasted/
+backend/tps_download/
+backend/image_download/
+backend/invert_image/
+backend/outputs/
+backend/inference_results/
+backend/sessions/
 backend/curl_*.txt
 backend/bus.jpg
 backend/landmark_comparison.jpg
