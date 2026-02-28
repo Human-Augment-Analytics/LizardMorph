@@ -38,7 +38,24 @@ backend/image_download
 backend/invert_image
 backend/outputs
 backend/inference_results
+outputs/
+sessions/
+backend/curl_*.txt
+backend/bus.jpg
+backend/landmark_comparison.jpg
 
+# Debug / scratch scripts
+backend/debug_*.py
+backend/visualize_diff.py
+backend/compare_models.py
+do_export.py
+export_helper.py
+get_yolo_classes.py
+inspect_onnx.py
+
+# ONNX Web WASM and Scripts
+frontend/onnxruntime-web-local/
+frontend/public/ort-*.wasm
 
 # Editor directories
 .idea

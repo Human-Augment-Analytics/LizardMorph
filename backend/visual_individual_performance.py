@@ -22,22 +22,42 @@ def parse_xml_for_frontend(file_path):
 
         # Extract bounding boxes from box elements
         for box in image.findall('.//box'):
+            parts = box.findall('.//part')
+            part_ids = [int(p.get('name', -1)) for p in parts]
+            
+            # Determine label from XML attribute or infer from structure
+            label = box.get('label', '')
+            if not label:
+                if 17 in part_ids or 18 in part_ids:
+                    label = 'ruler'
+                elif len(parts) == 9:
+                    label = 'toe/finger'
+                elif len(parts) == 2 and 17 not in part_ids:
+                    label = 'scale'
+                elif len(parts) == 0:
+                    label = 'id'
+                else:
+                    label = 'unknown'
+            
             box_data = {
                 "top": float(box.get('top', 0)),
                 "left": float(box.get('left', 0)),
                 "width": float(box.get('width', 0)),
-                "height": float(box.get('height', 0))
+                "height": float(box.get('height', 0)),
+                "label": label
             }
             bounding_boxes.append(box_data)
+            
+            box_idx = len(bounding_boxes) - 1
             
             # Extract parts (landmarks) within this box
             for part in box.findall('.//part'):
                 x = float(part.get('x'))
                 y = float(part.get('y'))
-                # Get the landmark ID from the 'name' attribute (fixed IDs from backend)
                 landmark_id = int(part.get('name', 0))
-                coords.append({"id": landmark_id, "x": x, "y": y})
-        
+                # Create globally unique ID for D3 rendering to prevent overlap bugs
+                unique_id = (box_idx * 100) + landmark_id
+                coords.append({"id": unique_id, "x": x, "y": y, "box_idx": box_idx, "landmark_id": landmark_id})
         # Add this image data to the list
         all_data.append({
             'name': image_name, 

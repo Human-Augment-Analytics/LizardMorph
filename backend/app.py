@@ -28,29 +28,35 @@ load_dotenv()
 frontend_dir = os.getenv("FRONTEND_DIR", "../frontend/dist")
 session_dir = os.getenv("SESSION_DIR", "sessions")
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def get_model_path(relative_path):
+    return os.path.abspath(os.path.join(BASE_DIR, relative_path))
+
 # Model files for different view types
-DORSAL_PREDICTOR_FILE = os.getenv("DORSAL_PREDICTOR_FILE", "../models/lizard-x-ray/better_predictor_auto.dat")
-LATERAL_PREDICTOR_FILE = os.getenv("LATERAL_PREDICTOR_FILE", "../models/lizard-x-ray/lateral_predictor_auto.dat")
-TOEPADS_PREDICTOR_FILE = os.getenv("TOEPADS_PREDICTOR_FILE", "./toepads_predictor_auto.dat")
-CUSTOM_PREDICTOR_FILE = os.getenv("CUSTOM_PREDICTOR_FILE", "./custom_predictor_auto.dat")
+DORSAL_PREDICTOR_FILE = get_model_path(os.getenv("DORSAL_PREDICTOR_FILE", "../models/lizard-x-ray/better_predictor_auto.dat"))
+LATERAL_PREDICTOR_FILE = get_model_path(os.getenv("LATERAL_PREDICTOR_FILE", "../models/lizard-x-ray/lateral_predictor_auto.dat"))
+TOEPADS_PREDICTOR_FILE = get_model_path(os.getenv("TOEPADS_PREDICTOR_FILE", "./toepads_predictor_auto.dat"))
+CUSTOM_PREDICTOR_FILE = get_model_path(os.getenv("CUSTOM_PREDICTOR_FILE", "./custom_predictor_auto.dat"))
 
 # Detector files for different view types (dlib fhog object detectors)
-DORSAL_DETECTOR_FILE = os.getenv("DORSAL_DETECTOR_FILE", None)
-LATERAL_DETECTOR_FILE = os.getenv("LATERAL_DETECTOR_FILE", None)
-TOEPADS_DETECTOR_FILE = os.getenv("TOEPADS_DETECTOR_FILE", None)
-CUSTOM_DETECTOR_FILE = os.getenv("CUSTOM_DETECTOR_FILE", None)
+DORSAL_DETECTOR_FILE = get_model_path(os.getenv("DORSAL_DETECTOR_FILE")) if os.getenv("DORSAL_DETECTOR_FILE") else None
+LATERAL_DETECTOR_FILE = get_model_path(os.getenv("LATERAL_DETECTOR_FILE")) if os.getenv("LATERAL_DETECTOR_FILE") else None
+TOEPADS_DETECTOR_FILE = get_model_path(os.getenv("TOEPADS_DETECTOR_FILE")) if os.getenv("TOEPADS_DETECTOR_FILE") else None
+CUSTOM_DETECTOR_FILE = get_model_path(os.getenv("CUSTOM_DETECTOR_FILE")) if os.getenv("CUSTOM_DETECTOR_FILE") else None
 
 # Lizard Toepad model files
-# YOLO-OBB 2-class model: bot_finger, bot_toe (use flip inference for up_finger, up_toe)
-TOEPAD_YOLO_MODEL = os.getenv("TOEPAD_YOLO_MODEL", "../models/lizard-toe-pad/yolo_obb_2class.pt")
-TOEPAD_TOE_PREDICTOR = os.getenv("TOEPAD_TOE_PREDICTOR", "../models/lizard-toe-pad/toe_predictor_yolo_bbox.dat")
-TOEPAD_SCALE_PREDICTOR = os.getenv("TOEPAD_SCALE_PREDICTOR", "../models/lizard-toe-pad/lizard_scale.dat")
-TOEPAD_FINGER_PREDICTOR = os.getenv("TOEPAD_FINGER_PREDICTOR", "../models/lizard-toe-pad/finger_predictor_yolo_bbox.dat")
+# YOLO-OBB 6-class model: bot_finger, bot_toe (use flip inference for up_finger, up_toe)
+TOEPAD_YOLO_MODEL = get_model_path(os.getenv("TOEPAD_YOLO_MODEL", "../models/lizard-toe-pad/yolo_obb_6class_h7.onnx"))
+TOEPAD_TOE_PREDICTOR = get_model_path(os.getenv("TOEPAD_TOE_PREDICTOR", "../models/lizard-toe-pad/toe_predictor_obb.dat"))
+TOEPAD_SCALE_PREDICTOR = get_model_path(os.getenv("TOEPAD_SCALE_PREDICTOR", "../models/lizard-toe-pad/lizard_scale.dat"))
+TOEPAD_FINGER_PREDICTOR = get_model_path(os.getenv("TOEPAD_FINGER_PREDICTOR", "../models/lizard-toe-pad/finger_predictor_obb.dat"))
+ID_EXTRACTOR_MODEL = get_model_path(os.getenv("ID_EXTRACTOR_MODEL", "../models/lizard-toe-pad/yolo_obb_6class_h7.onnx"))
 
 
 
 # Default predictor file (fallback)
-predictor_file = os.getenv("PREDICTOR_FILE", "../models/lizard-x-ray/better_predictor_auto.dat")
+predictor_file = get_model_path(os.getenv("PREDICTOR_FILE", "../models/lizard-x-ray/better_predictor_auto.dat"))
 
 # Webhook configuration
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "your-webhook-secret-here")
@@ -87,9 +93,22 @@ def get_cached_yolo_model():
         if TOEPAD_YOLO_MODEL and os.path.exists(TOEPAD_YOLO_MODEL):
             from ultralytics import YOLO
             logger.info(f"Loading YOLO model: {TOEPAD_YOLO_MODEL}")
-            _cached_yolo_model = YOLO(TOEPAD_YOLO_MODEL)
+            _cached_yolo_model = YOLO(TOEPAD_YOLO_MODEL, task="obb")
             logger.info("YOLO model loaded and cached")
     return _cached_yolo_model
+
+_cached_id_model = None
+
+def get_cached_id_model():
+    """Get cached ID extractor YOLO model, loading it on first call."""
+    global _cached_id_model
+    if _cached_id_model is None:
+        if ID_EXTRACTOR_MODEL and os.path.exists(ID_EXTRACTOR_MODEL):
+            from ultralytics import YOLO
+            logger.info(f"Loading ID extractor model: {ID_EXTRACTOR_MODEL}")
+            _cached_id_model = YOLO(ID_EXTRACTOR_MODEL, task="obb")
+            logger.info("ID extractor model loaded and cached")
+    return _cached_id_model
 
 # Cache dlib predictors at startup to avoid reloading on each request
 _cached_dlib_predictors = {}
@@ -111,6 +130,97 @@ def get_cached_dlib_predictors():
         except ImportError:
             logger.warning("dlib not installed, skipping predictor caching")
     return _cached_dlib_predictors
+
+
+def _supplement_client_annotations_with_yolo(client_ann, image_path, yolo_model):
+    """Supplement client annotations with backend YOLO detections for ruler/id.
+
+    The frontend ONNX model may not detect all classes (e.g., ruler, id).
+    This function runs the backend YOLO model and adds any missing ruler/id
+    detections to the client annotations.
+    """
+    if not yolo_model:
+        return client_ann
+
+    bounding_boxes = client_ann.get("bounding_boxes", [])
+    has_ruler = any(
+        "ruler" in b.get("label", "").lower() or "scale" in b.get("label", "").lower()
+        for b in bounding_boxes
+    )
+    has_id = any(b.get("label", "").lower() == "id" for b in bounding_boxes)
+
+    if has_ruler and has_id:
+        return client_ann
+
+    try:
+        import numpy as np
+        import cv2
+        from PIL import Image as PILImage
+
+        PILImage.MAX_IMAGE_PIXELS = None
+        img_pil = PILImage.open(image_path)
+        if img_pil.mode != "RGB":
+            img_pil = img_pil.convert("RGB")
+        img_bgr = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+        h_img, w_img = img_bgr.shape[:2]
+
+        YOLO_MAX_DIM = 4096
+        max_dim = max(w_img, h_img)
+        if max_dim > YOLO_MAX_DIM:
+            ds = YOLO_MAX_DIM / max_dim
+            small = cv2.resize(img_bgr, (int(w_img * ds), int(h_img * ds)), interpolation=cv2.INTER_AREA)
+        else:
+            small = img_bgr
+            ds = 1.0
+        inv_scale = 1.0 / ds
+
+        small_rgb = PILImage.fromarray(cv2.cvtColor(small, cv2.COLOR_BGR2RGB))
+        results = yolo_model(small_rgb, conf=0.25, imgsz=1280, device="cpu", verbose=False)
+        res = results[0]
+
+        if res.obb is None or len(res.obb) == 0:
+            return client_ann
+
+        names = res.names
+        added = []
+        for idx in range(len(res.obb)):
+            cls_name = names[int(res.obb.cls[idx].item())]
+            det_conf = float(res.obb.conf[idx].item())
+            corners_small = res.obb.xyxyxyxy[idx].cpu().numpy().astype(np.float32)
+            corners = corners_small * inv_scale
+
+            is_ruler = "ruler" in cls_name.lower() or "scale" in cls_name.lower()
+            is_id = cls_name.lower() == "id"
+
+            if (is_ruler and not has_ruler) or (is_id and not has_id):
+                xs = corners[:, 0]
+                ys = corners[:, 1]
+                obb_wh = tuple(res.obb.xywhr[idx].tolist()[2:4])
+                bb = {
+                    "left": float(xs.min()),
+                    "top": float(ys.min()),
+                    "width": float(max(obb_wh[0], obb_wh[1]) * inv_scale),
+                    "height": float(min(obb_wh[0], obb_wh[1]) * inv_scale),
+                    "label": cls_name.lower(),
+                    "confidence": det_conf,
+                    "obb_corners": [{"x": float(c[0]), "y": float(c[1])} for c in corners],
+                }
+                added.append(bb)
+                if is_ruler:
+                    has_ruler = True
+                if is_id:
+                    has_id = True
+
+        if added:
+            logger.info(f"Supplemented client annotations with {len(added)} backend YOLO detections: {[b['label'] for b in added]}")
+            bounding_boxes = list(bounding_boxes) + added
+            client_ann = dict(client_ann)
+            client_ann["bounding_boxes"] = bounding_boxes
+
+    except Exception as e:
+        logger.warning(f"Failed to supplement client annotations with YOLO: {e}")
+
+    return client_ann
 
 
 app = Flask(__name__)
@@ -550,6 +660,16 @@ def upload():
         
         logger.info(f"Processing images with view type: {view_type}, predictor: {predictor_file_path}, detector: {detector_file_path}, YOLO: {yolo_model_path}")
 
+        client_annotations_raw = request.form.get("client_annotations")
+        client_annotations_dict = {}
+        if client_annotations_raw:
+            try:
+                ann_list = json.loads(client_annotations_raw)
+                for ann in ann_list:
+                    client_annotations_dict[ann.get("name")] = ann
+            except Exception as e:
+                logger.error(f"Failed to parse client_annotations: {e}")
+
         images = request.files.getlist("image")
         all_data = []
 
@@ -579,9 +699,41 @@ def upload():
                     xml_output_path = os.path.join(
                         session_data["outputs_folder"], f"output_{unique_name}.xml"
                     )
-                    logger.info(f"Generating XML predictions for {unique_name} using YOLO with all predictors")
-                    # Use YOLO-based prediction for toepad, detector-based for others, or original function
-                    if view_type.lower() == "toepad" and yolo_model_path and os.path.exists(yolo_model_path):
+                    
+                    client_ann = client_annotations_dict.get(image.filename)
+                    if client_ann:
+                        logger.info(f"Using client-provided ONNX Web annotations for {unique_name}")
+                        # TEMP DEBUG: dump client_ann to file
+                        try:
+                            import json as _json
+                            with open('/tmp/debug_client_ann.json', 'w') as _f:
+                                _json.dump(client_ann, _f, indent=2)
+                            logger.info(f"DEBUG: Wrote client_ann to /tmp/debug_client_ann.json")
+                        except Exception as _e:
+                            logger.error(f"DEBUG dump failed: {_e}")
+
+                        # Supplement client annotations with backend YOLO for ruler/id
+                        # if the frontend model didn't detect them
+                        client_ann = _supplement_client_annotations_with_yolo(
+                            client_ann, image_path, get_cached_yolo_model()
+                        )
+
+                        utils.predictions_to_xml_single_from_client_annotations(
+                            image_path,
+                            xml_output_path,
+                            client_ann,
+                            toe_predictor_path=TOEPAD_TOE_PREDICTOR,
+                            finger_predictor_path=TOEPAD_FINGER_PREDICTOR,
+                            target_predictor_type=toepad_predictor_type,
+                            cached_dlib_predictors=get_cached_dlib_predictors()
+                        )
+
+                        # Set root and images_e for further processing
+                        import xml.etree.ElementTree as ET
+                        root = ET.parse(xml_output_path).getroot()
+                        images_e = root.findall('.//image')
+                        utils.pretty_xml(root, xml_output_path)
+                    elif view_type.lower() == "toepad" and yolo_model_path and os.path.exists(yolo_model_path):
                         logger.info(f"Using YOLO detection for toepad view: {yolo_model_path}")
                         utils.predictions_to_xml_single_with_yolo(
                             image_path,
@@ -643,6 +795,10 @@ def upload():
                     data["name"] = unique_name
                     data["session_id"] = session_id
                     data["view_type"] = view_type
+                    
+                    if client_ann and "bounding_boxes" in client_ann:
+                        data["bounding_boxes"] = client_ann["bounding_boxes"]
+                        
                     all_data.append(data)
 
                     logger.info(
@@ -1144,20 +1300,47 @@ def save_annotations():
                 for image in root.findall(".//image"):
                     if name in image.get("file", ""):
                         # Found the right image, now update the coordinates
-                        for box in image.findall(".//box"):
+                        boxes = image.findall(".//box")
+                        for box in boxes:
                             # Remove existing parts
                             for part in box.findall("part"):
                                 box.remove(part)
 
-                            # Add new parts based on the provided coordinates
-                            for i, point in enumerate(coords):
-                                if "x" in point and "y" in point:
-                                    part = ET.SubElement(box, "part")
-                                    part.set("name", str(i))
-                                    x_coord = float(point["x"])
-                                    y_coord = float(point["y"])
-                                    part.set("x", str(int(x_coord)))
-                                    part.set("y", str(int(y_coord)))
+                        # Add new parts based on the provided coordinates
+                        for i, point in enumerate(coords):
+                            if "x" not in point or "y" not in point:
+                                continue
+                            
+                            x_coord = float(point["x"])
+                            y_coord = float(point["y"])
+                            
+                            target_box = None
+                            box_idx = point.get("box_idx")
+                            
+                            if box_idx is not None and isinstance(box_idx, int) and 0 <= box_idx < len(boxes):
+                                target_box = boxes[box_idx]
+                            elif len(boxes) > 0:
+                                # Fallback: Find the closest bounding box representing the clicked region
+                                best_dist = float('inf')
+                                for b in boxes:
+                                    top = float(b.get("top", 0))
+                                    left = float(b.get("left", 0))
+                                    width = float(b.get("width", 0))
+                                    height = float(b.get("height", 0))
+                                    cx = left + width / 2.0
+                                    cy = top + height / 2.0
+                                    dist = (x_coord - cx)**2 + (y_coord - cy)**2
+                                    if dist < best_dist:
+                                        best_dist = dist
+                                        target_box = b
+                            
+                            if target_box is not None:
+                                part = ET.SubElement(target_box, "part")
+                                # Try to use the original landmark ID, fallback to sequential order
+                                landmark_id = point.get("landmark_id", len(target_box.findall("part")))
+                                part.set("name", str(landmark_id))
+                                part.set("x", str(int(x_coord)))
+                                part.set("y", str(int(y_coord)))
 
                 # Save the updated XML
                 utils.pretty_xml(root, xml_path)
@@ -1593,19 +1776,35 @@ def extract_id():
         session_id = get_session_id()
         session_data = get_session_folders(session_id)
         
-        # Look for image in upload folder
-        image_path = os.path.join(session_data["upload_folder"], image_filename)
-        if not os.path.exists(image_path):
+        # Look for image in session folders
+        image_path = None
+        for folder_key in ["upload_folder", "processed_folder"]:
+            if folder_key in session_data and session_data[folder_key]:
+                potential_path = os.path.join(session_data[folder_key], image_filename)
+                if os.path.exists(potential_path):
+                    image_path = potential_path
+                    break
+                    
+        # If not found, check outputs folder which has subdirectories
+        if not image_path and "outputs_folder" in session_data and session_data["outputs_folder"]:
+            outputs_dir = session_data["outputs_folder"]
+            # Walk through subdirectories to find the image
+            for root, dirs, files in os.walk(outputs_dir):
+                if image_filename in files:
+                    image_path = os.path.join(root, image_filename)
+                    break
+        
+        if not image_path:
              # Try absolute path if provided (for testing primarily)
              if os.path.exists(image_filename):
                  image_path = image_filename
              else:
                  return jsonify({"error": f"Image not found: {image_filename}"}), 404
 
-        # Use cached YOLO model
-        model = get_cached_yolo_model()
+        # Use cached ID Extractor model
+        model = get_cached_id_model()
         if model is None:
-            return jsonify({"error": "YOLO model not found or failed to load"}), 500
+            return jsonify({"error": "ID Extractor model not found or failed to load"}), 500
         
         # Run inference
         # Use CPU device explicitly
@@ -1630,21 +1829,63 @@ def extract_id():
             elif 3 in class_names:
                 id_class_id = 3
         
-        logger.info(f"ID class detection: id_class_id={id_class_id}, class_names={class_names}")
+        logger.info(f"ID class detection configured: id_class_id={id_class_id}, class_names={class_names}")
         
-        for result in results:
-             if result.boxes:
-                for box in result.boxes:
-                    # Filter for ID class boxes only (if ID class is known)
-                    box_class_id = int(box.cls[0].cpu().numpy())
+        for idx, result in enumerate(results):
+             logger.info(f"YOLO Inference result {idx}: has_boxes={result.boxes is not None}, has_obb={result.obb is not None if hasattr(result, 'obb') else False}")
+             
+             if hasattr(result, 'obb') and result.obb is not None and len(result.obb) > 0:
+                for det_idx in range(len(result.obb)):
+                    box_class_id = int(result.obb.cls[det_idx].item())
+                    box_conf = float(result.obb.conf[det_idx].item())
+                    logger.info(f"  OBB Det {det_idx}: class={box_class_id} ({class_names.get(box_class_id, 'unknown')}), conf={box_conf:.3f}")
+                    
+                    # Filter for ID class boxes only
                     if id_class_id is not None and box_class_id != id_class_id:
                         continue
+                        
+                    logger.info(f"  -> Found ID candidate text box (OBB)!")
+                    
+                    # Get normalized coordinates for cropping logic
+                    obb_features = result.obb.xywhr[det_idx].cpu().numpy()
+                    x_c_unnorm, y_c_unnorm, w_unnorm, h_unnorm = obb_features[0], obb_features[1], obb_features[2], obb_features[3]
+                    
+                    orig_h, orig_w = result.orig_shape
+                    # Normalize manually
+                    x_c = x_c_unnorm / orig_w
+                    y_c = y_c_unnorm / orig_h
+                    w_norm = w_unnorm / orig_w
+                    h_norm = h_unnorm / orig_h
+                    
+                    logger.info(f"  -> Cropping coords normalized: xywh=({x_c:.3f}, {y_c:.3f}, {w_norm:.3f}, {h_norm:.3f})")
+                    extraction_result = id_extractor.extract_id_from_image(image_path, (x_c, y_c, w_norm, h_norm))
+                    logger.info(f"  -> Extractor result: {extraction_result}")
+                    
+                    if 'error' not in extraction_result and extraction_result.get('id'):
+                        # Simple logic: prefer higher confidence
+                        if extraction_result['confidence'] > best_conf:
+                            best_conf = extraction_result['confidence']
+                            best_id_candidate = extraction_result['id']
+             
+             elif result.boxes is not None and len(result.boxes) > 0:
+                for det_idx, box in enumerate(result.boxes):
+                    box_class_id = int(box.cls[0].cpu().numpy())
+                    box_conf = float(box.conf[0].cpu().numpy())
+                    logger.info(f"  Box Det {det_idx}: class={box_class_id} ({class_names.get(box_class_id, 'unknown')}), conf={box_conf:.3f}")
+                    
+                    # Filter for ID class boxes only
+                    if id_class_id is not None and box_class_id != id_class_id:
+                        continue
+                        
+                    logger.info(f"  -> Found ID candidate text box!")
                     
                     # Get normalized coordinates for cropping logic
                     # xywhn returns normalized x_center, y_center, width, height
-                    x_c, y_c, w, h = box.xywhn[0].cpu().numpy()
+                    x_c, y_c, w_norm, h_norm = box.xywhn[0].cpu().numpy()
                     
-                    extraction_result = id_extractor.extract_id_from_image(image_path, (x_c, y_c, w, h))
+                    logger.info(f"  -> Cropping coords normalized: xywh=({x_c:.3f}, {y_c:.3f}, {w_norm:.3f}, {h_norm:.3f})")
+                    extraction_result = id_extractor.extract_id_from_image(image_path, (x_c, y_c, w_norm, h_norm))
+                    logger.info(f"  -> Extractor result: {extraction_result}")
                     
                     if 'error' not in extraction_result and extraction_result.get('id'):
                         # Simple logic: prefer higher confidence
@@ -1653,12 +1894,14 @@ def extract_id():
                             best_id_candidate = extraction_result['id']
                             
         if best_id_candidate:
+             logger.info(f"SUCCESS: best_id_candidate={best_id_candidate}")
              return jsonify({
                  "success": True,
                  "id": best_id_candidate,
                  "confidence": best_conf
              })
         else:
+            logger.warning("FAILED: No ID found in image after examining all YOLO OBB detections.")
             return jsonify({
                 "success": False,
                 "error": "No ID found in image"

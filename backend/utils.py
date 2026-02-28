@@ -725,7 +725,7 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
     model = cached_yolo_model
     if model is None and yolo_model_path and os.path.exists(yolo_model_path):
         print(f"Loading YOLO model from: {yolo_model_path}")
-        model = YOLO(yolo_model_path)
+        model = YOLO(yolo_model_path, task="obb")
 
     if model is not None:
         try:
@@ -802,9 +802,9 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                 return box_xml
 
             # --- Collect all detections first ---
-            detections = {'bot_finger': [], 'bot_toe': [], 'up_finger': [], 'up_toe': [], 'scale': []}
+            detections = {'bot_finger': [], 'bot_toe': [], 'up_finger': [], 'up_toe': [], 'scale': [], 'id': []}
 
-            # Pass 1: Standard inference (bot_finger, bot_toe, scale)
+            # Pass 1: Standard inference (bot_finger, bot_toe, scale, id, up)
             print(f"\n--- Standard inference pass ---")
             if res.obb is not None and len(res.obb) > 0:
                 print(f"OBB detections: {len(res.obb)}")
@@ -819,6 +819,20 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
 
                     if 'ruler' in cls_name.lower() or 'scale' in cls_name.lower():
                         detections['scale'].append({'conf': det_conf, 'corners': corners, 'obb_wh': tuple(res.obb.xywhr[idx].tolist()[2:4])})
+                    elif 'bot_finger' in cls_name.lower():
+                        detections['bot_finger'].append({'conf': det_conf, 'corners': corners})
+                    elif 'bot_toe' in cls_name.lower():
+                        detections['bot_toe'].append({'conf': det_conf, 'corners': corners})
+                    elif 'up_finger' in cls_name.lower():
+                        corners_flipped = np.copy(corners)
+                        corners_flipped[:, 1] = h_img - 1 - corners_flipped[:, 1]
+                        detections['up_finger'].append({'conf': det_conf, 'corners': corners_flipped})
+                    elif 'up_toe' in cls_name.lower():
+                        corners_flipped = np.copy(corners)
+                        corners_flipped[:, 1] = h_img - 1 - corners_flipped[:, 1]
+                        detections['up_toe'].append({'conf': det_conf, 'corners': corners_flipped})
+                    elif cls_name.lower() == 'id':
+                        detections['id'].append({'conf': det_conf, 'corners': corners})
                     elif cls_id == 0:
                         detections['bot_finger'].append({'conf': det_conf, 'corners': corners})
                     elif cls_id == 1:
@@ -842,9 +856,13 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     corners_small = res_flipped.obb.xyxyxyxy[idx].cpu().numpy().astype(np.float32)
                     corners_flipped = corners_small * inv_scale # This is coords in FLIPPED image
 
-                    if cls_id == 0: # bot_finger in flipped -> up_finger
+                    if 'bot_finger' in cls_name.lower(): # bot_finger in flipped -> up_finger
                         detections['up_finger'].append({'conf': det_conf, 'corners': corners_flipped})
-                    elif cls_id == 1: # bot_toe in flipped -> up_toe
+                    elif 'bot_toe' in cls_name.lower(): # bot_toe in flipped -> up_toe
+                        detections['up_toe'].append({'conf': det_conf, 'corners': corners_flipped})
+                    elif cls_id == 0:
+                        detections['up_finger'].append({'conf': det_conf, 'corners': corners_flipped})
+                    elif cls_id == 1:
                         detections['up_toe'].append({'conf': det_conf, 'corners': corners_flipped})
 
             # --- Process best detections ---
@@ -881,35 +899,60 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     pixels_per_mm = ruler_pixel_width / total_length_mm
                     offset_pixels = pixels_per_mm * 1.0
 
-                    center_y = detected_rect.top() + detected_rect.height() / 2.0
-                    left_x = detected_rect.left() + offset_pixels
-                    right_x = detected_rect.right() - offset_pixels
-                    left_x = np.clip(left_x, detected_rect.left(), detected_rect.right())
-                    right_x = np.clip(right_x, detected_rect.left(), detected_rect.right())
+                    # OBB corners are (4, 2). Find the short edges to get the long axis endpoints.
+                    corners = best_det['corners']
+                    dist01 = np.linalg.norm(corners[0] - corners[1])
+                    dist12 = np.linalg.norm(corners[1] - corners[2])
                     
-                    part0 = create_part(float(left_x), float(center_y), 0)
-                    part1 = create_part(float(right_x), float(center_y), 1)
+                    if dist01 < dist12:
+                        mid1 = (corners[0] + corners[1]) / 2.0
+                        mid2 = (corners[2] + corners[3]) / 2.0
+                    else:
+                        mid1 = (corners[1] + corners[2]) / 2.0
+                        mid2 = (corners[3] + corners[0]) / 2.0
+
+                    if mid1[0] > mid2[0]:
+                        mid1, mid2 = mid2, mid1
+
+                    vec = mid2 - mid1
+                    length = np.linalg.norm(vec)
+                    direction = vec / length if length > 0 else np.array([1.0, 0.0])
+
+                    pt1 = mid1 + direction * offset_pixels
+                    pt2 = mid2 - direction * offset_pixels
+
+                    # Use IDs 17 and 18 for scale bar to avoid conflicting with toe/finger landmarks (0-16)
+                    part0 = create_part(float(pt1[0]), float(pt1[1]), 17)
+                    part1 = create_part(float(pt2[0]), float(pt2[1]), 18)
                     box_xml.append(part0)
                     box_xml.append(part1)
                     image_e.append(box_xml)
                     obj_count += 1
 
+                elif category == 'id':
+                    corners = best_det['corners']
+                    xs, ys = [c[0] for c in corners], [c[1] for c in corners]
+                    detected_rect = dlib.rectangle(int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys)))
+                    box_xml = ET.Element("box")
+                    box_xml.set("top", str(int(detected_rect.top())))
+                    box_xml.set("left", str(int(detected_rect.left())))
+                    box_xml.set("width", str(int(detected_rect.width())))
+                    box_xml.set("height", str(int(detected_rect.height())))
+                    box_xml.set("label", "id")
+                    image_e.append(box_xml)
+                    obj_count += 1
+                    
                 elif category in ['bot_finger', 'bot_toe']:
-                    # Filter by target_predictor_type
-                    if target_predictor_type and target_predictor_type.lower() not in category:
-                         continue
-
-                    curr_predictor = predictors.get('finger') if 'finger' in category else predictors.get('toe')
-                    if curr_predictor:
-                         landmarks_global = _predict_on_crop(curr_predictor, img_raw_bgr, best_det['corners'])
-                         image_e.append(_generate_landmark_xml(landmarks_global))
-                         obj_count += 1
+                     curr_predictor = predictors.get('finger') if 'finger' in category else predictors.get('toe')
+                     print(f"DEBUG {category}: predictors={list(predictors.keys())}, curr_predictor={'FOUND' if curr_predictor else 'NONE'}")
+                     if curr_predictor:
+                          landmarks_global = _predict_on_crop(curr_predictor, img_raw_bgr, best_det['corners'])
+                          image_e.append(_generate_landmark_xml(landmarks_global))
+                          obj_count += 1
+                     else:
+                          print(f"WARNING: No predictor for {category}, SKIPPING!")
 
                 elif category in ['up_finger', 'up_toe']:
-                    # Filter by target_predictor_type
-                    if target_predictor_type and target_predictor_type.lower() not in category:
-                         continue
-
                     # Load flipped image if not already loaded
                     if flipped_bgr is None:
                         flipped_bgr = cv2.flip(img_raw_bgr, 0)
@@ -1323,3 +1366,237 @@ def natural_sort_XY(l):
     convert = lambda text: int(text) if text.isdigit() else 0 
     alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key) ] 
     return sorted(l, key = alphanum_key)
+
+def predictions_to_xml_single_from_client_annotations(image_path: str, output: str,
+                                        client_ann: dict,
+                                        toe_predictor_path: str = None,
+                                        finger_predictor_path: str = None,
+                                        scale_bar_length_mm: float = 10.0,
+                                        target_predictor_type: str = None,
+                                        cached_dlib_predictors: dict = None):
+    import dlib
+    import cv2
+    import numpy as np
+    import xml.etree.ElementTree as ET
+    from xml.dom import minidom
+
+    predictors = {}
+    if cached_dlib_predictors:
+        if 'toe' in cached_dlib_predictors:
+            predictors['toe'] = cached_dlib_predictors['toe']
+        if 'finger' in cached_dlib_predictors:
+            predictors['finger'] = cached_dlib_predictors['finger']
+    else:
+        if toe_predictor_path and os.path.exists(toe_predictor_path):
+            predictors['toe'] = dlib.shape_predictor(toe_predictor_path)
+        if finger_predictor_path and os.path.exists(finger_predictor_path):
+            predictors['finger'] = dlib.shape_predictor(finger_predictor_path)
+
+    if not predictors:
+        raise ValueError("At least one predictor (toe or finger) must be provided")
+
+    root, images_e = initialize_xml()
+    image_e = ET.Element('image')
+    image_e.set('file', str(image_path))
+    
+    img_raw_bgr = cv2.imread(image_path)
+    if img_raw_bgr is None:
+        raise ValueError(f"Could not read image: {image_path}")
+    h_img, w_img = img_raw_bgr.shape[:2]
+
+    flipped_bgr = None
+    obj_count = 0
+    padding_ratio = 0.3
+
+    def _get_padded_crop(img_bgr, corners_orig):
+        """Crop padded bbox from full-res image, return (crop_rgb, x_off, y_off)."""
+        x, y, bw, bh = cv2.boundingRect(corners_orig.astype(np.int32))
+        ih, iw = img_bgr.shape[:2]
+        px = int(bw * padding_ratio)
+        py = int(bh * padding_ratio)
+        x1 = max(0, x - px)
+        y1 = max(0, y - py)
+        x2 = min(iw, x + bw + px)
+        y2 = min(ih, y + bh + py)
+        crop = img_bgr[y1:y2, x1:x2]
+        crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+        crop_rgb = np.ascontiguousarray(crop_rgb, dtype=np.uint8)
+        return crop_rgb, x1, y1
+
+    def _predict_on_crop(curr_predictor, img_bgr, corners_orig):
+        """Run dlib predictor on a cropped region, return landmarks in original coords."""
+        crop_rgb, x_off, y_off = _get_padded_crop(img_bgr, corners_orig)
+        crop_h, crop_w = crop_rgb.shape[:2]
+        rect = dlib.rectangle(0, 0, crop_w, crop_h)
+        shape = curr_predictor(crop_rgb, rect)
+        points = []
+        for k in range(shape.num_parts):
+            p = shape.part(k)
+            points.append((float(p.x + x_off), float(p.y + y_off)))
+        return np.array(points, dtype=float)
+
+    def _generate_landmark_xml(landmarks_global):
+        """Generate XML box element from landmark coordinates."""
+        min_lx, min_ly = np.min(landmarks_global, axis=0)
+        max_lx, max_ly = np.max(landmarks_global, axis=0)
+        bbox_w = max_lx - min_lx
+        bbox_h = max_ly - min_ly
+
+        box_xml = ET.Element('box')
+        box_xml.set('top', str(int(min_ly)))
+        box_xml.set('left', str(int(min_lx)))
+        box_xml.set('width', str(int(bbox_w)))
+        box_xml.set('height', str(int(bbox_h)))
+
+        for pt_i, point in enumerate(landmarks_global):
+            part = ET.SubElement(box_xml, 'part')
+            part.set('name', str(pt_i))
+            part.set('x', str(int(point[0])))
+            part.set('y', str(int(point[1])))
+        return box_xml
+
+    bounding_boxes = client_ann.get("bounding_boxes", [])
+    
+    # Sort by confidence descending
+    if any('confidence' in b for b in bounding_boxes):
+        bounding_boxes.sort(key=lambda x: x.get('confidence', 0), reverse=True)
+        
+    # Categorize best boxes
+    detections = {'bot_finger': [], 'bot_toe': [], 'up_finger': [], 'up_toe': [], 'scale': [], 'id': []}
+    
+    for box in bounding_boxes:
+        label = box.get('label', '').lower()
+        if 'obb_corners' not in box:
+            continue
+            
+        obb = box['obb_corners']
+        corners = np.array([[pt['x'], pt['y']] for pt in obb], dtype=np.float32)
+        det_conf = box.get('confidence', 0)
+        
+        if 'ruler' in label or 'scale' in label:
+            detections['scale'].append({'conf': det_conf, 'corners': corners, 'obb_wh': (box['width'], box['height'])})
+        elif 'bot_finger' in label:
+            detections['bot_finger'].append({'conf': det_conf, 'corners': corners})
+        elif 'bot_toe' in label:
+            detections['bot_toe'].append({'conf': det_conf, 'corners': corners})
+        elif 'up_finger' in label:
+            # NOTE: Frontend (OnnxService) converts up_finger corners BACK to original image space.
+            # Do NOT re-flip here. We will flip at crop time.
+            detections['up_finger'].append({'conf': det_conf, 'corners': corners})
+        elif 'up_toe' in label:
+            # NOTE: Frontend (OnnxService) converts up_toe corners BACK to original image space.
+            # Do NOT re-flip here. We will flip at crop time.
+            detections['up_toe'].append({'conf': det_conf, 'corners': corners})
+        elif label == 'id':
+            detections['id'].append({'conf': det_conf, 'corners': corners})
+
+    for category, det_list in detections.items():
+        if not det_list:
+            continue
+            
+        best_det = det_list[0]
+        try:
+            if category == 'scale':
+                corners = best_det['corners']
+                xs = [c[0] for c in corners]
+                ys = [c[1] for c in corners]
+                x1s, y1s, x2s, y2s = min(xs), min(ys), max(xs), max(ys)
+                detected_rect = dlib.rectangle(int(x1s), int(y1s), int(x2s), int(y2s))
+
+                box_xml = ET.Element("box")
+                box_xml.set("top", str(int(detected_rect.top())))
+                box_xml.set("left", str(int(detected_rect.left())))
+                box_xml.set("width", str(int(detected_rect.width())))
+                box_xml.set("height", str(int(detected_rect.height())))
+                
+                obb_wh = best_det['obb_wh']
+                ruler_pixel_width = max(obb_wh[0], obb_wh[1])
+                total_length_mm = scale_bar_length_mm + 2.0
+                pixels_per_mm = ruler_pixel_width / total_length_mm
+                offset_pixels = pixels_per_mm * 1.0
+
+                dist01 = np.linalg.norm(corners[0] - corners[1])
+                dist12 = np.linalg.norm(corners[1] - corners[2])
+                
+                if dist01 < dist12:
+                    mid1 = (corners[0] + corners[1]) / 2.0
+                    mid2 = (corners[2] + corners[3]) / 2.0
+                else:
+                    mid1 = (corners[1] + corners[2]) / 2.0
+                    mid2 = (corners[3] + corners[0]) / 2.0
+
+                if mid1[0] > mid2[0]:
+                    mid1, mid2 = mid2, mid1
+
+                vec = mid2 - mid1
+                length = np.linalg.norm(vec)
+                direction = vec / length if length > 0 else np.array([1.0, 0.0])
+
+                pt1 = mid1 + direction * offset_pixels
+                pt2 = mid2 - direction * offset_pixels
+
+                part0 = create_part(float(pt1[0]), float(pt1[1]), 17)
+                part1 = create_part(float(pt2[0]), float(pt2[1]), 18)
+                box_xml.append(part0)
+                box_xml.append(part1)
+                image_e.append(box_xml)
+                obj_count += 1
+
+            elif category == 'id':
+                corners = best_det['corners']
+                xs, ys = [c[0] for c in corners], [c[1] for c in corners]
+                detected_rect = dlib.rectangle(int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys)))
+                box_xml = ET.Element("box")
+                box_xml.set("top", str(int(detected_rect.top())))
+                box_xml.set("left", str(int(detected_rect.left())))
+                box_xml.set("width", str(int(detected_rect.width())))
+                box_xml.set("height", str(int(detected_rect.height())))
+                box_xml.set("label", "id")
+                image_e.append(box_xml)
+                obj_count += 1
+                
+            elif category in ['bot_finger', 'bot_toe']:
+                curr_predictor = predictors.get('finger') if 'finger' in category else predictors.get('toe')
+                if curr_predictor:
+                     landmarks_global = _predict_on_crop(curr_predictor, img_raw_bgr, best_det['corners'])
+                     image_e.append(_generate_landmark_xml(landmarks_global))
+                     obj_count += 1
+
+            elif category in ['up_finger', 'up_toe']:
+                if flipped_bgr is None:
+                    flipped_bgr = cv2.flip(img_raw_bgr, 0)
+                
+                curr_predictor = predictors.get('finger') if 'finger' in category else predictors.get('toe')
+                if curr_predictor:
+                     # corners are in original image space (frontend already unflipped them).
+                     # To crop from flipped_bgr, we need to flip y coords.
+                     corners_for_crop = np.copy(best_det['corners'])
+                     corners_for_crop[:, 1] = h_img - 1 - corners_for_crop[:, 1]
+                     crop_rgb, x_off, y_off = _get_padded_crop(flipped_bgr, corners_for_crop)
+                     crop_h, crop_w = crop_rgb.shape[:2]
+                     rect = dlib.rectangle(0, 0, crop_w, crop_h)
+                     shape = curr_predictor(crop_rgb, rect)
+                     
+                     points = []
+                     for k in range(shape.num_parts):
+                         p = shape.part(k)
+                         points.append((float(p.x + x_off), float(h_img - 1 - (p.y + y_off))))
+                     
+                     landmarks_global = np.array(points, dtype=float)
+                     image_e.append(_generate_landmark_xml(landmarks_global))
+                     obj_count += 1
+
+        except Exception as e:
+            import traceback
+            print(f"Error processing client_ann detection category={category}: {e}")
+            traceback.print_exc()
+
+    images_e.append(image_e)
+    if output:
+         tree = ET.ElementTree(root)
+         minidom_xml = minidom.parseString(ET.tostring(root)).toprettyxml(indent="   ")
+         with open(output, "w") as f:
+             f.write(minidom_xml)
+             
+    return obj_count
+

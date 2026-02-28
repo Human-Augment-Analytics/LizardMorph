@@ -92,8 +92,8 @@ export class MainView extends Component<MainProps, MainState> {
     lizardCount: 0,
     zoomTransform: d3.zoomIdentity,
     scaleSettings: {
-      pointAId: 0,
-      pointBId: 1,
+      pointAId: 17,
+      pointBId: 18,
       value: 10,
       units: "mm",
     },
