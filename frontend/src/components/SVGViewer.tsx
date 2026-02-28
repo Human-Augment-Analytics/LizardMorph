@@ -54,7 +54,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   state: SVGViewerState = {
     hintDismissed: false,
     landmarkSize: 2,
-    showBoundingBoxes: false,
+    showBoundingBoxes: true,
     showControls: false
   };
   
@@ -291,14 +291,23 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           .domain([0.5, this.props.imageHeight + 0.5])
           .range([0, height]);
         
-        // Color scheme for different box types (toe, finger, scale)
-        const boxColors = ['#00ff00', '#0088ff', '#ff8800']; // Green, Blue, Orange
+        // Color scheme based on class label
+        const labelColors: Record<string, string> = {
+          'bot_finger': '#00ff00', 'up_finger': '#00cc00', 'finger': '#00ff00', 'toe/finger': '#00ff00',
+          'bot_toe': '#0088ff', 'up_toe': '#0066dd', 'toe': '#0088ff',
+          'ruler': '#ff8800', 'scale': '#ff8800',
+          'id': '#cc44ff',
+        };
+        const defaultColor = '#ffffff';
         
         this.props.boundingBoxes.forEach((bbox, index) => {
           const scaledX = scaleX(bbox.left);
           const scaledY = scaleY(bbox.top);
           const scaledWidth = scaleX(bbox.width);
           const scaledHeight = scaleY(bbox.height);
+          
+          const label = (bbox.label || '').toLowerCase();
+          const color = labelColors[label] || defaultColor;
           
           // Calculate coverage for logging
           const boxArea = bbox.width * bbox.height;
@@ -308,22 +317,68 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           console.log(`Rendering bounding box ${index}:`, {
             original: { left: bbox.left, top: bbox.top, width: bbox.width, height: bbox.height },
             scaled: { x: scaledX, y: scaledY, width: scaledWidth, height: scaledHeight },
-            coverage: `${(coverageRatio * 100).toFixed(1)}%`
+            coverage: `${(coverageRatio * 100).toFixed(1)}%`,
+            label: bbox.label || 'unknown'
           });
           
-          // Draw rectangle for bounding box
-          bboxGroup
-            .append("rect")
-            .attr("x", scaledX)
-            .attr("y", scaledY)
-            .attr("width", scaledWidth)
-            .attr("height", scaledHeight)
-            .attr("fill", "none")
-            .attr("stroke", boxColors[index % boxColors.length])
-            .attr("stroke-width", 3)
-            .attr("stroke-dasharray", "8,4")
-            .attr("opacity", 0.9)
-            .style("pointer-events", "none");
+          if (bbox.obb_corners && bbox.obb_corners.length === 4) {
+            // Draw rotated bounding box via polygon
+            const pointsString = bbox.obb_corners.map(p => `${scaleX(p.x)},${scaleY(p.y)}`).join(" ");
+            bboxGroup
+              .append("polygon")
+              .attr("points", pointsString)
+              .attr("fill", "none")
+              .attr("stroke", color)
+              .attr("stroke-width", 3)
+              .attr("stroke-dasharray", "8,4")
+              .attr("opacity", 0.9)
+              .style("pointer-events", "none");
+            
+            // Add label text near the first corner of the OBB
+            if (bbox.label) {
+              const firstCorner = bbox.obb_corners[0];
+              bboxGroup
+                .append("text")
+                .attr("x", scaleX(firstCorner.x))
+                .attr("y", scaleY(firstCorner.y) - 4)
+                .text(bbox.label)
+                .attr("fill", color)
+                .attr("font-size", "11px")
+                .attr("font-weight", "bold")
+                .attr("stroke", "black")
+                .attr("stroke-width", "0.5px")
+                .style("pointer-events", "none");
+            }
+          } else {
+            // Draw axis-aligned bounding box
+            bboxGroup
+              .append("rect")
+              .attr("x", scaledX)
+              .attr("y", scaledY)
+              .attr("width", scaledWidth)
+              .attr("height", scaledHeight)
+              .attr("fill", "none")
+              .attr("stroke", color)
+              .attr("stroke-width", 3)
+              .attr("stroke-dasharray", "8,4")
+              .attr("opacity", 0.9)
+              .style("pointer-events", "none");
+            
+            // Add label text above the box
+            if (bbox.label) {
+              bboxGroup
+                .append("text")
+                .attr("x", scaledX)
+                .attr("y", scaledY - 4)
+                .text(bbox.label)
+                .attr("fill", color)
+                .attr("font-size", "11px")
+                .attr("font-weight", "bold")
+                .attr("stroke", "black")
+                .attr("stroke-width", "0.5px")
+                .style("pointer-events", "none");
+            }
+          }
         });
       }
 
@@ -952,28 +1007,50 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
             right: '10px',
             zIndex: 1000,
           }}>
-            {/* Info icon button */}
-            <button
-              onClick={this.toggleControls}
-              style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '50%',
-                background: this.state.showControls ? 'rgba(33, 150, 243, 0.9)' : 'rgba(0,0,0,0.7)',
-                color: 'white',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: '18px',
-                fontWeight: 'bold',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'background 0.2s',
-              }}
-              title="Show/hide controls (keyboard shortcuts info)"
-            >
-              ℹ
-            </button>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              {/* Bounding box toggle */}
+              <button
+                onClick={this.toggleBoundingBoxes}
+                style={{
+                  height: '36px',
+                  padding: '0 12px',
+                  borderRadius: '18px',
+                  background: this.state.showBoundingBoxes ? 'rgba(76, 175, 80, 0.9)' : 'rgba(0,0,0,0.7)',
+                  color: 'white',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '11px',
+                  fontWeight: 'bold',
+                  transition: 'background 0.2s',
+                }}
+                title="Toggle bounding boxes (B)"
+              >
+                Boxes {this.state.showBoundingBoxes ? 'ON' : 'OFF'}
+              </button>
+
+              {/* Info icon button */}
+              <button
+                onClick={this.toggleControls}
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  background: this.state.showControls ? 'rgba(33, 150, 243, 0.9)' : 'rgba(0,0,0,0.7)',
+                  color: 'white',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '18px',
+                  fontWeight: 'bold',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background 0.2s',
+                }}
+                title="Show/hide controls (keyboard shortcuts info)"
+              >
+                ℹ
+              </button>
+            </div>
 
             {/* Expandable controls panel */}
             {this.state.showControls && (
