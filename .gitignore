@@ -46,7 +46,6 @@ backend/landmark_comparison.jpg
 
 # Debug / scratch scripts (stay in backend root, not committed)
 backend/debug_*.py
-backend/visualize_diff.py
 
 # ONNX Web WASM and Scripts
 frontend/onnxruntime-web-local/
