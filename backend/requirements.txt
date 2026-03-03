@@ -16,3 +16,4 @@ ultralytics
 torch
 torchvision
 easyocr
+onnxruntime
