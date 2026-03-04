@@ -87,14 +87,31 @@ logger.info(f"Toepad finger predictor: {TOEPAD_FINGER_PREDICTOR}")
 _cached_yolo_model = None
 
 def get_cached_yolo_model():
-    """Get cached YOLO model, loading it on first call."""
+    """Get cached YOLO model, loading it on first call.
+
+    Uses OrtYoloDetector (INT8 quantized) if USE_ORT_QUANTIZED=true,
+    otherwise falls back to Ultralytics YOLO.
+    """
     global _cached_yolo_model
     if _cached_yolo_model is None:
         if TOEPAD_YOLO_MODEL and os.path.exists(TOEPAD_YOLO_MODEL):
-            from ultralytics import YOLO
-            logger.info(f"Loading YOLO model: {TOEPAD_YOLO_MODEL}")
-            _cached_yolo_model = YOLO(TOEPAD_YOLO_MODEL, task="obb")
-            logger.info("YOLO model loaded and cached")
+            use_ort = os.environ.get("USE_ORT_QUANTIZED", "").lower() in ("true", "1", "yes")
+            if use_ort:
+                from ort_inference import OrtYoloDetector
+                base, ext = os.path.splitext(TOEPAD_YOLO_MODEL)
+                int8_path = f"{base}_int8{ext}"
+                if os.path.exists(int8_path):
+                    logger.info(f"Loading ORT INT8 model: {int8_path}")
+                    _cached_yolo_model = OrtYoloDetector(int8_path)
+                    logger.info("ORT INT8 model loaded and cached")
+                else:
+                    logger.warning(f"INT8 model not found at {int8_path}, falling back to Ultralytics")
+                    use_ort = False
+            if not use_ort:
+                from ultralytics import YOLO
+                logger.info(f"Loading YOLO model: {TOEPAD_YOLO_MODEL}")
+                _cached_yolo_model = YOLO(TOEPAD_YOLO_MODEL, task="obb")
+                logger.info("YOLO model loaded and cached")
     return _cached_yolo_model
 
 _cached_id_model = None

@@ -729,30 +729,37 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
 
     if model is not None:
         try:
-            # Downsample for YOLO detection if image is large
-            YOLO_MAX_DIM = 4096
-            max_dim = max(h_img, w_img)
-            if max_dim > YOLO_MAX_DIM:
-                ds_scale = YOLO_MAX_DIM / max_dim
-                small_bgr = cv2.resize(img_raw_bgr, (int(w_img * ds_scale), int(h_img * ds_scale)),
-                                       interpolation=cv2.INTER_AREA)
-                print(f"Downsampled for YOLO: {w_img}x{h_img} -> {small_bgr.shape[1]}x{small_bgr.shape[0]} (scale={ds_scale:.3f})")
-            else:
-                ds_scale = 1.0
-                small_bgr = img_raw_bgr
-            inv_scale = 1.0 / ds_scale
-
-            # Run YOLO on the downsampled image
-            small_rgb_pil = Image.fromarray(cv2.cvtColor(small_bgr, cv2.COLOR_BGR2RGB))
-            results = model(small_rgb_pil, conf=conf_threshold, imgsz=1280, device='cpu', verbose=False)
-            print(f"YOLO model returned {len(results)} result(s)")
-
-            class_names = model.names if hasattr(model, 'names') else {}
-            print(f"YOLO class names: {class_names}")
+            # Check if model is an OrtYoloDetector (direct ONNX Runtime inference)
+            from ort_inference import OrtYoloDetector
+            _is_ort = isinstance(model, OrtYoloDetector)
 
             obj_count = 0
-            res = results[0]
-            names = res.names
+            inv_scale = 1.0  # Default for ORT path (corners already in original coords)
+
+            if not _is_ort:
+                # Ultralytics-specific: downsample, run model, get results object
+                YOLO_MAX_DIM = 4096
+                max_dim = max(h_img, w_img)
+                if max_dim > YOLO_MAX_DIM:
+                    ds_scale = YOLO_MAX_DIM / max_dim
+                    small_bgr = cv2.resize(img_raw_bgr, (int(w_img * ds_scale), int(h_img * ds_scale)),
+                                           interpolation=cv2.INTER_AREA)
+                    print(f"Downsampled for YOLO: {w_img}x{h_img} -> {small_bgr.shape[1]}x{small_bgr.shape[0]} (scale={ds_scale:.3f})")
+                else:
+                    ds_scale = 1.0
+                    small_bgr = img_raw_bgr
+                inv_scale = 1.0 / ds_scale
+
+                # Run YOLO on the downsampled image
+                small_rgb_pil = Image.fromarray(cv2.cvtColor(small_bgr, cv2.COLOR_BGR2RGB))
+                results = model(small_rgb_pil, conf=conf_threshold, imgsz=1280, device='cpu', verbose=False)
+                print(f"YOLO model returned {len(results)} result(s)")
+
+                class_names = model.names if hasattr(model, 'names') else {}
+                print(f"YOLO class names: {class_names}")
+
+                res = results[0]
+                names = res.names
 
             def _get_padded_crop(img_bgr, corners_orig):
                 """Crop padded bbox from full-res image, return (crop_rgb, x_off, y_off)."""
@@ -804,66 +811,72 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
             # --- Collect all detections first ---
             detections = {'bot_finger': [], 'bot_toe': [], 'up_finger': [], 'up_toe': [], 'scale': [], 'id': []}
 
-            # Pass 1: Standard inference (bot_finger, bot_toe, scale, id, up)
-            print(f"\n--- Standard inference pass ---")
-            if res.obb is not None and len(res.obb) > 0:
-                print(f"OBB detections: {len(res.obb)}")
-                for idx in range(len(res.obb)):
-                    cls_id = int(res.obb.cls[idx].item())
-                    det_conf = float(res.obb.conf[idx].item())
-                    if det_conf < conf_threshold:
-                        continue
-                    cls_name = names[cls_id]
-                    corners_small = res.obb.xyxyxyxy[idx].cpu().numpy().astype(np.float32)
-                    corners = corners_small * inv_scale
+            if _is_ort:
+                # ORT path: detector handles preprocessing, dual-pass, and NMS internally
+                detections = model.detect(img_raw_bgr, conf_threshold=conf_threshold)
+                print(f"ORT detections: {[k for k, v in detections.items() if v]}")
+            else:
+                # Ultralytics path: standard + flipped inference passes
+                # Pass 1: Standard inference (bot_finger, bot_toe, scale, id, up)
+                print(f"\n--- Standard inference pass ---")
+                if res.obb is not None and len(res.obb) > 0:
+                    print(f"OBB detections: {len(res.obb)}")
+                    for idx in range(len(res.obb)):
+                        cls_id = int(res.obb.cls[idx].item())
+                        det_conf = float(res.obb.conf[idx].item())
+                        if det_conf < conf_threshold:
+                            continue
+                        cls_name = names[cls_id]
+                        corners_small = res.obb.xyxyxyxy[idx].cpu().numpy().astype(np.float32)
+                        corners = corners_small * inv_scale
 
-                    if 'ruler' in cls_name.lower() or 'scale' in cls_name.lower():
-                        detections['scale'].append({'conf': det_conf, 'corners': corners, 'obb_wh': tuple(res.obb.xywhr[idx].tolist()[2:4])})
-                    elif 'bot_finger' in cls_name.lower():
-                        detections['bot_finger'].append({'conf': det_conf, 'corners': corners})
-                    elif 'bot_toe' in cls_name.lower():
-                        detections['bot_toe'].append({'conf': det_conf, 'corners': corners})
-                    elif 'up_finger' in cls_name.lower():
-                        corners_flipped = np.copy(corners)
-                        corners_flipped[:, 1] = h_img - 1 - corners_flipped[:, 1]
-                        detections['up_finger'].append({'conf': det_conf, 'corners': corners_flipped})
-                    elif 'up_toe' in cls_name.lower():
-                        corners_flipped = np.copy(corners)
-                        corners_flipped[:, 1] = h_img - 1 - corners_flipped[:, 1]
-                        detections['up_toe'].append({'conf': det_conf, 'corners': corners_flipped})
-                    elif cls_name.lower() == 'id':
-                        detections['id'].append({'conf': det_conf, 'corners': corners})
-                    elif cls_id == 0:
-                        detections['bot_finger'].append({'conf': det_conf, 'corners': corners})
-                    elif cls_id == 1:
-                        detections['bot_toe'].append({'conf': det_conf, 'corners': corners})
+                        if 'ruler' in cls_name.lower() or 'scale' in cls_name.lower():
+                            detections['scale'].append({'conf': det_conf, 'corners': corners, 'obb_wh': tuple(res.obb.xywhr[idx].tolist()[2:4])})
+                        elif 'bot_finger' in cls_name.lower():
+                            detections['bot_finger'].append({'conf': det_conf, 'corners': corners})
+                        elif 'bot_toe' in cls_name.lower():
+                            detections['bot_toe'].append({'conf': det_conf, 'corners': corners})
+                        elif 'up_finger' in cls_name.lower():
+                            corners_flipped = np.copy(corners)
+                            corners_flipped[:, 1] = h_img - 1 - corners_flipped[:, 1]
+                            detections['up_finger'].append({'conf': det_conf, 'corners': corners_flipped})
+                        elif 'up_toe' in cls_name.lower():
+                            corners_flipped = np.copy(corners)
+                            corners_flipped[:, 1] = h_img - 1 - corners_flipped[:, 1]
+                            detections['up_toe'].append({'conf': det_conf, 'corners': corners_flipped})
+                        elif cls_name.lower() == 'id':
+                            detections['id'].append({'conf': det_conf, 'corners': corners})
+                        elif cls_id == 0:
+                            detections['bot_finger'].append({'conf': det_conf, 'corners': corners})
+                        elif cls_id == 1:
+                            detections['bot_toe'].append({'conf': det_conf, 'corners': corners})
 
-            # Pass 2: Flipped inference (up_finger, up_toe)
-            print(f"\n--- Flipped inference pass ---")
-            small_flipped = cv2.flip(small_bgr, 0)
-            small_flipped_pil = Image.fromarray(cv2.cvtColor(small_flipped, cv2.COLOR_BGR2RGB))
-            results_flipped = model(small_flipped_pil, conf=conf_threshold, imgsz=1280, device='cpu', verbose=False)
-            res_flipped = results_flipped[0]
+                # Pass 2: Flipped inference (up_finger, up_toe)
+                print(f"\n--- Flipped inference pass ---")
+                small_flipped = cv2.flip(small_bgr, 0)
+                small_flipped_pil = Image.fromarray(cv2.cvtColor(small_flipped, cv2.COLOR_BGR2RGB))
+                results_flipped = model(small_flipped_pil, conf=conf_threshold, imgsz=1280, device='cpu', verbose=False)
+                res_flipped = results_flipped[0]
 
-            if res_flipped.obb is not None and len(res_flipped.obb) > 0:
-                print(f"Flipped OBB detections: {len(res_flipped.obb)}")
-                for idx in range(len(res_flipped.obb)):
-                    cls_id = int(res_flipped.obb.cls[idx].item())
-                    det_conf = float(res_flipped.obb.conf[idx].item())
-                    if det_conf < conf_threshold:
-                        continue
-                    cls_name = names[cls_id]
-                    corners_small = res_flipped.obb.xyxyxyxy[idx].cpu().numpy().astype(np.float32)
-                    corners_flipped = corners_small * inv_scale # This is coords in FLIPPED image
+                if res_flipped.obb is not None and len(res_flipped.obb) > 0:
+                    print(f"Flipped OBB detections: {len(res_flipped.obb)}")
+                    for idx in range(len(res_flipped.obb)):
+                        cls_id = int(res_flipped.obb.cls[idx].item())
+                        det_conf = float(res_flipped.obb.conf[idx].item())
+                        if det_conf < conf_threshold:
+                            continue
+                        cls_name = names[cls_id]
+                        corners_small = res_flipped.obb.xyxyxyxy[idx].cpu().numpy().astype(np.float32)
+                        corners_flipped = corners_small * inv_scale # This is coords in FLIPPED image
 
-                    if 'bot_finger' in cls_name.lower(): # bot_finger in flipped -> up_finger
-                        detections['up_finger'].append({'conf': det_conf, 'corners': corners_flipped})
-                    elif 'bot_toe' in cls_name.lower(): # bot_toe in flipped -> up_toe
-                        detections['up_toe'].append({'conf': det_conf, 'corners': corners_flipped})
-                    elif cls_id == 0:
-                        detections['up_finger'].append({'conf': det_conf, 'corners': corners_flipped})
-                    elif cls_id == 1:
-                        detections['up_toe'].append({'conf': det_conf, 'corners': corners_flipped})
+                        if 'bot_finger' in cls_name.lower(): # bot_finger in flipped -> up_finger
+                            detections['up_finger'].append({'conf': det_conf, 'corners': corners_flipped})
+                        elif 'bot_toe' in cls_name.lower(): # bot_toe in flipped -> up_toe
+                            detections['up_toe'].append({'conf': det_conf, 'corners': corners_flipped})
+                        elif cls_id == 0:
+                            detections['up_finger'].append({'conf': det_conf, 'corners': corners_flipped})
+                        elif cls_id == 1:
+                            detections['up_toe'].append({'conf': det_conf, 'corners': corners_flipped})
 
             # --- Process best detections ---
             flipped_bgr = None # Load lazily if needed
