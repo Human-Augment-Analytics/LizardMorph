@@ -54,7 +54,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   state: SVGViewerState = {
     hintDismissed: false,
     landmarkSize: 2,
-    showBoundingBoxes: false,
+    showBoundingBoxes: true,
     showControls: false
   };
   
@@ -225,12 +225,12 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         // Only calculate scale once per image load
         const scaleX = d3
           .scaleLinear()
-          .domain([0, this.props.imageWidth])
+          .domain([0.5, this.props.imageWidth + 0.5])
           .range([0, width]);
 
         const scaleY = d3
           .scaleLinear()
-          .domain([0, this.props.imageHeight])
+          .domain([0.5, this.props.imageHeight + 0.5])
           .range([0, height]); // Scale the data
         const scaledData = this.props.originalScatterData.map(
           (point: Point) => {
@@ -285,20 +285,29 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         
         // Scale functions for bounding boxes
         const scaleX = d3.scaleLinear()
-          .domain([0, this.props.imageWidth])
+          .domain([0.5, this.props.imageWidth + 0.5])
           .range([0, width]);
         const scaleY = d3.scaleLinear()
-          .domain([0, this.props.imageHeight])
+          .domain([0.5, this.props.imageHeight + 0.5])
           .range([0, height]);
         
-        // Color scheme for different box types (toe, finger, scale)
-        const boxColors = ['#00ff00', '#0088ff', '#ff8800']; // Green, Blue, Orange
+        // Color scheme based on class label
+        const labelColors: Record<string, string> = {
+          'bot_finger': '#00ff00', 'up_finger': '#00cc00', 'finger': '#00ff00', 'toe/finger': '#00ff00',
+          'bot_toe': '#0088ff', 'up_toe': '#0066dd', 'toe': '#0088ff',
+          'ruler': '#ff8800', 'scale': '#ff8800',
+          'id': '#cc44ff',
+        };
+        const defaultColor = '#ffffff';
         
         this.props.boundingBoxes.forEach((bbox, index) => {
           const scaledX = scaleX(bbox.left);
           const scaledY = scaleY(bbox.top);
           const scaledWidth = scaleX(bbox.width);
           const scaledHeight = scaleY(bbox.height);
+          
+          const label = (bbox.label || '').toLowerCase();
+          const color = labelColors[label] || defaultColor;
           
           // Calculate coverage for logging
           const boxArea = bbox.width * bbox.height;
@@ -308,22 +317,68 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           console.log(`Rendering bounding box ${index}:`, {
             original: { left: bbox.left, top: bbox.top, width: bbox.width, height: bbox.height },
             scaled: { x: scaledX, y: scaledY, width: scaledWidth, height: scaledHeight },
-            coverage: `${(coverageRatio * 100).toFixed(1)}%`
+            coverage: `${(coverageRatio * 100).toFixed(1)}%`,
+            label: bbox.label || 'unknown'
           });
           
-          // Draw rectangle for bounding box
-          bboxGroup
-            .append("rect")
-            .attr("x", scaledX)
-            .attr("y", scaledY)
-            .attr("width", scaledWidth)
-            .attr("height", scaledHeight)
-            .attr("fill", "none")
-            .attr("stroke", boxColors[index % boxColors.length])
-            .attr("stroke-width", 3)
-            .attr("stroke-dasharray", "8,4")
-            .attr("opacity", 0.9)
-            .style("pointer-events", "none");
+          if (bbox.obb_corners && bbox.obb_corners.length === 4) {
+            // Draw rotated bounding box via polygon
+            const pointsString = bbox.obb_corners.map(p => `${scaleX(p.x)},${scaleY(p.y)}`).join(" ");
+            bboxGroup
+              .append("polygon")
+              .attr("points", pointsString)
+              .attr("fill", "none")
+              .attr("stroke", color)
+              .attr("stroke-width", 3)
+              .attr("stroke-dasharray", "8,4")
+              .attr("opacity", 0.9)
+              .style("pointer-events", "none");
+            
+            // Add label text near the first corner of the OBB
+            if (bbox.label) {
+              const firstCorner = bbox.obb_corners[0];
+              bboxGroup
+                .append("text")
+                .attr("x", scaleX(firstCorner.x))
+                .attr("y", scaleY(firstCorner.y) - 4)
+                .text(bbox.label)
+                .attr("fill", color)
+                .attr("font-size", "11px")
+                .attr("font-weight", "bold")
+                .attr("stroke", "black")
+                .attr("stroke-width", "0.5px")
+                .style("pointer-events", "none");
+            }
+          } else {
+            // Draw axis-aligned bounding box
+            bboxGroup
+              .append("rect")
+              .attr("x", scaledX)
+              .attr("y", scaledY)
+              .attr("width", scaledWidth)
+              .attr("height", scaledHeight)
+              .attr("fill", "none")
+              .attr("stroke", color)
+              .attr("stroke-width", 3)
+              .attr("stroke-dasharray", "8,4")
+              .attr("opacity", 0.9)
+              .style("pointer-events", "none");
+            
+            // Add label text above the box
+            if (bbox.label) {
+              bboxGroup
+                .append("text")
+                .attr("x", scaledX)
+                .attr("y", scaledY - 4)
+                .text(bbox.label)
+                .attr("fill", color)
+                .attr("font-size", "11px")
+                .attr("font-weight", "bold")
+                .attr("stroke", "black")
+                .attr("stroke-width", "0.5px")
+                .style("pointer-events", "none");
+            }
+          }
         });
       }
 
@@ -335,10 +390,10 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       // Always scale from originalScatterData to match current SVG dimensions
       // (this ensures correct scaling when maxWidth constraint is applied)
       const scaleXForPoints = d3.scaleLinear()
-        .domain([0, this.props.imageWidth])
+        .domain([0.5, this.props.imageWidth + 0.5])
         .range([0, width]);
       const scaleYForPoints = d3.scaleLinear()
-        .domain([0, this.props.imageHeight])
+        .domain([0.5, this.props.imageHeight + 0.5])
         .range([0, height]);
 
       const scaledPointsForRender = this.props.originalScatterData.map((point: Point) => ({
@@ -360,8 +415,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
 
         // Add the point
         const size = this.state.landmarkSize;
-        const fontSize = Math.max(6, size * 2);
-        const textOffset = size + 1;
+        // const fontSize = Math.max(6, size * 2);
+        // const textOffset = size + 1;
         
         g.append("circle")
           .attr("cx", d.x)
@@ -387,6 +442,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           .style("pointer-events", "all");
 
         // Add the number label
+        /*
         g.append("text")
           .attr("x", d.x + textOffset)
           .attr("y", d.y - textOffset)
@@ -397,6 +453,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           .attr("stroke-width", "0.5px")
           .attr("opacity", this.isTransparentMode ? 0.6 : 1.0)
           .style("pointer-events", "none"); // Prevent text from interfering with drag
+        */
       });
 
       // Set data-landmark-id on the groups for proper drag selection
@@ -416,7 +473,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       // Add zoom behavior, preserving the current zoom state
       const zoom = d3
         .zoom<SVGSVGElement, unknown>()
-        .scaleExtent([0.5, 5])
+        .scaleExtent([0.5, 20])
         .on("zoom", (event) => {
           zoomContainer.attr("transform", event.transform.toString());
           this.props.onZoomChange(event.transform);
@@ -908,10 +965,10 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       this.cachedScales.svgWidth = width;
       this.cachedScales.svgHeight = height;
       
-      this.cachedScales.scaleXToImg = d3.scaleLinear().domain([0, width]).range([0, this.props.imageWidth]);
-      this.cachedScales.scaleYToImg = d3.scaleLinear().domain([0, height]).range([0, this.props.imageHeight]);
-      this.cachedScales.scaleXDisplay = d3.scaleLinear().domain([0, this.props.imageWidth]).range([0, width]);
-      this.cachedScales.scaleYDisplay = d3.scaleLinear().domain([0, this.props.imageHeight]).range([0, height]);
+      this.cachedScales.scaleXToImg = d3.scaleLinear().domain([0, width]).range([0.5, this.props.imageWidth + 0.5]);
+      this.cachedScales.scaleYToImg = d3.scaleLinear().domain([0, height]).range([0.5, this.props.imageHeight + 0.5]);
+      this.cachedScales.scaleXDisplay = d3.scaleLinear().domain([0.5, this.props.imageWidth + 0.5]).range([0, width]);
+      this.cachedScales.scaleYDisplay = d3.scaleLinear().domain([0.5, this.props.imageHeight + 0.5]).range([0, height]);
     }
   };
 
@@ -950,28 +1007,50 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
             right: '10px',
             zIndex: 1000,
           }}>
-            {/* Info icon button */}
-            <button
-              onClick={this.toggleControls}
-              style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '50%',
-                background: this.state.showControls ? 'rgba(33, 150, 243, 0.9)' : 'rgba(0,0,0,0.7)',
-                color: 'white',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: '18px',
-                fontWeight: 'bold',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'background 0.2s',
-              }}
-              title="Show/hide controls (keyboard shortcuts info)"
-            >
-              ℹ
-            </button>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              {/* Bounding box toggle */}
+              <button
+                onClick={this.toggleBoundingBoxes}
+                style={{
+                  height: '36px',
+                  padding: '0 12px',
+                  borderRadius: '18px',
+                  background: this.state.showBoundingBoxes ? 'rgba(76, 175, 80, 0.9)' : 'rgba(0,0,0,0.7)',
+                  color: 'white',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '11px',
+                  fontWeight: 'bold',
+                  transition: 'background 0.2s',
+                }}
+                title="Toggle bounding boxes (B)"
+              >
+                Boxes {this.state.showBoundingBoxes ? 'ON' : 'OFF'}
+              </button>
+
+              {/* Info icon button */}
+              <button
+                onClick={this.toggleControls}
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  background: this.state.showControls ? 'rgba(33, 150, 243, 0.9)' : 'rgba(0,0,0,0.7)',
+                  color: 'white',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '18px',
+                  fontWeight: 'bold',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background 0.2s',
+                }}
+                title="Show/hide controls (keyboard shortcuts info)"
+              >
+                ℹ
+              </button>
+            </div>
 
             {/* Expandable controls panel */}
             {this.state.showControls && (
