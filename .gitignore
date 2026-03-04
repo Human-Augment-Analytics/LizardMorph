@@ -4,7 +4,7 @@
 backend/*.dat
 backend/test/
 backend/landmark_visualizations/
-models/
+/models/
 test.xml
 images/
 *svm
@@ -32,11 +32,23 @@ backend/sessions
 
 # Output directories
 backend/upload
-backend/color_constrasted
-backend/tps_download
-backend/image_download
-backend/invert_image
-backend/outputs
+backend/color_constrasted/
+backend/tps_download/
+backend/image_download/
+backend/invert_image/
+backend/outputs/
+backend/inference_results/
+backend/sessions/
+backend/curl_*.txt
+backend/bus.jpg
+backend/landmark_comparison.jpg
+
+# Debug / scratch scripts (stay in backend root, not committed)
+backend/debug_*.py
+
+# ONNX Web WASM and Scripts
+frontend/onnxruntime-web-local/
+frontend/public/ort-*.wasm
 
 # Editor directories
 .idea
@@ -58,3 +70,6 @@ Thumbs.db
 
 # Monitoring configuration files with sensitive data
 monitoring/web.yml
+
+# AI configuration
+.claude

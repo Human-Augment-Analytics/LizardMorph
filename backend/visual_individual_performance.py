@@ -22,22 +22,42 @@ def parse_xml_for_frontend(file_path):
 
         # Extract bounding boxes from box elements
         for box in image.findall('.//box'):
+            parts = box.findall('.//part')
+            part_ids = [int(p.get('name', -1)) for p in parts]
+            
+            # Determine label from XML attribute or infer from structure
+            label = box.get('label', '')
+            if not label:
+                if 17 in part_ids or 18 in part_ids:
+                    label = 'ruler'
+                elif len(parts) == 9:
+                    label = 'toe/finger'
+                elif len(parts) == 2 and 17 not in part_ids:
+                    label = 'scale'
+                elif len(parts) == 0:
+                    label = 'id'
+                else:
+                    label = 'unknown'
+            
             box_data = {
                 "top": float(box.get('top', 0)),
                 "left": float(box.get('left', 0)),
                 "width": float(box.get('width', 0)),
-                "height": float(box.get('height', 0))
+                "height": float(box.get('height', 0)),
+                "label": label
             }
             bounding_boxes.append(box_data)
+            
+            box_idx = len(bounding_boxes) - 1
             
             # Extract parts (landmarks) within this box
             for part in box.findall('.//part'):
                 x = float(part.get('x'))
                 y = float(part.get('y'))
-                # Get the landmark ID from the 'name' attribute (fixed IDs from backend)
                 landmark_id = int(part.get('name', 0))
-                coords.append({"id": landmark_id, "x": x, "y": y})
-        
+                # Create globally unique ID for D3 rendering to prevent overlap bugs
+                unique_id = (box_idx * 100) + landmark_id
+                coords.append({"id": unique_id, "x": x, "y": y, "box_idx": box_idx, "landmark_id": landmark_id})
         # Add this image data to the list
         all_data.append({
             'name': image_name, 
@@ -130,18 +150,23 @@ def create_image(tps_file_path, output_folder):
             height_inches = height_pixels / dpi
             
             fig, ax = plt.subplots(figsize=(width_inches, height_inches), dpi=dpi)
-            ax.imshow(image)
+            # Set extent to match 1-based coordinates (starts at 0.5)
+            # origin='upper' implies extent=(left, right, bottom, top)
+            ax.imshow(image, extent=[0.5, width_pixels + 0.5, height_pixels + 0.5, 0.5])
             ax.axis('off')
+            
+            # Ensure equal aspect ratio ("even zoom in")
+            ax.set_aspect('equal')
             
             print(f"Plotting {len(x_coords)} points")
             
             # Plot points
             ax.scatter(x_coords, y_coords, s=50, color='red', marker='o', edgecolors='black')
             
-            # Add point labels
-            for j, (x, y) in enumerate(zip(x_coords, y_coords)):
-                ax.text(x + 5, y - 5, str(j + 1), color='white', fontsize=8, 
-                       bbox=dict(facecolor='black', alpha=0.7, pad=1))
+            # Add point labels - Commented out as per user request ("numbers blocking view")
+            # for j, (x, y) in enumerate(zip(x_coords, y_coords)):
+            #     ax.text(x + 5, y - 5, str(j + 1), color='white', fontsize=8, 
+            #            bbox=dict(facecolor='black', alpha=0.7, pad=1))
             
             # Save the image
             output_basename = os.path.splitext(os.path.basename(image_name))[0]

@@ -92,8 +92,8 @@ export class MainView extends Component<MainProps, MainState> {
     lizardCount: 0,
     zoomTransform: d3.zoomIdentity,
     scaleSettings: {
-      pointAId: 0,
-      pointBId: 1,
+      pointAId: 17,
+      pointBId: 18,
       value: 10,
       units: "mm",
     },
@@ -485,12 +485,12 @@ export class MainView extends Component<MainProps, MainState> {
         // Only calculate scale once per image load
         const scaleX = d3
           .scaleLinear()
-          .domain([0, this.state.imageWidth])
+          .domain([0.5, this.state.imageWidth + 0.5])
           .range([0, width]);
 
         const scaleY = d3
           .scaleLinear()
-          .domain([0, this.state.imageHeight])
+          .domain([0.5, this.state.imageHeight + 0.5])
           .range([0, height]);
 
         // Store scales in refs (simulated with state for this conversion)
@@ -575,6 +575,7 @@ export class MainView extends Component<MainProps, MainState> {
           .style("cursor", "pointer");
 
         // Add the number label
+        /*
         g.append("text")
           .attr("x", d.x + 5)
           .attr("y", d.y - 5)
@@ -583,12 +584,13 @@ export class MainView extends Component<MainProps, MainState> {
           .attr("fill", "white")
           .attr("stroke", "black")
           .attr("stroke-width", "0.5px");
+        */
       });
 
       // Add zoom behavior, preserving the current zoom state
       const zoom = d3
         .zoom<SVGSVGElement, unknown>()
-        .scaleExtent([0.5, 5]) // Define the zoom scale extent (min, max)
+        .scaleExtent([0.5, 20]) // Define the zoom scale extent (min, max). Setting min to 0.5 allows viewing half-size, max 20 allows deep zoom.
         .on("zoom", (event) => {
           zoomContainer.attr("transform", event.transform.toString());
           this.setState({ zoomTransform: event.transform });

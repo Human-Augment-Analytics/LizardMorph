@@ -17,6 +17,20 @@ export class ApiService {
     viewType: string, 
     toepadPredictorType?: string
   ): Promise<AnnotationsData[]> {
+    let clientAnnotations: AnnotationsData[] = [];
+    if (viewType === "toepads" || viewType === "toepad") {
+      try {
+        const { OnnxService } = await import("./OnnxService");
+        for (const file of files) {
+          const ann = await OnnxService.detect(file);
+          ann.name = file.name;
+          clientAnnotations.push(ann);
+        }
+      } catch (err) {
+        console.error("Local ONNX inference failed, will fallback to server inference:", err);
+      }
+    }
+
     const formData = new FormData();
     files.forEach((file) => {
       formData.append("image", file);
@@ -25,6 +39,9 @@ export class ApiService {
     // Add toepad predictor type if specified
     if (viewType === "toepads" && toepadPredictorType) {
       formData.append("toepad_predictor_type", toepadPredictorType);
+    }
+    if (clientAnnotations.length > 0) {
+      formData.append("client_annotations", JSON.stringify(clientAnnotations));
     }
     const res = await fetch(`${API_URL}/data`, {
       method: "POST",
@@ -37,6 +54,10 @@ export class ApiService {
       const errorResult = await res.json();
       throw new Error(errorResult.error ?? "Failed to process images");
     }
+
+    // If the server returns valid data, we return it. 
+    // However, if we passed client_annotations, the server will just echo them back along with processed images
+    // which is perfectly fine.
     return res.json() as Promise<AnnotationsData[]>;
   }
   static async fetchImageSet(imageFilename: string): Promise<ImageSet> {
@@ -45,7 +66,6 @@ export class ApiService {
       {
         method: "POST",
         headers: {
-          "Access-Control-Allow-Origin": "*",
           ...SessionService.getSessionHeaders(),
         },
       }

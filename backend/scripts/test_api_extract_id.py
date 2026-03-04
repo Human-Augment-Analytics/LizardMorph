@@ -6,7 +6,7 @@ import mimetypes
 
 # Configuration
 API_URL = "http://localhost:3005"
-IMAGE_PATH = "sample_image/0003_dorsal.jpg"  # Adjust if needed
+IMAGE_PATH = "test_auto/processed_June 1st 1_06-01-2024 10_22_51_1-3.jpg"  # Adjust if needed
 
 def post_json(url, data, headers={}):
     req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers={'Content-Type': 'application/json', **headers})
