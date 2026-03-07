@@ -16,5 +16,5 @@ ultralytics
 torch
 torchvision
 easyocr
-onnxruntime
+onnxruntime  # Use onnxruntime-silicon on Apple Silicon for CoreML GPU support
 openvino
