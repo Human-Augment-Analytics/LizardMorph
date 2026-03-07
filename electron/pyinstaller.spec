@@ -1,8 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
 
-backend_dir = os.path.join(os.path.dirname(os.path.abspath(SPECPATH)), '..', 'backend')
-models_dir = os.path.join(os.path.dirname(os.path.abspath(SPECPATH)), '..', 'models')
+project_dir = os.path.abspath(os.path.join(SPECPATH, '..'))
+backend_dir = os.path.join(project_dir, 'backend')
+models_dir = os.path.join(project_dir, 'models')
 
 a = Analysis(
     [os.path.join(backend_dir, 'app.py')],

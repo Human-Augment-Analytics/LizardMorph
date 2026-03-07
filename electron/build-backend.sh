@@ -8,12 +8,14 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 echo "=== Building LizardMorph backend ==="
 
-# Install PyInstaller if not present
-pip install pyinstaller
+CONDA_ENV="${CONDA_ENV:-lizard}"
 
-# Run PyInstaller
+# Install PyInstaller if not present
+conda run -n "$CONDA_ENV" pip install pyinstaller
+
+# Run PyInstaller from the correct conda env
 cd "$SCRIPT_DIR"
-pyinstaller pyinstaller.spec --distpath "$SCRIPT_DIR/dist" --workpath "$SCRIPT_DIR/build-temp" --clean
+conda run -n "$CONDA_ENV" pyinstaller pyinstaller.spec --distpath "$SCRIPT_DIR/dist" --workpath "$SCRIPT_DIR/build-temp" --clean
 
 echo "=== Backend built to $SCRIPT_DIR/dist/backend ==="
 echo "=== Test with: $SCRIPT_DIR/dist/backend/app ==="
