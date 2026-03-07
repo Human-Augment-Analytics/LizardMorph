@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2D7D46;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1B5E30;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="lizard" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8BC34A;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4CAF50;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Background rounded square -->
+  <rect x="32" y="32" width="960" height="960" rx="200" ry="200" fill="url(#bg)"/>
+  <!-- Lizard body - stylized gecko/lizard silhouette -->
+  <g transform="translate(512,512) scale(0.85)">
+    <!-- Body -->
+    <ellipse cx="0" cy="20" rx="90" ry="160" fill="url(#lizard)" transform="rotate(-10)"/>
+    <!-- Head -->
+    <ellipse cx="-30" cy="-180" rx="75" ry="55" fill="url(#lizard)" transform="rotate(-5)"/>
+    <!-- Snout -->
+    <ellipse cx="-70" cy="-215" rx="45" ry="30" fill="#7CB342" transform="rotate(-15)"/>
+    <!-- Eye -->
+    <circle cx="-20" cy="-200" r="18" fill="#1B5E30"/>
+    <circle cx="-15" cy="-203" r="8" fill="#E8F5E9"/>
+    <!-- Pupil slit -->
+    <ellipse cx="-15" cy="-203" rx="3" ry="7" fill="#0D3318"/>
+    <!-- Tail - curved -->
+    <path d="M 30 160 Q 80 280, 40 380 Q 0 440, -60 460 Q -100 470, -120 450"
+          stroke="#7CB342" stroke-width="35" fill="none" stroke-linecap="round"/>
+    <!-- Front left leg -->
+    <path d="M -60 -80 Q -180 -120, -220 -60 Q -240 -30, -260 -50"
+          stroke="url(#lizard)" stroke-width="28" fill="none" stroke-linecap="round"/>
+    <!-- Front left toes -->
+    <circle cx="-255" cy="-55" r="10" fill="#8BC34A"/>
+    <circle cx="-268" cy="-42" r="9" fill="#8BC34A"/>
+    <circle cx="-248" cy="-35" r="8" fill="#8BC34A"/>
+    <!-- Front right leg -->
+    <path d="M 60 -60 Q 170 -100, 210 -40 Q 230 -10, 250 -25"
+          stroke="url(#lizard)" stroke-width="28" fill="none" stroke-linecap="round"/>
+    <!-- Front right toes -->
+    <circle cx="245" cy="-30" r="10" fill="#8BC34A"/>
+    <circle cx="258" cy="-18" r="9" fill="#8BC34A"/>
+    <circle cx="240" cy="-10" r="8" fill="#8BC34A"/>
+    <!-- Back left leg -->
+    <path d="M -50 100 Q -170 130, -200 200 Q -215 240, -240 230"
+          stroke="url(#lizard)" stroke-width="30" fill="none" stroke-linecap="round"/>
+    <!-- Back left toes -->
+    <circle cx="-235" cy="225" r="10" fill="#8BC34A"/>
+    <circle cx="-250" cy="238" r="9" fill="#8BC34A"/>
+    <circle cx="-230" cy="245" r="8" fill="#8BC34A"/>
+    <!-- Back right leg -->
+    <path d="M 60 120 Q 170 150, 200 220 Q 215 260, 240 250"
+          stroke="url(#lizard)" stroke-width="30" fill="none" stroke-linecap="round"/>
+    <!-- Back right toes -->
+    <circle cx="235" cy="245" r="10" fill="#8BC34A"/>
+    <circle cx="248" cy="258" r="9" fill="#8BC34A"/>
+    <circle cx="228" cy="265" r="8" fill="#8BC34A"/>
+    <!-- Body pattern spots -->
+    <circle cx="-20" cy="-40" r="12" fill="#689F38" opacity="0.5"/>
+    <circle cx="30" cy="0" r="10" fill="#689F38" opacity="0.5"/>
+    <circle cx="-10" cy="60" r="14" fill="#689F38" opacity="0.5"/>
+    <circle cx="25" cy="120" r="11" fill="#689F38" opacity="0.5"/>
+    <!-- Landmark dots (morphometry reference) -->
+    <circle cx="-70" cy="-215" r="5" fill="#FF5722" opacity="0.8"/>
+    <circle cx="-20" cy="-200" r="5" fill="#FF5722" opacity="0.8"/>
+    <circle cx="0" cy="-140" r="5" fill="#FF5722" opacity="0.8"/>
+    <circle cx="0" cy="20" r="5" fill="#FF5722" opacity="0.8"/>
+    <circle cx="30" cy="160" r="5" fill="#FF5722" opacity="0.8"/>
+  </g>
+  <!-- App name arc at bottom -->
+  <text x="512" y="940" text-anchor="middle" font-family="Helvetica Neue, Arial, sans-serif"
+        font-size="56" font-weight="700" fill="#E8F5E9" letter-spacing="8">LIZARDMORPH</text>
+</svg>
