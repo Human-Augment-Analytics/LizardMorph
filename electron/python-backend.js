@@ -13,13 +13,15 @@ function findFreePort() {
   });
 }
 
-function waitForServer(port, timeoutMs = 30000) {
+function waitForServer(port, timeoutMs = 60000, onRetry = null) {
   const start = Date.now();
   return new Promise((resolve, reject) => {
     function tryConnect() {
-      if (Date.now() - start > timeoutMs) {
-        return reject(new Error(`Backend did not start within ${timeoutMs}ms`));
+      const elapsed = Date.now() - start;
+      if (elapsed > timeoutMs) {
+        return reject(new Error(`Backend did not start within ${timeoutMs / 1000}s`));
       }
+      if (onRetry) onRetry(elapsed);
       const req = require("http").get(`http://127.0.0.1:${port}/health`, (res) => {
         if (res.statusCode === 200) {
           resolve();
