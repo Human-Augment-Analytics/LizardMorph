@@ -2,5 +2,7 @@ node_modules/
 dist/
 build/
 build-temp/
+release/
+frontend/
 *.dmg
 *.app
