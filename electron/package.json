@@ -1,0 +1,15 @@
+{
+  "name": "lizardmorph",
+  "version": "1.0.0",
+  "description": "LizardMorph - Automated lizard morphology analysis",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}
