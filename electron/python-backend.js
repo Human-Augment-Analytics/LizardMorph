@@ -1,6 +1,7 @@
 const { spawn } = require("child_process");
 const path = require("path");
 const net = require("net");
+const os = require("os");
 
 function findFreePort() {
   return new Promise((resolve, reject) => {
@@ -41,7 +42,10 @@ async function startBackend(isDev) {
   let proc;
   if (isDev) {
     const backendDir = path.join(__dirname, "..", "backend");
-    proc = spawn("python", ["app.py"], {
+    // Use the Python from PYTHON_PATH env var, or try to find conda env's Python
+    const pythonPath = process.env.PYTHON_PATH
+      || path.join(os.homedir(), "miniconda3", "envs", "lizard", "bin", "python")
+    proc = spawn(pythonPath, ["app.py"], {
       cwd: backendDir,
       env: {
         ...process.env,
