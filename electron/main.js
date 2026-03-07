@@ -28,6 +28,18 @@ async function createWindow() {
     backendProc = backend.proc;
     backendPort = backend.port;
 
+    backendProc.on("exit", (code) => {
+      if (code !== 0 && code !== null && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.loadURL(
+          `data:text/html,<html><body style='padding:40px;font-family:system-ui'>` +
+          `<h1>Backend Crashed</h1>` +
+          `<p>The backend process exited with code ${code}.</p>` +
+          `<p>Please restart LizardMorph.</p>` +
+          `</body></html>`
+        );
+      }
+    });
+
     ipcMain.handle("get-backend-port", () => backendPort);
 
     if (isDev) {
@@ -44,6 +56,12 @@ async function createWindow() {
 }
 
 app.whenReady().then(createWindow);
+
+app.on("activate", () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  }
+});
 
 app.on("window-all-closed", () => {
   stopBackend(backendProc);
