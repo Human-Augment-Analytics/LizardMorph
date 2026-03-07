@@ -22,6 +22,21 @@ CONF_THRESHOLD = 0.25
 IOU_THRESHOLD = 0.45
 YOLO_MAX_DIM = 4096
 
+def _get_execution_providers():
+    """Return available execution providers, preferring GPU."""
+    available = ort.get_available_providers()
+    preferred = [
+        "CoreMLExecutionProvider",
+        "DmlExecutionProvider",
+        "CUDAExecutionProvider",
+        "CPUExecutionProvider",
+    ]
+    providers = [p for p in preferred if p in available]
+    if not providers:
+        providers = ["CPUExecutionProvider"]
+    return providers
+
+
 CLASS_NAMES = {
     0: "up_finger",
     1: "up_toe",
@@ -36,14 +51,15 @@ class OrtYoloDetector:
     """YOLO OBB detector using ONNX Runtime directly."""
 
     def __init__(self, model_path: str):
-        """Load ONNX model with CPU execution provider.
+        """Load ONNX model with best available execution provider.
 
         Args:
             model_path: Path to .onnx model file.
         """
+        providers = _get_execution_providers()
         self.session = ort.InferenceSession(
             model_path,
-            providers=["CPUExecutionProvider"],
+            providers=providers,
         )
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
