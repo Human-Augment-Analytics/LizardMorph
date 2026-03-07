@@ -325,6 +325,11 @@ def update_system_metrics():
 metrics_thread = threading.Thread(target=update_system_metrics, daemon=True)
 metrics_thread.start()
 
+# Health check endpoint (used by Electron to detect backend readiness)
+@app.route("/health", methods=["GET"])
+def health_check():
+    return {"status": "ok"}, 200
+
 # Prometheus metrics endpoint
 @app.route('/metrics')
 def metrics():

@@ -1,9 +1,14 @@
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
+const { startBackend, stopBackend } = require("./python-backend");
 
 let mainWindow;
+let backendProc;
+let backendPort;
 
-function createWindow() {
+const isDev = !app.isPackaged;
+
+async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -14,12 +19,37 @@ function createWindow() {
     },
   });
 
-  // For now, load a placeholder. Will point to frontend build later.
-  mainWindow.loadURL("data:text/html,<h1>LizardMorph Desktop</h1><p>Electron shell works.</p>");
+  mainWindow.loadURL(
+    "data:text/html,<html><body style='display:flex;justify-content:center;align-items:center;height:100vh;font-family:system-ui;background:%23f5f5f5'><div style='text-align:center'><h1>LizardMorph</h1><p>Starting backend server...</p></div></body></html>"
+  );
+
+  try {
+    const backend = await startBackend(isDev);
+    backendProc = backend.proc;
+    backendPort = backend.port;
+
+    ipcMain.handle("get-backend-port", () => backendPort);
+
+    if (isDev) {
+      mainWindow.loadURL("http://localhost:5173");
+    } else {
+      const frontendPath = path.join(__dirname, "frontend", "index.html");
+      mainWindow.loadFile(frontendPath);
+    }
+  } catch (err) {
+    mainWindow.loadURL(
+      `data:text/html,<html><body style='padding:40px;font-family:system-ui'><h1>Startup Error</h1><pre>${err.message}</pre></body></html>`
+    );
+  }
 }
 
 app.whenReady().then(createWindow);
 
 app.on("window-all-closed", () => {
+  stopBackend(backendProc);
   app.quit();
+});
+
+app.on("before-quit", () => {
+  stopBackend(backendProc);
 });
