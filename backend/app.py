@@ -7,6 +7,7 @@ from session_manager import SessionManager
 import id_extractor
 
 import os
+import sys
 import hmac
 import hashlib
 import subprocess
@@ -28,9 +29,22 @@ load_dotenv()
 frontend_dir = os.getenv("FRONTEND_DIR", "../frontend/dist")
 session_dir = os.getenv("SESSION_DIR", "sessions")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# PyInstaller sets sys.frozen and sys._MEIPASS when running as a bundle
+if getattr(sys, 'frozen', False):
+    BASE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def get_model_path(relative_path):
+    if relative_path is None:
+        return None
+    if getattr(sys, 'frozen', False):
+        # In frozen mode, models are bundled relative to _MEIPASS
+        # Strip leading ../ since paths like "../models/..." need to become "models/..."
+        import re
+        clean = re.sub(r'^(\.\./)+', '', relative_path)
+        clean = re.sub(r'^\./', '', clean)
+        return os.path.join(BASE_DIR, clean)
     return os.path.abspath(os.path.join(BASE_DIR, relative_path))
 
 # Model files for different view types
