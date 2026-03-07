@@ -25,7 +25,7 @@ export class ApiService {
     toepadPredictorType?: string
   ): Promise<AnnotationsData[]> {
     let clientAnnotations: AnnotationsData[] = [];
-    if (viewType === "toepads" || viewType === "toepad") {
+    if ((viewType === "toepads" || viewType === "toepad") && !window.electronAPI?.isElectron) {
       try {
         const { OnnxService } = await import("./OnnxService");
         for (const file of files) {
