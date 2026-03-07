@@ -2,7 +2,14 @@ import type { ImageSetResponse } from "../models/ImageSetResponse";
 import type { AnnotationsData } from "../models/AnnotationsData";
 import type { ImageSet } from "../models/ImageSet";
 import { SessionService } from "./SessionService";
-import { API_URL } from "./config";
+import { API_URL, getApiUrl } from "./config";
+
+async function apiUrl(): Promise<string> {
+  if (window.electronAPI?.isElectron) {
+    return getApiUrl();
+  }
+  return API_URL;
+}
 
 export class ApiService {
   /**
@@ -43,7 +50,8 @@ export class ApiService {
     if (clientAnnotations.length > 0) {
       formData.append("client_annotations", JSON.stringify(clientAnnotations));
     }
-    const res = await fetch(`${API_URL}/data`, {
+    const base = await apiUrl();
+    const res = await fetch(`${base}/data`, {
       method: "POST",
       headers: {
         ...SessionService.getSessionHeaders(),
@@ -61,8 +69,9 @@ export class ApiService {
     return res.json() as Promise<AnnotationsData[]>;
   }
   static async fetchImageSet(imageFilename: string): Promise<ImageSet> {
+    const base = await apiUrl();
     const res = await fetch(
-      `${API_URL}/image?image_filename=${encodeURIComponent(imageFilename)}`,
+      `${base}/image?image_filename=${encodeURIComponent(imageFilename)}`,
       {
         method: "POST",
         headers: {
@@ -94,7 +103,8 @@ export class ApiService {
     };
   }
   static async fetchUploadedFiles(): Promise<string[]> {
-    const res = await fetch(`${API_URL}/list_uploads`, {
+    const base = await apiUrl();
+    const res = await fetch(`${base}/list_uploads`, {
       method: "GET",
       headers: {
         ...SessionService.getSessionHeaders(),
@@ -109,8 +119,9 @@ export class ApiService {
     viewType: string,
     toepadPredictorType?: string
   ): Promise<AnnotationsData> {
+    const base = await apiUrl();
     const viewTypeParam = viewType === "toepads" ? "toepad" : viewType;
-    let url = `${API_URL}/process_existing?filename=${encodeURIComponent(filename)}&view_type=${encodeURIComponent(viewTypeParam)}`;
+    let url = `${base}/process_existing?filename=${encodeURIComponent(filename)}&view_type=${encodeURIComponent(viewTypeParam)}`;
     if (viewType === "toepads" && toepadPredictorType) {
       url += `&toepad_predictor_type=${encodeURIComponent(toepadPredictorType)}`;
     }
@@ -127,7 +138,8 @@ export class ApiService {
   static async saveAnnotations(
     payload: AnnotationsData
   ): Promise<{ success: boolean }> {
-    const res = await fetch(`${API_URL}/save_annotations`, {
+    const base = await apiUrl();
+    const res = await fetch(`${base}/save_annotations`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -148,7 +160,8 @@ export class ApiService {
     coords: { x: number; y: number }[];
     name: string;
   }): Promise<{ image_urls?: string[] }> {
-    const res = await fetch(`${API_URL}/endpoint`, {
+    const base = await apiUrl();
+    const res = await fetch(`${base}/endpoint`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -161,7 +174,8 @@ export class ApiService {
   }
 
   static async clearHistory(): Promise<{ success: boolean }> {
-    const res = await fetch(`${API_URL}/clear_history`, {
+    const base = await apiUrl();
+    const res = await fetch(`${base}/clear_history`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -186,7 +200,8 @@ export class ApiService {
     const formData = new URLSearchParams();
     formData.append("image_filename", imageFilename);
 
-    const res = await fetch(`${API_URL}/extract_id`, {
+    const base = await apiUrl();
+    const res = await fetch(`${base}/extract_id`, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
