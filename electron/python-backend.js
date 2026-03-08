@@ -14,7 +14,7 @@ function findFreePort() {
   });
 }
 
-function waitForServer(port, timeoutMs = 60000, onRetry = null) {
+function waitForServer(port, timeoutMs = 30000, onRetry = null) {
   const start = Date.now();
   return new Promise((resolve, reject) => {
     function tryConnect() {
@@ -36,7 +36,7 @@ function waitForServer(port, timeoutMs = 60000, onRetry = null) {
   });
 }
 
-async function startBackend(isDev) {
+async function startBackend(isDev, log = console.log) {
   const port = await findFreePort();
 
   let proc;
@@ -57,32 +57,57 @@ async function startBackend(isDev) {
   } else {
     const resourcesPath = process.resourcesPath;
     const exePath = path.join(resourcesPath, "backend", "app");
-    proc = spawn(exePath, [], {
+    log(`[backend] resourcesPath: ${resourcesPath}`);
+    log(`[backend] exePath: ${exePath}`);
+    log(`[backend] exists: ${require("fs").existsSync(exePath)}`);
+    // Log the actual resolved path (check for app translocation)
+    const fs = require("fs");
+    const resolvedExe = fs.realpathSync(exePath);
+    log(`[backend] resolvedExe: ${resolvedExe}`);
+
+    proc = spawn(resolvedExe, [], {
+      cwd: path.dirname(resolvedExe),
       env: {
         ...process.env,
         API_PORT: String(port),
         PYTHONUNBUFFERED: "1",
+        HOME: os.homedir(),
+        TMPDIR: os.tmpdir(),
       },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     });
+
+    log(`[backend] spawned pid=${proc.pid}`);
   }
 
+  const logs = [];
+
+  proc.on("error", (err) => {
+    console.error(`[backend] spawn error: ${err.message}`);
+    logs.push(`Spawn error: ${err.message}`);
+  });
+
   proc.stdout.on("data", (data) => {
-    console.log(`[backend] ${data.toString().trim()}`);
+    const line = data.toString().trim();
+    console.log(`[backend] ${line}`);
+    logs.push(line);
   });
 
   proc.stderr.on("data", (data) => {
-    console.error(`[backend] ${data.toString().trim()}`);
+    const line = data.toString().trim();
+    console.error(`[backend] ${line}`);
+    logs.push(line);
   });
 
   proc.on("exit", (code) => {
     console.log(`[backend] exited with code ${code}`);
+    logs.push(`Process exited with code ${code}`);
   });
 
   await waitForServer(port);
   console.log(`[backend] ready on port ${port}`);
 
-  return { proc, port };
+  return { proc, port, logs };
 }
 
 function stopBackend(proc) {
