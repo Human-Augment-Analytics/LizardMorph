@@ -16,7 +16,7 @@ echo "Using Python: $PYTHON"
 
 # Run PyInstaller
 cd "$SCRIPT_DIR"
-"$PYTHON" -m PyInstaller pyinstaller.spec --distpath "$SCRIPT_DIR/dist" --workpath "$SCRIPT_DIR/build-temp" --clean
+"$PYTHON" -m PyInstaller pyinstaller.spec --distpath "$SCRIPT_DIR/dist" --workpath "$SCRIPT_DIR/build-temp" --clean -y
 
 echo "=== Backend built to $SCRIPT_DIR/dist/backend ==="
 echo "=== Test with: $SCRIPT_DIR/dist/backend/app ==="

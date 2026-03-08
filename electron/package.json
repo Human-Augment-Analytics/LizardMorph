@@ -20,7 +20,8 @@
     },
     "mac": {
       "category": "public.app-category.education",
-      "target": ["dmg"]
+      "target": ["dmg"],
+      "icon": "icons/icon.icns"
     },
     "extraResources": [
       {
