@@ -9,7 +9,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 echo "=== Step 1: Build frontend ==="
 cd "$PROJECT_DIR/frontend"
 npm ci
-npm run build
+VITE_BASE_URL="./" npm run build
 
 echo "=== Step 2: Copy frontend build to Electron ==="
 rm -rf "$SCRIPT_DIR/frontend"
