@@ -36,7 +36,7 @@ a = Analysis(
         'torch',
         'torchvision',
         'ultralytics',
-        'matplotlib',
+        # matplotlib is needed by visual_individual_performance.py
         'tkinter',
         'tensorflow',
         'tflite',
