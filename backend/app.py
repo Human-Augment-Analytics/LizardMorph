@@ -4,7 +4,10 @@ import xray_preprocessing
 from export_handler import ExportHandler
 from export_handler import ExportHandler
 from session_manager import SessionManager
-import id_extractor
+try:
+    import id_extractor
+except ImportError:
+    id_extractor = None  # easyocr/torch not available in packaged build
 
 import os
 import sys
@@ -1804,6 +1807,8 @@ def github_webhook():
 @track_metrics
 def extract_id():
     """Extract ID from image using YOLO and EasyOCR."""
+    if id_extractor is None:
+        return jsonify({"error": "OCR not available (easyocr/torch not installed)"}), 501
     image_filename = request.form.get("image_filename")
     if not image_filename:
         return jsonify({"error": "image_filename is required"}), 400
