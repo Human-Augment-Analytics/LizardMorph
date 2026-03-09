@@ -31,6 +31,11 @@ async function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // Allow fetch() for WASM files when loading from file:// protocol
+      allowFileAccessFromFileURLs: !isDev,
+      // Disable web security in packaged build so data: URIs work in SVG <image> elements
+      // when loaded from file:// protocol (needed for base64 image display)
+      webSecurity: isDev,
     },
   });
 

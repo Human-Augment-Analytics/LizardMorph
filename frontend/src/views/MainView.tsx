@@ -61,6 +61,7 @@ interface MainState {
 
 interface MainProps {
   selectedViewType: LizardViewType;
+  onNavigateHome?: () => void;
 }
 
 export class MainView extends Component<MainProps, MainState> {
@@ -182,7 +183,6 @@ export class MainView extends Component<MainProps, MainState> {
       this.state.currentImageURL &&
       this.state.imageWidth &&
       this.state.imageHeight &&
-      this.state.originalScatterData.length > 0 &&
       (prevState.currentImageURL !== this.state.currentImageURL ||
         prevState.imageWidth !== this.state.imageWidth ||
         prevState.imageHeight !== this.state.imageHeight ||
@@ -364,7 +364,14 @@ export class MainView extends Component<MainProps, MainState> {
           // Extract ID for toepad view type (only for the first/current image)
           if (this.props.selectedViewType === "toepads") {
             try {
-              const idResult = await ApiService.extractId(result.name);
+              // Find the ID bounding box from client-side YOLO detection
+              const idBox = processedImage.boundingBoxes?.find(
+                (b) => b.label?.toLowerCase() === "id"
+              );
+              const idResult = await ApiService.extractId(
+                result.name,
+                idBox ? { left: idBox.left, top: idBox.top, width: idBox.width, height: idBox.height } : undefined
+              );
               if (idResult.success && idResult.id) {
                 console.log("Extracted ID:", idResult.id, "confidence:", idResult.confidence);
 
@@ -451,8 +458,7 @@ export class MainView extends Component<MainProps, MainState> {
     if (
       this.state.currentImageURL &&
       this.state.imageWidth &&
-      this.state.imageHeight &&
-      this.state.originalScatterData.length > 0
+      this.state.imageHeight
     ) {
       console.log(
         "Rendering SVG with image dimensions:",
@@ -1007,7 +1013,7 @@ export class MainView extends Component<MainProps, MainState> {
   render() {
     return (
       <div style={MainViewStyles.container}>
-        {this.state.sessionReady && <SessionInfo />}
+        {this.state.sessionReady && <SessionInfo onNavigateHome={this.props.onNavigateHome} />}
         <Header
           lizardCount={this.state.lizardCount}
           loading={this.state.loading}
@@ -1017,7 +1023,13 @@ export class MainView extends Component<MainProps, MainState> {
           onUpload={this.handleUpload}
           onExportAll={this.handleScatterData}
           onClearHistory={this.handleClearHistory}
-          onBackToSelection={() => window.location.href = '/'}
+          onBackToSelection={() => {
+            if (this.props.onNavigateHome) {
+              this.props.onNavigateHome();
+            } else {
+              window.location.href = "/";
+            }
+          }}
           onOpenMeasurementsModal={this.handleOpenMeasurementsAndScaleModal}
           toepadPredictorType={this.state.toepadPredictorType}
           onToepadPredictorTypeChange={this.handleToepadPredictorTypeChange}
@@ -1139,6 +1151,7 @@ export class MainView extends Component<MainProps, MainState> {
               height: "100%",
             }}>
               <SVGViewer
+                selectedViewType={this.props.selectedViewType}
                 dataFetched={this.state.dataFetched}
                 loading={this.state.loading}
                 dataLoading={this.state.dataLoading}

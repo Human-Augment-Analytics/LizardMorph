@@ -14,8 +14,11 @@ interface SessionInfoState {
   storageType: "cookies" | "sessionStorage";
 }
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export class SessionInfo extends Component<{}, SessionInfoState> {
+interface SessionInfoProps {
+  onNavigateHome?: () => void;
+}
+
+export class SessionInfo extends Component<SessionInfoProps, SessionInfoState> {
   state: SessionInfoState = {
     sessionInfo: null,
     loading: true,
@@ -99,6 +102,26 @@ export class SessionInfo extends Component<{}, SessionInfoState> {
           gap: "8px",
         }}
       >
+        <button
+          onClick={this.props.onNavigateHome || (() => { window.location.href = "/"; })}
+          style={{
+            padding: "4px 8px",
+            backgroundColor: "#ffffff",
+            color: "#333",
+            border: "1px solid #ccc",
+            borderRadius: "4px",
+            cursor: "pointer",
+            fontWeight: "bold",
+            fontSize: "12px",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
+            display: "flex",
+            alignItems: "center",
+            marginRight: "8px",
+          }}
+          title="Return to home page"
+        >
+          &larr; Back to Home
+        </button>
         <span>
           Session: {sessionInfo?.session_id_short ?? "Unknown"} | Files:{" "}
           {sessionInfo?.file_count ?? 0} | Started:{" "}

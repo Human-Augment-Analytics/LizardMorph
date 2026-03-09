@@ -7,7 +7,7 @@ from session_manager import SessionManager
 try:
     import id_extractor
 except ImportError:
-    id_extractor = None  # easyocr/torch not available in packaged build
+    id_extractor = None  # native OCR and easyocr both unavailable
 
 import os
 import sys
@@ -107,7 +107,8 @@ def get_cached_yolo_model():
     """Get cached YOLO model, loading it on first call.
 
     Uses OrtYoloDetector (INT8 quantized) if USE_ORT_QUANTIZED=true,
-    otherwise falls back to Ultralytics YOLO.
+    falls back to OrtYoloDetector with the standard model if ultralytics
+    is not available (e.g. in packaged Electron builds).
     """
     global _cached_yolo_model
     if _cached_yolo_model is None:
@@ -122,13 +123,19 @@ def get_cached_yolo_model():
                     _cached_yolo_model = OrtYoloDetector(int8_path)
                     logger.info("ORT INT8 model loaded and cached")
                 else:
-                    logger.warning(f"INT8 model not found at {int8_path}, falling back to Ultralytics")
+                    logger.warning(f"INT8 model not found at {int8_path}, falling back")
                     use_ort = False
             if not use_ort:
-                from ultralytics import YOLO
-                logger.info(f"Loading YOLO model: {TOEPAD_YOLO_MODEL}")
-                _cached_yolo_model = YOLO(TOEPAD_YOLO_MODEL, task="obb")
-                logger.info("YOLO model loaded and cached")
+                try:
+                    from ultralytics import YOLO
+                    logger.info(f"Loading YOLO model: {TOEPAD_YOLO_MODEL}")
+                    _cached_yolo_model = YOLO(TOEPAD_YOLO_MODEL, task="obb")
+                    logger.info("YOLO model loaded and cached")
+                except ImportError:
+                    from ort_inference import OrtYoloDetector
+                    logger.info(f"ultralytics not available, using ORT: {TOEPAD_YOLO_MODEL}")
+                    _cached_yolo_model = OrtYoloDetector(TOEPAD_YOLO_MODEL)
+                    logger.info("ORT YOLO model loaded and cached")
     return _cached_yolo_model
 
 _cached_id_model = None
@@ -937,6 +944,52 @@ def get_input_image():
     except Exception as e:
         logger.error(f"Error getting image: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/image_file", methods=["GET"])
+@cross_origin()
+@track_metrics
+def serve_image_file():
+    """Serve the raw image file for the requested version (original, inverted, or color_contrasted)."""
+    image_filename = request.args.get("image_filename")
+    image_type = request.args.get("type", "original") # original, inverted, color_contrasted
+    
+    if not image_filename:
+        return jsonify({"error": "image_filename query parameter is required"}), 400
+
+    try:
+        # Use explicit session_id from query params since HTTP GET from <image> tag lacks custom headers
+        session_id = request.args.get("session_id")
+        if not session_id:
+            session_id = get_session_id()
+            
+        session_data = get_session_folders(session_id)
+
+        # Map type to the correct session folder and filename prefix
+        if image_type == "color_contrasted":
+            folder = session_data["processed_folder"]
+            # The backend prefix usually stored in "image1" locally: processed_
+            filename_to_serve = f"processed_{image_filename}"
+        elif image_type == "inverted":
+            folder = session_data["inverted_folder"] 
+            # The backend prefix usually stored in "image2" locally: inverted_
+            filename_to_serve = f"inverted_{image_filename}"
+        else: # original
+            folder = session_data["upload_folder"]
+            # "image3", no prefix
+            filename_to_serve = image_filename
+
+        file_path = os.path.join(folder, filename_to_serve)
+        if not os.path.exists(file_path):
+             logger.warning(f"Image not found at {file_path}")
+             return jsonify({"error": f"Image {filename_to_serve} not found in {image_type} folder"}), 404
+
+        return send_from_directory(folder, filename_to_serve)
+
+    except Exception as e:
+        logger.error(f"Error serving image file: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 
 
 @app.route("/endpoint", methods=["POST"])
@@ -1806,17 +1859,22 @@ def github_webhook():
 @cross_origin()
 @track_metrics
 def extract_id():
-    """Extract ID from image using YOLO and EasyOCR."""
+    """Extract ID from image using OCR on a bounding box region.
+
+    Accepts either:
+    - id_box: JSON with {left, top, width, height} in pixel coords (from client-side YOLO)
+    - Falls back to server-side YOLO (requires ultralytics) if no id_box provided
+    """
     if id_extractor is None:
-        return jsonify({"error": "OCR not available (easyocr/torch not installed)"}), 501
+        return jsonify({"error": "OCR not available"}), 501
     image_filename = request.form.get("image_filename")
     if not image_filename:
         return jsonify({"error": "image_filename is required"}), 400
-    
+
     try:
         session_id = get_session_id()
         session_data = get_session_folders(session_id)
-        
+
         # Look for image in session folders
         image_path = None
         for folder_key in ["upload_folder", "processed_folder"]:
@@ -1825,124 +1883,126 @@ def extract_id():
                 if os.path.exists(potential_path):
                     image_path = potential_path
                     break
-                    
+
         # If not found, check outputs folder which has subdirectories
         if not image_path and "outputs_folder" in session_data and session_data["outputs_folder"]:
             outputs_dir = session_data["outputs_folder"]
-            # Walk through subdirectories to find the image
             for root, dirs, files in os.walk(outputs_dir):
                 if image_filename in files:
                     image_path = os.path.join(root, image_filename)
                     break
-        
+
         if not image_path:
-             # Try absolute path if provided (for testing primarily)
              if os.path.exists(image_filename):
                  image_path = image_filename
              else:
                  return jsonify({"error": f"Image not found: {image_filename}"}), 404
 
-        # Use cached ID Extractor model
-        model = get_cached_id_model()
-        if model is None:
-            return jsonify({"error": "ID Extractor model not found or failed to load"}), 500
-        
-        # Run inference
-        # Use CPU device explicitly
-        results = model(image_path, conf=0.25, device='cpu', verbose=False)
-        
+        # Check if client provided an ID bounding box (from client-side YOLO)
+        id_box_json = request.form.get("id_box")
+
+        if id_box_json:
+            # Client provided the ID box — use it directly (no server-side YOLO needed)
+            import cv2
+            id_box = json.loads(id_box_json)
+            img = cv2.imread(image_path)
+            if img is None:
+                return jsonify({"error": "Failed to load image"}), 500
+
+            img_h, img_w = img.shape[:2]
+            # Convert pixel coords to normalized coords for id_extractor
+            x_c = (id_box["left"] + id_box["width"] / 2) / img_w
+            y_c = (id_box["top"] + id_box["height"] / 2) / img_h
+            w_norm = id_box["width"] / img_w
+            h_norm = id_box["height"] / img_h
+
+            logger.info(f"Using client-provided ID box: pixel=({id_box['left']}, {id_box['top']}, {id_box['width']}, {id_box['height']}), normalized=({x_c:.3f}, {y_c:.3f}, {w_norm:.3f}, {h_norm:.3f})")
+            extraction_result = id_extractor.extract_id_from_image(image_path, (x_c, y_c, w_norm, h_norm))
+            logger.info(f"Extractor result: {extraction_result}")
+
+            if 'error' not in extraction_result and extraction_result.get('id'):
+                return jsonify({
+                    "success": True,
+                    "id": extraction_result['id'],
+                    "confidence": extraction_result['confidence']
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": "No ID found in the provided bounding box"
+                }), 404
+
+        # Fallback: use server-side YOLO via OrtYoloDetector (no ultralytics needed)
+        import cv2
+        yolo_model = get_cached_yolo_model()
+        if yolo_model is None:
+            return jsonify({"error": "No ID box provided and YOLO model not available"}), 501
+
+        img = cv2.imread(image_path)
+        if img is None:
+            return jsonify({"error": "Failed to load image"}), 500
+
+        img_h, img_w = img.shape[:2]
+
+        # OrtYoloDetector returns dict with 'id' key containing list of detections
+        if hasattr(yolo_model, 'detect'):
+            # OrtYoloDetector
+            detections = yolo_model.detect(img)
+            id_dets = detections.get("id", [])
+        else:
+            # Ultralytics YOLO fallback
+            results = yolo_model(image_path, conf=0.25, device='cpu', verbose=False)
+            id_dets = []
+            for result in results:
+                if hasattr(result, 'obb') and result.obb is not None:
+                    class_names = yolo_model.names
+                    id_class_id = next((k for k, v in class_names.items() if v.lower() == 'id'), 5)
+                    for det_idx in range(len(result.obb)):
+                        if int(result.obb.cls[det_idx].item()) == id_class_id:
+                            obb = result.obb.xywhr[det_idx].cpu().numpy()
+                            orig_h, orig_w = result.orig_shape
+                            id_dets.append({
+                                "corners": None,
+                                "x_c": obb[0] / orig_w,
+                                "y_c": obb[1] / orig_h,
+                                "w_norm": obb[2] / orig_w,
+                                "h_norm": obb[3] / orig_h,
+                                "conf": float(result.obb.conf[det_idx].item()),
+                            })
+
         best_id_candidate = None
         best_conf = 0.0
 
-        class_names = model.names
-        
-        # Find ID class by name or ID
-        id_class_id = None
-        for class_id, class_name in class_names.items():
-            if class_name.lower() == 'id':
-                id_class_id = class_id
-                break
-        
-        # Fallback: assume class ID 5 is 'id' (6-class model) or class 3 (legacy 4-class model)
-        if id_class_id is None:
-            if 5 in class_names:
-                id_class_id = 5
-            elif 3 in class_names:
-                id_class_id = 3
-        
-        logger.info(f"ID class detection configured: id_class_id={id_class_id}, class_names={class_names}")
-        
-        for idx, result in enumerate(results):
-             logger.info(f"YOLO Inference result {idx}: has_boxes={result.boxes is not None}, has_obb={result.obb is not None if hasattr(result, 'obb') else False}")
-             
-             if hasattr(result, 'obb') and result.obb is not None and len(result.obb) > 0:
-                for det_idx in range(len(result.obb)):
-                    box_class_id = int(result.obb.cls[det_idx].item())
-                    box_conf = float(result.obb.conf[det_idx].item())
-                    logger.info(f"  OBB Det {det_idx}: class={box_class_id} ({class_names.get(box_class_id, 'unknown')}), conf={box_conf:.3f}")
-                    
-                    # Filter for ID class boxes only
-                    if id_class_id is not None and box_class_id != id_class_id:
-                        continue
-                        
-                    logger.info(f"  -> Found ID candidate text box (OBB)!")
-                    
-                    # Get normalized coordinates for cropping logic
-                    obb_features = result.obb.xywhr[det_idx].cpu().numpy()
-                    x_c_unnorm, y_c_unnorm, w_unnorm, h_unnorm = obb_features[0], obb_features[1], obb_features[2], obb_features[3]
-                    
-                    orig_h, orig_w = result.orig_shape
-                    # Normalize manually
-                    x_c = x_c_unnorm / orig_w
-                    y_c = y_c_unnorm / orig_h
-                    w_norm = w_unnorm / orig_w
-                    h_norm = h_unnorm / orig_h
-                    
-                    logger.info(f"  -> Cropping coords normalized: xywh=({x_c:.3f}, {y_c:.3f}, {w_norm:.3f}, {h_norm:.3f})")
-                    extraction_result = id_extractor.extract_id_from_image(image_path, (x_c, y_c, w_norm, h_norm))
-                    logger.info(f"  -> Extractor result: {extraction_result}")
-                    
-                    if 'error' not in extraction_result and extraction_result.get('id'):
-                        # Simple logic: prefer higher confidence
-                        if extraction_result['confidence'] > best_conf:
-                            best_conf = extraction_result['confidence']
-                            best_id_candidate = extraction_result['id']
-             
-             elif result.boxes is not None and len(result.boxes) > 0:
-                for det_idx, box in enumerate(result.boxes):
-                    box_class_id = int(box.cls[0].cpu().numpy())
-                    box_conf = float(box.conf[0].cpu().numpy())
-                    logger.info(f"  Box Det {det_idx}: class={box_class_id} ({class_names.get(box_class_id, 'unknown')}), conf={box_conf:.3f}")
-                    
-                    # Filter for ID class boxes only
-                    if id_class_id is not None and box_class_id != id_class_id:
-                        continue
-                        
-                    logger.info(f"  -> Found ID candidate text box!")
-                    
-                    # Get normalized coordinates for cropping logic
-                    # xywhn returns normalized x_center, y_center, width, height
-                    x_c, y_c, w_norm, h_norm = box.xywhn[0].cpu().numpy()
-                    
-                    logger.info(f"  -> Cropping coords normalized: xywh=({x_c:.3f}, {y_c:.3f}, {w_norm:.3f}, {h_norm:.3f})")
-                    extraction_result = id_extractor.extract_id_from_image(image_path, (x_c, y_c, w_norm, h_norm))
-                    logger.info(f"  -> Extractor result: {extraction_result}")
-                    
-                    if 'error' not in extraction_result and extraction_result.get('id'):
-                        # Simple logic: prefer higher confidence
-                        if extraction_result['confidence'] > best_conf:
-                            best_conf = extraction_result['confidence']
-                            best_id_candidate = extraction_result['id']
-                            
+        for det in id_dets:
+            # Get normalized center/size from ORT corners or pre-computed values
+            if "x_c" in det:
+                x_c, y_c, w_norm, h_norm = det["x_c"], det["y_c"], det["w_norm"], det["h_norm"]
+            else:
+                corners = det["corners"]
+                # Compute bounding box from corners
+                min_x = float(corners[:, 0].min())
+                max_x = float(corners[:, 0].max())
+                min_y = float(corners[:, 1].min())
+                max_y = float(corners[:, 1].max())
+                x_c = ((min_x + max_x) / 2) / img_w
+                y_c = ((min_y + max_y) / 2) / img_h
+                w_norm = (max_x - min_x) / img_w
+                h_norm = (max_y - min_y) / img_h
+
+            logger.info(f"Server-side ID detection: normalized=({x_c:.3f}, {y_c:.3f}, {w_norm:.3f}, {h_norm:.3f})")
+            extraction_result = id_extractor.extract_id_from_image(image_path, (x_c, y_c, w_norm, h_norm))
+            if 'error' not in extraction_result and extraction_result.get('id'):
+                if extraction_result['confidence'] > best_conf:
+                    best_conf = extraction_result['confidence']
+                    best_id_candidate = extraction_result['id']
+
         if best_id_candidate:
-             logger.info(f"SUCCESS: best_id_candidate={best_id_candidate}")
              return jsonify({
                  "success": True,
                  "id": best_id_candidate,
                  "confidence": best_conf
              })
         else:
-            logger.warning("FAILED: No ID found in image after examining all YOLO OBB detections.")
             return jsonify({
                 "success": False,
                 "error": "No ID found in image"

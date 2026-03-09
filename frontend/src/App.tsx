@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { HashRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import "./App.css";
 import { MainView } from "./views/MainView";
 import { LandingPage } from "./components/LandingPage";
@@ -7,7 +7,8 @@ import type { LizardViewType } from "./components/LandingPage";
 
 // Wrapper component to provide navigation to MainView
 const MainViewWrapper: React.FC<{ selectedViewType: LizardViewType }> = ({ selectedViewType }) => {
-  return <MainView selectedViewType={selectedViewType} />;
+  const navigate = useNavigate();
+  return <MainView selectedViewType={selectedViewType} onNavigateHome={() => navigate("/")} />;
 };
 
 function App() {
