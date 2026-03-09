@@ -3,7 +3,11 @@ import type { AnnotationsData } from "../models/AnnotationsData";
 
 export class OnnxService {
   private static session: ort.InferenceSession | null = null;
-  private static readonly MODEL_PATH = "/models/yolo_obb_6class_h7.onnx";
+  private static get MODEL_PATH() {
+    return window.electronAPI?.isElectron
+      ? "./models/yolo_obb_6class_h7.onnx"
+      : "/models/yolo_obb_6class_h7.onnx";
+  }
   private static readonly INPUT_SIZE = 1280;
   private static readonly CONF_THRESHOLD = 0.25;
   private static readonly IOU_THRESHOLD = 0.45;
@@ -23,6 +27,10 @@ export class OnnxService {
         console.log("Loading ONNX Model...");
         // Use wasm backend
         ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 1);
+        // In Electron (file:// protocol), WASM files need explicit relative path
+        if (window.electronAPI?.isElectron) {
+          ort.env.wasm.wasmPaths = "./";
+        }
         this.session = await ort.InferenceSession.create(this.MODEL_PATH, {
           executionProviders: ["wasm"],
         });

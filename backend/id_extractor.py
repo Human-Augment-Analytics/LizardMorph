@@ -1,10 +1,15 @@
 import cv2
-import easyocr
 import numpy as np
 import re
 import math
 
-reader = easyocr.Reader(["en"], gpu=False)
+# Try platform-native OCR first (no torch dependency), fall back to easyocr
+try:
+    from native_ocr import _create_reader
+    reader = _create_reader()
+except Exception:
+    import easyocr
+    reader = easyocr.Reader(["en"], gpu=False)
 
 def crop_from_yolo_box(image, x_center, y_center, box_width, box_height, enhance=True, target_size=(128, 64)):
     """Convert YOLO coords to pixel coords and crop image with padding."""

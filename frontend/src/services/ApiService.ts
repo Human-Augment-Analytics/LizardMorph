@@ -1,4 +1,4 @@
-import type { ImageSetResponse } from "../models/ImageSetResponse";
+
 import type { AnnotationsData } from "../models/AnnotationsData";
 import type { ImageSet } from "../models/ImageSet";
 import { SessionService } from "./SessionService";
@@ -70,36 +70,26 @@ export class ApiService {
   }
   static async fetchImageSet(imageFilename: string): Promise<ImageSet> {
     const base = await apiUrl();
-    const res = await fetch(
-      `${base}/image?image_filename=${encodeURIComponent(imageFilename)}`,
-      {
-        method: "POST",
-        headers: {
-          ...SessionService.getSessionHeaders(),
-        },
-      }
-    );
-    if (!res.ok) throw new Error("Image set fetch failed");
-
-    const result: ImageSetResponse & { error?: string } = await res.json();
-    if (result.error) {
-      throw new Error(result.error);
+    // Validate session
+    const sessionId = SessionService.getSessionId();
+    if (!sessionId) {
+      throw new Error("No active session");
     }
 
-    const fileExtension = imageFilename.split(".").pop()?.toLowerCase() ?? "";
-    let mimeType: string;
-    if (fileExtension === "png") {
-      mimeType = "image/png";
-    } else if (fileExtension === "gif") {
-      mimeType = "image/gif";
-    } else {
-      mimeType = "image/jpeg";
-    }
+    // Instead of downloading base64 images via /image, we directly point to the new /image_file endpoint
+    // This returns an HTTP URL which natively evades Electron's strict file:// + data URI restrictions inside SVGs
+    // By passing X-Session-ID, we might need a query param to guarantee cross-origin retrieval
+    const buildUrl = (type: string) => {
+      // Append a timestamp to prevent aggressive browser caching
+      return `${base}/image_file?image_filename=${encodeURIComponent(
+        imageFilename
+      )}&type=${type}&session_id=${sessionId}&_t=${Date.now()}`;
+    };
 
     return {
-      original: `data:${mimeType};base64,${result.image3}`,
-      inverted: `data:${mimeType};base64,${result.image2}`,
-      color_contrasted: `data:${mimeType};base64,${result.image1}`,
+      original: buildUrl("original"),
+      inverted: buildUrl("inverted"),
+      color_contrasted: buildUrl("color_contrasted"),
     };
   }
   static async fetchUploadedFiles(): Promise<string[]> {
@@ -194,11 +184,14 @@ export class ApiService {
   }
 
   /**
-   * Extract ID from an image using YOLO detection and OCR
+   * Extract ID from an image using OCR on an ID bounding box
    */
-  static async extractId(imageFilename: string): Promise<ExtractIdResult> {
+  static async extractId(imageFilename: string, idBox?: { left: number; top: number; width: number; height: number }): Promise<ExtractIdResult> {
     const formData = new URLSearchParams();
     formData.append("image_filename", imageFilename);
+    if (idBox) {
+      formData.append("id_box", JSON.stringify(idBox));
+    }
 
     const base = await apiUrl();
     const res = await fetch(`${base}/extract_id`, {

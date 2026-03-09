@@ -5,7 +5,6 @@ export class HeaderStyles {
     padding: "15px",
     borderBottom: "1px solid #ccc",
     textAlign: "center",
-    minHeight: "220px",
     position: "relative",
   };
 

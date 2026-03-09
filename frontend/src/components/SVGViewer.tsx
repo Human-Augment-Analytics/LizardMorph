@@ -6,6 +6,7 @@ import type { UploadHistoryItem } from "../models/UploadHistoryItem";
 import type { BoundingBox } from "../models/AnnotationsData";
 
 interface SVGViewerProps {
+  selectedViewType: string;
   dataFetched: boolean;
   loading: boolean;
   dataLoading: boolean;
@@ -51,12 +52,15 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   readonly svgRef = createRef<SVGSVGElement>();
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
   
-  state: SVGViewerState = {
-    hintDismissed: false,
-    landmarkSize: 2,
-    showBoundingBoxes: true,
-    showControls: false
-  };
+  constructor(props: SVGViewerProps) {
+    super(props);
+    this.state = {
+      hintDismissed: false,
+      landmarkSize: props.selectedViewType === 'toepads' ? 1.0 : 2.0,
+      showBoundingBoxes: true,
+      showControls: false
+    };
+  }
   
   // Performance optimization: Cache scale functions and dimensions
   private cachedScales: {
@@ -98,7 +102,6 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       this.props.currentImageURL &&
       this.props.imageWidth &&
       this.props.imageHeight &&
-      this.props.originalScatterData.length > 0 &&
       (prevProps.imageWidth !== this.props.imageWidth ||
         prevProps.imageHeight !== this.props.imageHeight ||
         prevProps.maxWidth !== this.props.maxWidth ||
@@ -151,7 +154,10 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     const imageElement = svg.select(".background-img");
     
     if (!imageElement.empty()) {
+      // Set both src (for HTML img) and href (fallback for SVG image)
+      imageElement.attr("src", this.props.currentImageURL);
       imageElement.attr("href", this.props.currentImageURL);
+      imageElement.attr("xlink:href", this.props.currentImageURL);
     }
     
     // Apply the stored zoom transform to preserve zoom state in edit mode
@@ -168,8 +174,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     if (
       this.props.currentImageURL &&
       this.props.imageWidth &&
-      this.props.imageHeight &&
-      this.props.originalScatterData.length > 0
+      this.props.imageHeight
     ) {
       console.log(
         "Rendering SVG with image dimensions:",
@@ -267,15 +272,21 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       const zoomContainer = svg.append("g").attr("class", "zoom-container");
 
       // Add image to the zoom container
+      // Add image to the zoom container using foreignObject to bypass SVG-specific rendering bugs and security sandboxes
       zoomContainer
-        .append("image")
-        .attr("class", "background-img")
-        .attr("href", this.props.currentImageURL)
+        .append("foreignObject")
         .attr("x", 0)
         .attr("y", 0)
         .attr("width", width)
         .attr("height", height)
-        .attr("preserveAspectRatio", "xMidYMid slice");
+        .append("xhtml:img")
+        .attr("class", "background-img")
+        .attr("src", this.props.currentImageURL)
+        .style("width", "100%")
+        .style("height", "100%")
+        .style("object-fit", "cover")
+        .style("pointer-events", "none")
+        .attr("draggable", "false");
 
       // Add bounding boxes to the zoom container (if available and visible)
       if (this.state.showBoundingBoxes && this.props.boundingBoxes && this.props.boundingBoxes.length > 0) {
@@ -1132,6 +1143,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
 
         <svg
           ref={this.svgRef}
+          xmlns="http://www.w3.org/2000/svg"
+          xmlnsXlink="http://www.w3.org/1999/xlink"
           style={{
             ...SVGViewerStyles.svg,
             ...(dataFetched ? SVGViewerStyles.svgWithData : {}),

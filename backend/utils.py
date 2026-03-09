@@ -669,8 +669,6 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
         cached_yolo_model: Optional pre-loaded YOLO model to avoid reloading
         cached_dlib_predictors (dict): Optional pre-loaded dlib predictors dict with keys like 'toe', 'finger'
     """
-    from ultralytics import YOLO
-    
     # Use cached predictors if provided, otherwise load from paths
     predictors = {}
 
@@ -725,6 +723,7 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
     model = cached_yolo_model
     if model is None and yolo_model_path and os.path.exists(yolo_model_path):
         print(f"Loading YOLO model from: {yolo_model_path}")
+        from ultralytics import YOLO
         model = YOLO(yolo_model_path, task="obb")
 
     if model is not None:
@@ -788,7 +787,7 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     points.append((float(p.x + x_off), float(p.y + y_off)))
                 return np.array(points, dtype=float)
 
-            def _generate_landmark_xml(landmarks_global):
+            def _generate_landmark_xml(landmarks_global, label=None):
                 """Generate XML box element from landmark coordinates."""
                 min_lx, min_ly = np.min(landmarks_global, axis=0)
                 max_lx, max_ly = np.max(landmarks_global, axis=0)
@@ -800,6 +799,8 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                 box_xml.set('left', str(int(min_lx)))
                 box_xml.set('width', str(int(bbox_w)))
                 box_xml.set('height', str(int(bbox_h)))
+                if label:
+                    box_xml.set('label', label)
 
                 for pt_i, point in enumerate(landmarks_global):
                     part = ET.SubElement(box_xml, 'part')
@@ -960,7 +961,7 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                      print(f"DEBUG {category}: predictors={list(predictors.keys())}, curr_predictor={'FOUND' if curr_predictor else 'NONE'}")
                      if curr_predictor:
                           landmarks_global = _predict_on_crop(curr_predictor, img_raw_bgr, best_det['corners'])
-                          image_e.append(_generate_landmark_xml(landmarks_global))
+                          image_e.append(_generate_landmark_xml(landmarks_global, label=category))
                           obj_count += 1
                      else:
                           print(f"WARNING: No predictor for {category}, SKIPPING!")
@@ -985,7 +986,7 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                              points.append((float(p.x + x_off), float(h_img - 1 - (p.y + y_off))))
                          
                          landmarks_global = np.array(points, dtype=float)
-                         image_e.append(_generate_landmark_xml(landmarks_global))
+                         image_e.append(_generate_landmark_xml(landmarks_global, label=category))
                          obj_count += 1
 
             print(f"\nTotal detections: {obj_count}")
@@ -1448,7 +1449,7 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
             points.append((float(p.x + x_off), float(p.y + y_off)))
         return np.array(points, dtype=float)
 
-    def _generate_landmark_xml(landmarks_global):
+    def _generate_landmark_xml(landmarks_global, label=None):
         """Generate XML box element from landmark coordinates."""
         min_lx, min_ly = np.min(landmarks_global, axis=0)
         max_lx, max_ly = np.max(landmarks_global, axis=0)
@@ -1460,6 +1461,8 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
         box_xml.set('left', str(int(min_lx)))
         box_xml.set('width', str(int(bbox_w)))
         box_xml.set('height', str(int(bbox_h)))
+        if label:
+            box_xml.set('label', label)
 
         for pt_i, point in enumerate(landmarks_global):
             part = ET.SubElement(box_xml, 'part')
@@ -1572,7 +1575,7 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                 curr_predictor = predictors.get('finger') if 'finger' in category else predictors.get('toe')
                 if curr_predictor:
                      landmarks_global = _predict_on_crop(curr_predictor, img_raw_bgr, best_det['corners'])
-                     image_e.append(_generate_landmark_xml(landmarks_global))
+                     image_e.append(_generate_landmark_xml(landmarks_global, label=category))
                      obj_count += 1
 
             elif category in ['up_finger', 'up_toe']:
