@@ -8,7 +8,11 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 echo "=== Building LizardMorph backend ==="
 
-PYTHON="${PYTHON_PATH:-$HOME/miniconda3/envs/lizard/bin/python}"
+if [[ "$OSTYPE" == "msys"* ]] || [[ "$OSTYPE" == "cygwin"* ]]; then
+    PYTHON="${PYTHON_PATH:-$HOME/miniconda3/envs/lizard/python.exe}"
+else
+    PYTHON="${PYTHON_PATH:-$HOME/miniconda3/envs/lizard/bin/python}"
+fi
 echo "Using Python: $PYTHON"
 
 # Install PyInstaller if not present

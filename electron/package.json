@@ -5,6 +5,8 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
     "build": "electron-builder"
   },
   "dependencies": {},
@@ -21,6 +23,12 @@
     "mac": {
       "category": "public.app-category.education",
       "target": ["dmg"],
+      "icon": "icons/icon.icns"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
       "icon": "icons/icon.icns"
     },
     "extraResources": [

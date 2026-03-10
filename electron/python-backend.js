@@ -40,11 +40,16 @@ async function startBackend(isDev, log = console.log) {
   const port = await findFreePort();
 
   let proc;
+  const isWin = process.platform === "win32";
+
   if (isDev) {
     const backendDir = path.join(__dirname, "..", "backend");
     // Use the Python from PYTHON_PATH env var, or try to find conda env's Python
-    const pythonPath = process.env.PYTHON_PATH
-      || path.join(os.homedir(), "miniconda3", "envs", "lizard", "bin", "python")
+    const defaultCondaEnv = isWin
+      ? path.join(os.homedir(), "miniconda3", "envs", "lizard", "python.exe")
+      : path.join(os.homedir(), "miniconda3", "envs", "lizard", "bin", "python");
+    const pythonPath = process.env.PYTHON_PATH || defaultCondaEnv;
+
     proc = spawn(pythonPath, ["app.py"], {
       cwd: backendDir,
       env: {
@@ -56,7 +61,8 @@ async function startBackend(isDev, log = console.log) {
     });
   } else {
     const resourcesPath = process.resourcesPath;
-    const exePath = path.join(resourcesPath, "backend", "app");
+    const exeName = isWin ? "app.exe" : "app";
+    const exePath = path.join(resourcesPath, "backend", exeName);
     log(`[backend] resourcesPath: ${resourcesPath}`);
     log(`[backend] exePath: ${exePath}`);
     log(`[backend] exists: ${require("fs").existsSync(exePath)}`);

@@ -5,6 +5,33 @@ project_dir = os.path.abspath(os.path.join(SPECPATH, '..'))
 backend_dir = os.path.join(project_dir, 'backend')
 models_dir = os.path.join(project_dir, 'models')
 
+import sys
+
+base_hiddenimports = [
+    'flask',
+    'flask_cors',
+    'werkzeug',
+    'dlib',
+    'cv2',
+    'numpy',
+    'pandas',
+    'PIL',
+    'onnxruntime',
+    'native_ocr',
+]
+
+if sys.platform == 'darwin':
+    base_hiddenimports.extend([
+        'Vision',
+        'Quartz',
+        'objc',
+    ])
+elif sys.platform == 'win32':
+    base_hiddenimports.extend([
+        'winocr',
+        'asyncio',
+    ])
+
 a = Analysis(
     [os.path.join(backend_dir, 'app.py')],
     pathex=[backend_dir],
@@ -17,21 +44,7 @@ a = Analysis(
         (os.path.join(models_dir, 'lizard-toe-pad', 'finger_predictor_obb.dat'), 'models/lizard-toe-pad'),
         (os.path.join(models_dir, 'lizard-toe-pad', 'lizard_scale.dat'), 'models/lizard-toe-pad'),
     ],
-    hiddenimports=[
-        'flask',
-        'flask_cors',
-        'werkzeug',
-        'dlib',
-        'cv2',
-        'numpy',
-        'pandas',
-        'PIL',
-        'onnxruntime',
-        'native_ocr',
-        'Vision',
-        'Quartz',
-        'objc',
-    ],
+    hiddenimports=base_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
