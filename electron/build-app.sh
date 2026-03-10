@@ -22,6 +22,12 @@ bash build-backend.sh
 echo "=== Step 4: Package Electron app ==="
 cd "$SCRIPT_DIR"
 npm ci
-npx electron-builder --mac
+if [[ "$OSTYPE" == "msys"* ]] || [[ "$OSTYPE" == "cygwin"* ]]; then
+    npm run build:win
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    npm run build:mac
+else
+    npm run build
+fi
 
 echo "=== Done! App is in $SCRIPT_DIR/release/ ==="
