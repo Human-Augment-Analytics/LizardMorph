@@ -211,9 +211,9 @@ def predictions_to_xml(
             box = create_box(img.shape)
             part_length = range(0, shape.num_parts)
             
-            for item, i in enumerate(sorted(part_length, key=str)):
-                x = np.median([landmark[item][0] for landmark in landmarks])
-                y = np.median([landmark[item][1] for landmark in landmarks])
+            for idx, i in enumerate(sorted(part_length, key=int)):
+                x = np.median([landmark[idx][0] for landmark in landmarks])
+                y = np.median([landmark[idx][1] for landmark in landmarks])
                 if ignore is not None:
                     if i not in ignore:
                         part = create_part(x, y, i)
@@ -222,7 +222,7 @@ def predictions_to_xml(
                     part = create_part(x, y, i)
                     box.append(part)
 
-                pos = np.array(landmarks)[:, item]
+                pos = np.array(landmarks)[:, idx]
                 pos_x, pos_y = (
                     pos[:, 0],
                     pos[:, 1],
@@ -372,7 +372,7 @@ def shape_to_np(shape):
 
     length = range(0, shape.num_parts)
 
-    for i in sorted(length, key=str):
+    for i in sorted(length, key=int):
         coords[i] = [shape.part(i).x, shape.part(i).y]
 
     # return the list of (x, y)-coordinates
@@ -720,6 +720,7 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
     print(f"{'='*60}")
 
     # Use cached YOLO model if provided, otherwise load from path
+    obj_count = 0
     model = cached_yolo_model
     if model is None and yolo_model_path and os.path.exists(yolo_model_path):
         print(f"Loading YOLO model from: {yolo_model_path}")
@@ -759,6 +760,83 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
 
                 res = results[0]
                 names = res.names
+
+            def _iou_aabb(a_corners, b_corners):
+                """Axis-aligned bounding box IoU between two sets of OBB corners."""
+                ax, ay, aw, ah = cv2.boundingRect(a_corners.astype(np.int32))
+                bx, by, bw, bh = cv2.boundingRect(b_corners.astype(np.int32))
+                ix1 = max(ax, bx)
+                iy1 = max(ay, by)
+                ix2 = min(ax + aw, bx + bw)
+                iy2 = min(ay + ah, by + bh)
+                if ix2 <= ix1 or iy2 <= iy1:
+                    return 0.0
+                inter = (ix2 - ix1) * (iy2 - iy1)
+                return inter / (aw * ah + bw * bh - inter)
+
+            def _are_adjacent_rulers(a_corners, b_corners, gap_ratio=0.5):
+                """Check if two ruler OBBs are adjacent fragments of the same ruler.
+                Returns True if the gap between their AABBs is small relative to their size."""
+                ax, ay, aw, ah = cv2.boundingRect(a_corners.astype(np.int32))
+                bx, by, bw, bh = cv2.boundingRect(b_corners.astype(np.int32))
+                # Gap along x and y axes (negative means overlap)
+                gap_x = max(0, max(ax, bx) - min(ax + aw, bx + bw))
+                gap_y = max(0, max(ay, by) - min(ay + ah, by + bh))
+                # Use the shorter dimension (ruler width) as the reference for gap tolerance
+                short_a = min(aw, ah)
+                short_b = min(bw, bh)
+                ref = max(short_a, short_b)
+                if ref == 0:
+                    return False
+                # Adjacent if gap is small relative to the ruler's short dimension
+                # and they overlap along the perpendicular axis
+                if aw > ah:  # horizontal ruler
+                    return gap_x < ref * gap_ratio and gap_y < ref
+                else:  # vertical ruler
+                    return gap_y < ref * gap_ratio and gap_x < ref
+
+            def _merge_ruler_detections(det_list):
+                """Merge adjacent ruler fragments into a single detection.
+                Returns a single merged detection with corners from the convex hull."""
+                if len(det_list) <= 1:
+                    return det_list
+                det_list.sort(key=lambda x: x['conf'], reverse=True)
+                merged = [det_list[0]]
+                for det in det_list[1:]:
+                    did_merge = False
+                    for i, m in enumerate(merged):
+                        if _iou_aabb(det['corners'], m['corners']) > 0.1 or \
+                           _are_adjacent_rulers(det['corners'], m['corners']):
+                            # Merge: combine all corner points and fit a minimum-area OBB
+                            all_pts = np.vstack([m['corners'], det['corners']])
+                            rect = cv2.minAreaRect(all_pts.astype(np.float32))
+                            new_corners = cv2.boxPoints(rect).astype(np.float32)
+                            w, h = rect[1]
+                            merged[i] = {
+                                'conf': max(m['conf'], det['conf']),
+                                'corners': new_corners,
+                                'obb_wh': (w, h),
+                            }
+                            did_merge = True
+                            break
+                    if not did_merge:
+                        merged.append(det)
+                return merged
+
+            def _nms_best(det_list, iou_threshold=0.3, is_ruler=False):
+                """NMS then top-1: suppress overlapping detections, return the highest-confidence survivor.
+                For ruler class, merge adjacent fragments before NMS."""
+                if not det_list:
+                    return None
+                if is_ruler:
+                    det_list = _merge_ruler_detections(det_list)
+                det_list.sort(key=lambda x: x['conf'], reverse=True)
+                survivors = []
+                for det in det_list:
+                    if any(_iou_aabb(det['corners'], s['corners']) > iou_threshold for s in survivors):
+                        continue
+                    survivors.append(det)
+                return survivors[0] if survivors else None
 
             def _get_padded_crop(img_bgr, corners_orig):
                 """Crop padded bbox from full-res image, return (crop_rgb, x_off, y_off)."""
@@ -832,19 +910,18 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                         corners = corners_small * inv_scale
 
                         if 'ruler' in cls_name.lower() or 'scale' in cls_name.lower():
-                            detections['scale'].append({'conf': det_conf, 'corners': corners, 'obb_wh': tuple(res.obb.xywhr[idx].tolist()[2:4])})
+                            wh_small = res.obb.xywhr[idx].tolist()[2:4]
+                            detections['scale'].append({'conf': det_conf, 'corners': corners, 'obb_wh': (wh_small[0] * inv_scale, wh_small[1] * inv_scale)})
                         elif 'bot_finger' in cls_name.lower():
                             detections['bot_finger'].append({'conf': det_conf, 'corners': corners})
                         elif 'bot_toe' in cls_name.lower():
                             detections['bot_toe'].append({'conf': det_conf, 'corners': corners})
                         elif 'up_finger' in cls_name.lower():
-                            corners_flipped = np.copy(corners)
-                            corners_flipped[:, 1] = h_img - 1 - corners_flipped[:, 1]
-                            detections['up_finger'].append({'conf': det_conf, 'corners': corners_flipped})
+                            # Standard pass: corners are already in original image space, no flip needed
+                            detections['up_finger'].append({'conf': det_conf, 'corners': corners})
                         elif 'up_toe' in cls_name.lower():
-                            corners_flipped = np.copy(corners)
-                            corners_flipped[:, 1] = h_img - 1 - corners_flipped[:, 1]
-                            detections['up_toe'].append({'conf': det_conf, 'corners': corners_flipped})
+                            # Standard pass: corners are already in original image space, no flip needed
+                            detections['up_toe'].append({'conf': det_conf, 'corners': corners})
                         elif cls_name.lower() == 'id':
                             detections['id'].append({'conf': det_conf, 'corners': corners})
                         elif cls_id == 0:
@@ -885,12 +962,12 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
             for category, det_list in detections.items():
                 if not det_list:
                     continue
-                
-                # Sort by confidence (descending) and take top 1
-                det_list.sort(key=lambda x: x['conf'], reverse=True)
-                best_det = det_list[0]
-                
-                print(f"Processing best {category} (conf={best_det['conf']:.3f})")
+
+                best_det = _nms_best(det_list, is_ruler=(category == 'scale'))
+                if best_det is None:
+                    continue
+
+                print(f"Processing best {category} (conf={best_det['conf']:.3f}, {len(det_list)} candidates)")
 
                 if category == 'scale':
                     # Process scale bar
@@ -907,8 +984,9 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     box_xml.set("height", str(int(detected_rect.height())))
                     
                     obb_wh = best_det['obb_wh']
-                    ruler_pixel_width = max(obb_wh[0], obb_wh[1]) * inv_scale
+                    ruler_pixel_width = max(obb_wh[0], obb_wh[1])
 
+                    # Physical ruler is 2mm longer than the marked scale bar (1mm margin each side)
                     total_length_mm = scale_bar_length_mm + 2.0
                     pixels_per_mm = ruler_pixel_width / total_length_mm
                     offset_pixels = pixels_per_mm * 1.0
@@ -970,11 +1048,18 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     # Load flipped image if not already loaded
                     if flipped_bgr is None:
                         flipped_bgr = cv2.flip(img_raw_bgr, 0)
-                    
+
                     curr_predictor = predictors.get('finger') if 'finger' in category else predictors.get('toe')
                     if curr_predictor:
-                         # Crop from flipped full-res image
-                         crop_rgb, x_off, y_off = _get_padded_crop(flipped_bgr, best_det['corners'])
+                         # Corners may be in original image space (ORT path) or flipped space (Ultralytics flip-pass).
+                         # For ORT path, we need to flip y coords to crop from flipped_bgr.
+                         # For Ultralytics flip-pass, corners are already in flipped space.
+                         if _is_ort:
+                             corners_for_crop = np.copy(best_det['corners'])
+                             corners_for_crop[:, 1] = h_img - 1 - corners_for_crop[:, 1]
+                         else:
+                             corners_for_crop = best_det['corners']
+                         crop_rgb, x_off, y_off = _get_padded_crop(flipped_bgr, corners_for_crop)
                          crop_h, crop_w = crop_rgb.shape[:2]
                          rect = dlib.rectangle(0, 0, crop_w, crop_h)
                          shape = curr_predictor(crop_rgb, rect)
@@ -1110,7 +1195,7 @@ def dlib_xml_to_tps(xml_file: str):
                             data = [
                                 float(parts.attrib["x"]),
                                 float(boxes.attrib["height"])
-                                + 2
+                                + 1
                                 - float(parts.attrib["y"]),
                             ]
                         wr.writerows([data])
@@ -1422,6 +1507,75 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
     obj_count = 0
     padding_ratio = 0.3
 
+    def _iou_aabb(a_corners, b_corners):
+        """Axis-aligned bounding box IoU between two sets of OBB corners."""
+        ax, ay, aw, ah = cv2.boundingRect(a_corners.astype(np.int32))
+        bx, by, bw, bh = cv2.boundingRect(b_corners.astype(np.int32))
+        ix1 = max(ax, bx)
+        iy1 = max(ay, by)
+        ix2 = min(ax + aw, bx + bw)
+        iy2 = min(ay + ah, by + bh)
+        if ix2 <= ix1 or iy2 <= iy1:
+            return 0.0
+        inter = (ix2 - ix1) * (iy2 - iy1)
+        return inter / (aw * ah + bw * bh - inter)
+
+    def _are_adjacent_rulers(a_corners, b_corners, gap_ratio=0.5):
+        """Check if two ruler OBBs are adjacent fragments of the same ruler."""
+        ax, ay, aw, ah = cv2.boundingRect(a_corners.astype(np.int32))
+        bx, by, bw, bh = cv2.boundingRect(b_corners.astype(np.int32))
+        gap_x = max(0, max(ax, bx) - min(ax + aw, bx + bw))
+        gap_y = max(0, max(ay, by) - min(ay + ah, by + bh))
+        short_a = min(aw, ah)
+        short_b = min(bw, bh)
+        ref = max(short_a, short_b)
+        if ref == 0:
+            return False
+        if aw > ah:
+            return gap_x < ref * gap_ratio and gap_y < ref
+        else:
+            return gap_y < ref * gap_ratio and gap_x < ref
+
+    def _merge_ruler_detections(det_list):
+        """Merge adjacent ruler fragments into a single detection."""
+        if len(det_list) <= 1:
+            return det_list
+        det_list.sort(key=lambda x: x['conf'], reverse=True)
+        merged = [det_list[0]]
+        for det in det_list[1:]:
+            did_merge = False
+            for i, m in enumerate(merged):
+                if _iou_aabb(det['corners'], m['corners']) > 0.1 or \
+                   _are_adjacent_rulers(det['corners'], m['corners']):
+                    all_pts = np.vstack([m['corners'], det['corners']])
+                    rect = cv2.minAreaRect(all_pts.astype(np.float32))
+                    new_corners = cv2.boxPoints(rect).astype(np.float32)
+                    w, h = rect[1]
+                    merged[i] = {
+                        'conf': max(m['conf'], det['conf']),
+                        'corners': new_corners,
+                        'obb_wh': (w, h),
+                    }
+                    did_merge = True
+                    break
+            if not did_merge:
+                merged.append(det)
+        return merged
+
+    def _nms_best(det_list, iou_threshold=0.3, is_ruler=False):
+        """NMS then top-1, with ruler fragment merging."""
+        if not det_list:
+            return None
+        if is_ruler:
+            det_list = _merge_ruler_detections(det_list)
+        det_list.sort(key=lambda x: x['conf'], reverse=True)
+        survivors = []
+        for det in det_list:
+            if any(_iou_aabb(det['corners'], s['corners']) > iou_threshold for s in survivors):
+                continue
+            survivors.append(det)
+        return survivors[0] if survivors else None
+
     def _get_padded_crop(img_bgr, corners_orig):
         """Crop padded bbox from full-res image, return (crop_rgb, x_off, y_off)."""
         x, y, bw, bh = cv2.boundingRect(corners_orig.astype(np.int32))
@@ -1509,8 +1663,10 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
     for category, det_list in detections.items():
         if not det_list:
             continue
-            
-        best_det = det_list[0]
+
+        best_det = _nms_best(det_list, is_ruler=(category == 'scale'))
+        if best_det is None:
+            continue
         try:
             if category == 'scale':
                 corners = best_det['corners']
@@ -1527,6 +1683,7 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                 
                 obb_wh = best_det['obb_wh']
                 ruler_pixel_width = max(obb_wh[0], obb_wh[1])
+                # Physical ruler is 2mm longer than the marked scale bar (1mm margin each side)
                 total_length_mm = scale_bar_length_mm + 2.0
                 pixels_per_mm = ruler_pixel_width / total_length_mm
                 offset_pixels = pixels_per_mm * 1.0
