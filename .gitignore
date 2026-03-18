@@ -74,3 +74,5 @@ monitoring/web.yml
 
 # AI configuration
 .claude
+!.env.example
+!model-api/.env.example
