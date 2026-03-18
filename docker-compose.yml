@@ -4,6 +4,7 @@ services:
     command: >
       mlflow server
       --backend-store-uri sqlite:///data/mlflow.db
+      --default-artifact-root /data/artifacts
       --no-serve-artifacts
       --host 0.0.0.0
       --port 5000
