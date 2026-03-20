@@ -102,7 +102,7 @@ VITE_ALLOWED_HOSTS=your-subdomain.ngrok-free.app
 To test the complete application locally using Docker:
 
 1. Ensure Docker Desktop is installed and running
-2. Make sure the predictor file (`better_predictor_auto.dat`) is in the `backend/` directory
+2. Make sure the predictor file (`new_landmarks_2025_predictor.dat`) is in the `backend/` directory
 3. Build and run the Docker container:
 
    ```bash
@@ -192,7 +192,7 @@ To deploy manually to Azure:
 
 ### Local Development and Deployment
 
-1. **Predictor File**: The machine learning model file (`better_predictor_auto.dat`) is required but not included in the repository due to its size. You must download it separately and place it in the backend directory.
+1. **Predictor File**: The machine learning model file (`new_landmarks_2025_predictor.dat`) is required but not included in the repository due to its size. You must download it separately and place it in the backend directory.
 
 2. **Docker Memory Requirements**: The Docker container may require significant memory. If you encounter container crashes during build or runtime, try increasing Docker's allocated memory in settings.
 

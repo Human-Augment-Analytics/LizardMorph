@@ -24,8 +24,8 @@ function Show-Section {
 
 # Check if the predictor file exists
 function Test-Predictor {
-    if (-not (Test-Path "backend/better_predictor_auto.dat")) {
-        Write-Host "ERROR: The predictor file 'backend/better_predictor_auto.dat' is missing!" -ForegroundColor $RED
+    if (-not (Test-Path "backend/new_landmarks_2025_predictor.dat")) {
+        Write-Host "ERROR: The predictor file 'backend/new_landmarks_2025_predictor.dat' is missing!" -ForegroundColor $RED
         Write-Host "Please download it from: https://gatech.box.com/s/qky0pu7hd3y0b8okvl3r7zgfiaj961vb"
         Write-Host "and place it in the backend directory."
         return $false

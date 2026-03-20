@@ -37,7 +37,7 @@ a = Analysis(
     pathex=[backend_dir],
     binaries=[],
     datas=[
-        (os.path.join(models_dir, 'lizard-x-ray', 'better_predictor_auto.dat'), 'models/lizard-x-ray'),
+        (os.path.join(models_dir, 'lizard-x-ray', 'new_landmarks_2025_predictor.dat'), 'models/lizard-x-ray'),
         (os.path.join(models_dir, 'lizard-x-ray', 'lateral_predictor_auto.dat'), 'models/lizard-x-ray'),
         (os.path.join(models_dir, 'lizard-toe-pad', 'yolo_obb_6class_h7.onnx'), 'models/lizard-toe-pad'),
         (os.path.join(models_dir, 'lizard-toe-pad', 'toe_predictor_obb.dat'), 'models/lizard-toe-pad'),
