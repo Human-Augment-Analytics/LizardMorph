@@ -6,6 +6,7 @@ import type { UploadHistoryItem } from "../models/UploadHistoryItem";
 import type { BoundingBox } from "../models/AnnotationsData";
 
 interface SVGViewerProps {
+  selectedViewType: string;
   dataFetched: boolean;
   loading: boolean;
   dataLoading: boolean;
@@ -38,6 +39,9 @@ interface SVGViewerProps {
 interface SVGViewerState {
   hintDismissed: boolean;
   landmarkSize: number;
+  labelSize: number;
+  labelColor: string;
+  showLabels: boolean;
   showBoundingBoxes: boolean;
   showControls: boolean;
 }
@@ -51,12 +55,18 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   readonly svgRef = createRef<SVGSVGElement>();
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
   
-  state: SVGViewerState = {
-    hintDismissed: false,
-    landmarkSize: 2,
-    showBoundingBoxes: true,
-    showControls: false
-  };
+  constructor(props: SVGViewerProps) {
+    super(props);
+    this.state = {
+      hintDismissed: false,
+      landmarkSize: props.selectedViewType === 'toepads' ? 1.0 : 2.0,
+      labelSize: 8,
+      labelColor: '#ffffff',
+      showLabels: true,
+      showBoundingBoxes: true,
+      showControls: false
+    };
+  }
   
   // Performance optimization: Cache scale functions and dimensions
   private cachedScales: {
@@ -98,13 +108,13 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       this.props.currentImageURL &&
       this.props.imageWidth &&
       this.props.imageHeight &&
-      this.props.originalScatterData.length > 0 &&
       (prevProps.imageWidth !== this.props.imageWidth ||
         prevProps.imageHeight !== this.props.imageHeight ||
         prevProps.maxWidth !== this.props.maxWidth ||
         this.props.needsScaling ||
         prevProps.boundingBoxes !== this.props.boundingBoxes ||
-        (this.props.boundingBoxes && this.props.boundingBoxes.length !== (prevProps.boundingBoxes?.length || 0)))
+        (this.props.boundingBoxes && this.props.boundingBoxes.length !== (prevProps.boundingBoxes?.length || 0)) ||
+        prevProps.originalScatterData.length !== this.props.originalScatterData.length)
     ) {
       setTimeout(() => {
         this.renderSVG();
@@ -151,7 +161,10 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     const imageElement = svg.select(".background-img");
     
     if (!imageElement.empty()) {
+      // Set both src (for HTML img) and href (fallback for SVG image)
+      imageElement.attr("src", this.props.currentImageURL);
       imageElement.attr("href", this.props.currentImageURL);
+      imageElement.attr("xlink:href", this.props.currentImageURL);
     }
     
     // Apply the stored zoom transform to preserve zoom state in edit mode
@@ -168,8 +181,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     if (
       this.props.currentImageURL &&
       this.props.imageWidth &&
-      this.props.imageHeight &&
-      this.props.originalScatterData.length > 0
+      this.props.imageHeight
     ) {
       console.log(
         "Rendering SVG with image dimensions:",
@@ -180,6 +192,18 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
 
       const svg = d3.select<SVGSVGElement, unknown>(this.svgRef.current!);
       svg.selectAll("*").remove(); // Clear SVG first to prevent duplication
+
+      // Add drop shadow filter for label readability (no stroke outline needed)
+      const defs = svg.append("defs");
+      const filter = defs.append("filter")
+        .attr("id", "label-shadow")
+        .attr("x", "-20%").attr("y", "-20%")
+        .attr("width", "140%").attr("height", "140%");
+      filter.append("feDropShadow")
+        .attr("dx", "0").attr("dy", "0")
+        .attr("stdDeviation", "1.5")
+        .attr("flood-color", "black")
+        .attr("flood-opacity", "0.9");
 
       // Calculate dimensions maintaining aspect ratio
       let width: number;
@@ -267,15 +291,21 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       const zoomContainer = svg.append("g").attr("class", "zoom-container");
 
       // Add image to the zoom container
+      // Add image to the zoom container using foreignObject to bypass SVG-specific rendering bugs and security sandboxes
       zoomContainer
-        .append("image")
-        .attr("class", "background-img")
-        .attr("href", this.props.currentImageURL)
+        .append("foreignObject")
         .attr("x", 0)
         .attr("y", 0)
         .attr("width", width)
         .attr("height", height)
-        .attr("preserveAspectRatio", "xMidYMid slice");
+        .append("xhtml:img")
+        .attr("class", "background-img")
+        .attr("src", this.props.currentImageURL)
+        .style("width", "100%")
+        .style("height", "100%")
+        .style("object-fit", "fill")
+        .style("pointer-events", "none")
+        .attr("draggable", "false");
 
       // Add bounding boxes to the zoom container (if available and visible)
       if (this.state.showBoundingBoxes && this.props.boundingBoxes && this.props.boundingBoxes.length > 0) {
@@ -442,18 +472,18 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           .style("pointer-events", "all");
 
         // Add the number label
-        /*
-        g.append("text")
-          .attr("x", d.x + textOffset)
-          .attr("y", d.y - textOffset)
-          .text(d.id + 1)
-          .attr("font-size", `${fontSize}px`)
-          .attr("fill", "white")
-          .attr("stroke", "black")
-          .attr("stroke-width", "0.5px")
-          .attr("opacity", this.isTransparentMode ? 0.6 : 1.0)
-          .style("pointer-events", "none"); // Prevent text from interfering with drag
-        */
+        if (this.state.showLabels) {
+          const textOffset = size + 1;
+          g.append("text")
+            .attr("x", d.x + textOffset)
+            .attr("y", d.y - textOffset)
+            .text(d.id + 1)
+            .attr("font-size", `${this.state.labelSize}px`)
+            .attr("fill", this.state.labelColor)
+            .attr("filter", "url(#label-shadow)")
+            .attr("opacity", this.isTransparentMode ? 0.6 : 1.0)
+            .style("pointer-events", "none");
+        }
       });
 
       // Set data-landmark-id on the groups for proper drag selection
@@ -511,6 +541,58 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           // In edit mode, directly apply transform to zoom container
           zoomContainer.attr("transform", this.props.zoomTransform.toString());
         }
+      }
+
+      // Click-to-place: in free mode + edit mode, clicking the background adds a new landmark
+      if (this.props.selectedViewType === "free") {
+        svg.on("click.place", (event: MouseEvent) => {
+          if (!this.props.isEditMode) return;
+          // Ignore clicks on existing landmarks (circles/text)
+          const target = event.target as Element;
+          if (target.tagName === "circle" || target.tagName === "text") return;
+          // Also ignore if the click is on a landmark group child
+          const parentTag = target.parentElement?.tagName;
+          if (parentTag === "g" && target.parentElement?.classList.contains("landmark-group")) return;
+
+          this.updateCachedScales();
+          if (!this.cachedScales.scaleXToImg || !this.cachedScales.scaleYToImg) return;
+
+          // Get click position in SVG coordinates, accounting for zoom transform
+          const pt = d3.pointer(event, this.svgRef.current!);
+          const transform = d3.zoomTransform(this.svgRef.current!);
+          const svgX = (pt[0] - transform.x) / transform.k;
+          const svgY = (pt[1] - transform.y) / transform.k;
+
+          // Convert to image coordinates
+          const imgX = this.cachedScales.scaleXToImg(svgX);
+          const imgY = this.cachedScales.scaleYToImg(svgY);
+
+          // Generate next sequential ID
+          const maxId = this.props.originalScatterData.length > 0
+            ? Math.max(...this.props.originalScatterData.map(p => p.id))
+            : -1;
+          const newId = maxId + 1;
+
+          // Save history for undo
+          this.saveToHistory();
+
+          // Create new point in image space
+          const newOriginalPoint: Point = { id: newId, x: imgX, y: imgY };
+
+          // Create display-space version
+          const newDisplayPoint: Point = {
+            id: newId,
+            x: this.cachedScales.scaleXDisplay ? this.cachedScales.scaleXDisplay(imgX) : svgX,
+            y: this.cachedScales.scaleYDisplay ? this.cachedScales.scaleYDisplay(imgY) : svgY,
+          };
+
+          // Update data arrays
+          const updatedOriginal = [...this.props.originalScatterData, newOriginalPoint];
+          const updatedDisplay = [...this.props.scatterData, newDisplayPoint];
+
+          // Propagate to parent — componentDidUpdate detects length change and re-renders
+          this.props.onScatterDataUpdate(updatedDisplay, updatedOriginal);
+        });
       }
     }
   };
@@ -791,12 +873,18 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     if (this.positionHistory.length === 0) {
       return;
     }
-    
+
     const lastState = this.positionHistory.pop();
     if (lastState) {
+      const pointCountChanged = lastState.originalScatterData.length !== this.props.originalScatterData.length;
       this.props.onScatterDataUpdate(lastState.scatterData, lastState.originalScatterData);
-      // Force visual update of SVG elements
-      this.updateSVGPositions(lastState.scatterData);
+      if (pointCountChanged) {
+        // Point was added or removed — componentDidUpdate will trigger full re-render
+        // via the length check
+      } else {
+        // Only positions changed — update in place
+        this.updateSVGPositions(lastState.scatterData);
+      }
     }
   };
 
@@ -824,22 +912,22 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   // Update landmark sizes
   private updateLandmarkSizes = (): void => {
     if (!this.svgRef.current) return;
-    
+
     const svg = d3.select(this.svgRef.current);
     const scatterPlotGroup = svg.select<SVGGElement>(".scatter-points");
     if (scatterPlotGroup.empty()) return;
-    
+
     const size = this.state.landmarkSize;
-    const fontSize = Math.max(6, size * 2); // Scale font size with landmark size
     const textOffset = size + 1;
-    
+
     // Update circle sizes
     scatterPlotGroup.selectAll<SVGCircleElement, Point>("circle")
       .attr("r", size);
-    
-    // Update text sizes and positions
+
+    // Update text sizes, positions, and color
     scatterPlotGroup.selectAll<SVGTextElement, Point>("text")
-      .attr("font-size", `${fontSize}px`)
+      .attr("font-size", `${this.state.labelSize}px`)
+      .attr("fill", this.state.labelColor)
       .attr("x", (d: Point) => d.x + textOffset)
       .attr("y", (d: Point) => d.y - textOffset);
   };
@@ -849,6 +937,45 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     const newSize = parseFloat(event.target.value);
     this.setState({ landmarkSize: newSize }, () => {
       this.updateLandmarkSizes();
+    });
+  };
+
+  // Handle label size change
+  private handleLabelSizeChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
+    const newSize = parseFloat(event.target.value);
+    this.setState({ labelSize: newSize }, () => {
+      this.updateLandmarkSizes();
+    });
+  };
+
+  // Handle label color change
+  private handleLabelColorChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
+    this.setState({ labelColor: event.target.value }, () => {
+      this.updateLandmarkSizes();
+    });
+  };
+
+  // Delete the currently selected landmark (free mode)
+  private deleteSelectedLandmark = (): void => {
+    if (!this.props.selectedPoint) return;
+    const idToDelete = this.props.selectedPoint.id;
+
+    // Save history for undo
+    this.saveToHistory();
+
+    // Filter out the deleted point
+    const updatedOriginal = this.props.originalScatterData.filter(p => p.id !== idToDelete);
+    const updatedDisplay = this.props.scatterData.filter(p => p.id !== idToDelete);
+
+    // Clear selection and update data — componentDidUpdate detects length change and re-renders
+    this.props.onPointSelect(null);
+    this.props.onScatterDataUpdate(updatedDisplay, updatedOriginal);
+  };
+
+  // Toggle label visibility
+  private toggleLabels = (): void => {
+    this.setState({ showLabels: !this.state.showLabels }, () => {
+      this.renderSVG();
     });
   };
 
@@ -945,6 +1072,20 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       this.toggleBoundingBoxes();
     }
 
+    // Toggle labels with 'N' key
+    if (event.key.toLowerCase() === 'n' && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      this.toggleLabels();
+    }
+
+    // Delete selected landmark with Delete/Backspace (free mode)
+    if ((event.key === 'Delete' || event.key === 'Backspace') && !event.ctrlKey && !event.metaKey) {
+      if (this.props.selectedPoint && this.props.selectedViewType === "free") {
+        event.preventDefault();
+        this.deleteSelectedLandmark();
+      }
+    }
+
     // Undo with Ctrl+Z
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
       event.preventDefault();
@@ -1008,26 +1149,6 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
             zIndex: 1000,
           }}>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              {/* Bounding box toggle */}
-              <button
-                onClick={this.toggleBoundingBoxes}
-                style={{
-                  height: '36px',
-                  padding: '0 12px',
-                  borderRadius: '18px',
-                  background: this.state.showBoundingBoxes ? 'rgba(76, 175, 80, 0.9)' : 'rgba(0,0,0,0.7)',
-                  color: 'white',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontSize: '11px',
-                  fontWeight: 'bold',
-                  transition: 'background 0.2s',
-                }}
-                title="Toggle bounding boxes (B)"
-              >
-                Boxes {this.state.showBoundingBoxes ? 'ON' : 'OFF'}
-              </button>
-
               {/* Info icon button */}
               <button
                 onClick={this.toggleControls}
@@ -1086,6 +1207,51 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
                   </div>
                 </div>
 
+                {/* Label Size slider */}
+                <div style={{ marginBottom: '12px' }}>
+                  <div style={{ marginBottom: '6px', fontWeight: 'bold', fontSize: '11px', opacity: 0.9, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Label Size</span>
+                    <button
+                      onClick={this.toggleLabels}
+                      style={{
+                        padding: '2px 8px',
+                        fontSize: '10px',
+                        background: this.state.showLabels ? '#4CAF50' : '#666',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '3px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {this.state.showLabels ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  <input
+                    type="range"
+                    min="4"
+                    max="24"
+                    step="1"
+                    value={this.state.labelSize}
+                    onChange={this.handleLabelSizeChange}
+                    style={{
+                      width: '100%',
+                      marginBottom: '2px'
+                    }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px', opacity: 0.7 }}>
+                    <span>{this.state.labelSize}px</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span>Color</span>
+                      <input
+                        type="color"
+                        value={this.state.labelColor}
+                        onChange={this.handleLabelColorChange}
+                        style={{ width: '20px', height: '16px', border: 'none', cursor: 'pointer', background: 'none' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 {/* Bounding box toggle */}
                 <div style={{ 
                   marginBottom: '12px',
@@ -1121,8 +1287,12 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
                   <div style={{ fontWeight: 'bold', marginBottom: '4px', fontSize: '11px' }}>Keyboard Shortcuts</div>
                   <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>B</kbd> Toggle bounding boxes</div>
                   <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>T</kbd> Toggle transparency</div>
+                  <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>N</kbd> Toggle labels</div>
                   <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>O</kbd> Toggle outline mode</div>
                   <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>Right-click</kbd> Edit/view mode</div>
+                  {this.props.selectedViewType === "free" && (
+                    <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>Delete</kbd> Remove selected point</div>
+                  )}
                   <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>Ctrl+Z</kbd> Undo</div>
                 </div>
               </div>
@@ -1132,6 +1302,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
 
         <svg
           ref={this.svgRef}
+          xmlns="http://www.w3.org/2000/svg"
+          xmlnsXlink="http://www.w3.org/1999/xlink"
           style={{
             ...SVGViewerStyles.svg,
             ...(dataFetched ? SVGViewerStyles.svgWithData : {}),

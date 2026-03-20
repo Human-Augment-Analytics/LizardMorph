@@ -150,10 +150,8 @@ export class Header extends Component<HeaderProps, HeaderState> {
           <div
             style={{
               ...HeaderStyles.titleContainer,
-              cursor: "pointer",
               flexDirection: "column" as const,
             }}
-            onClick={this.props.onBackToSelection}
           >
             <div
               style={{

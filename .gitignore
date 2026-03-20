@@ -49,6 +49,7 @@ backend/debug_*.py
 # ONNX Web WASM and Scripts
 frontend/onnxruntime-web-local/
 frontend/public/ort-*.wasm
+*.onnx
 
 # Editor directories
 .idea
