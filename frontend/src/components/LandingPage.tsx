@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-export type LizardViewType = "dorsal" | "lateral" | "toepads" | "custom";
+export type LizardViewType = "dorsal" | "lateral" | "toepads" | "custom" | "free";
 
 const LandingPageStyles = {
   container: {
@@ -219,22 +219,32 @@ export const LandingPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Custom Model - Disabled */}
+        {/* Free Mode */}
         <div
           style={{
             ...LandingPageStyles.optionCard,
-            ...LandingPageStyles.optionCardDisabled,
+            ...(hoveredCard === "free" ? LandingPageStyles.optionCardHover : {}),
           }}
+          onClick={() => handleOptionClick("free")}
+          onMouseEnter={() => handleMouseEnter("free")}
+          onMouseLeave={handleMouseLeave}
         >
           <div style={LandingPageStyles.cardContent}>
-            <div style={{ ...LandingPageStyles.icon, ...LandingPageStyles.iconDisabled }}>
-              🤖
+            <div style={{
+              ...LandingPageStyles.icon,
+              ...(hoveredCard === "free" ? LandingPageStyles.iconHover : {})
+            }}>
+              📌
             </div>
-            <h3 style={LandingPageStyles.optionTitle}>Custom Model</h3>
+            <h3 style={{
+              ...LandingPageStyles.optionTitle,
+              ...(hoveredCard === "free" ? LandingPageStyles.optionTitleHover : {})
+            }}>
+              Free Mode
+            </h3>
             <p style={LandingPageStyles.optionDescription}>
-              Use your own trained model for analysis
+              Manually place landmarks on any image by clicking
             </p>
-            <div style={LandingPageStyles.comingSoon}>Coming Soon</div>
           </div>
         </div>
       </div>

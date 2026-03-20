@@ -704,7 +704,8 @@ def upload():
             else:  # default to toe
                 predictor_file_path = TOEPAD_TOE_PREDICTOR
         
-        logger.info(f"Processing images with view type: {view_type}, predictor: {predictor_file_path}, detector: {detector_file_path}, YOLO: {yolo_model_path}")
+        skip_prediction = request.form.get("skip_prediction", "false").lower() == "true"
+        logger.info(f"Processing images with view type: {view_type}, predictor: {predictor_file_path}, detector: {detector_file_path}, YOLO: {yolo_model_path}, skip_prediction: {skip_prediction}")
 
         client_annotations_raw = request.form.get("client_annotations")
         client_annotations_dict = {}
@@ -741,11 +742,43 @@ def upload():
                         image_path, inverted_path
                     )
 
+                    # Free mode: skip ML prediction, return empty coords
+                    if skip_prediction:
+                        # Create minimal XML for export compatibility
+                        xml_output_path = os.path.join(
+                            session_data["outputs_folder"], f"output_{unique_name}.xml"
+                        )
+                        import cv2 as _cv2
+                        _img = _cv2.imread(image_path)
+                        _h, _w = _img.shape[:2] if _img is not None else (0, 0)
+                        _xml = f'''<?xml version="1.0" ?>
+<dataset>
+   <name/>
+   <comment/>
+   <images>
+      <image file="{image_path}">
+         <box top="1" left="1" width="{_w}" height="{_h}"/>
+      </image>
+   </images>
+</dataset>'''
+                        with open(xml_output_path, 'w') as _f:
+                            _f.write(_xml)
+
+                        all_data.append({
+                            "name": unique_name,
+                            "coords": [],
+                            "bounding_boxes": [],
+                            "session_id": session_id,
+                            "view_type": view_type,
+                        })
+                        logger.info(f"Free mode: skipped prediction for {unique_name}")
+                        continue
+
                     # Generate the prediction XML in the session outputs folder
                     xml_output_path = os.path.join(
                         session_data["outputs_folder"], f"output_{unique_name}.xml"
                     )
-                    
+
                     client_ann = client_annotations_dict.get(image.filename)
                     if client_ann:
                         logger.info(f"Using client-provided ONNX Web annotations for {unique_name}")
