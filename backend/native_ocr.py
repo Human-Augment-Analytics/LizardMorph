@@ -1,0 +1,159 @@
+"""
+Platform-native OCR using Apple Vision (macOS) or WinRT OCR (Windows).
+Drop-in replacement for easyocr in id_extractor.py — no torch dependency.
+"""
+
+import platform
+import numpy as np
+import cv2
+import re
+
+
+def _create_reader():
+    """Create a platform-native OCR reader."""
+    system = platform.system()
+    if system == "Darwin":
+        return _MacOSReader()
+    elif system == "Windows":
+        return _WindowsReader()
+    else:
+        raise ImportError(f"No native OCR available for {system}. Install easyocr as fallback.")
+
+
+class _MacOSReader:
+    """OCR using Apple Vision framework via pyobjc."""
+
+    def __init__(self):
+        import Vision  # noqa: F401 — verify availability
+
+    def readtext(self, image, detail=1, allowlist=None):
+        """
+        Match easyocr's readtext interface.
+        Returns list of (bbox, text, confidence).
+        """
+        import Vision
+        import Quartz
+
+        # Convert numpy array to CGImage
+        if len(image.shape) == 2:
+            # Grayscale — convert to RGB for Vision
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+
+        h, w, c = image.shape
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        bytes_per_row = w * c
+        color_space = Quartz.CGColorSpaceCreateDeviceRGB()
+        data_provider = Quartz.CGDataProviderCreateWithData(
+            None, rgb.tobytes(), h * bytes_per_row, None
+        )
+        cg_image = Quartz.CGImageCreate(
+            w, h, 8, 8 * c, bytes_per_row, color_space,
+            Quartz.kCGImageAlphaNone,
+            data_provider, None, False, Quartz.kCGRenderingIntentDefault,
+        )
+
+        # Create and run VNRecognizeTextRequest
+        request = Vision.VNRecognizeTextRequest.alloc().init()
+        request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
+        request.setUsesLanguageCorrection_(False)
+
+        if allowlist:
+            request.setCustomWords_([allowlist])
+
+        handler = Vision.VNImageRequestHandler.alloc().initWithCGImage_options_(
+            cg_image, None
+        )
+        success = handler.performRequests_error_([request], None)
+
+        results = []
+        if success and request.results():
+            for obs in request.results():
+                candidate = obs.topCandidates_(1)[0]
+                text = candidate.string()
+                conf = candidate.confidence()
+
+                # Filter to allowlist if specified
+                if allowlist:
+                    text = re.sub(f"[^{re.escape(allowlist)}]", "", text)
+
+                if not text:
+                    continue
+
+                # Get bounding box (Vision uses bottom-left origin, normalized)
+                box = obs.boundingBox()
+                x = box.origin.x * w
+                y = (1 - box.origin.y - box.size.height) * h
+                bw = box.size.width * w
+                bh = box.size.height * h
+                bbox = [
+                    [x, y],
+                    [x + bw, y],
+                    [x + bw, y + bh],
+                    [x, y + bh],
+                ]
+
+                results.append((bbox, text, conf))
+
+        return results
+
+
+class _WindowsReader:
+    """OCR using Windows.Media.Ocr (WinRT)."""
+
+    def __init__(self):
+        try:
+            import winocr  # noqa: F401
+        except ImportError:
+            raise ImportError("winocr not installed. Run: pip install winocr")
+
+    def readtext(self, image, detail=1, allowlist=None):
+        """
+        Match easyocr's readtext interface.
+        Returns list of (bbox, text, confidence).
+        """
+        import winocr
+        import asyncio
+
+        # Encode image to PNG bytes for winocr
+        if len(image.shape) == 2:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+
+        _, png_bytes = cv2.imencode(".png", image)
+
+        # Run async OCR
+        loop = asyncio.new_event_loop()
+        try:
+            result = loop.run_until_complete(
+                winocr.recognize_cv2(image, lang="en")
+            )
+        finally:
+            loop.close()
+
+        h, w = image.shape[:2]
+        results = []
+        for line in result["lines"]:
+            text = line["text"]
+            # WinRT doesn't provide per-line confidence, estimate 0.9
+            conf = 0.9
+
+            if allowlist:
+                text = re.sub(f"[^{re.escape(allowlist)}]", "", text)
+
+            if not text:
+                continue
+
+            # winocr returns bounding box as dict with x, y, width, height
+            bx = line.get("x", 0)
+            by = line.get("y", 0)
+            bw = line.get("width", w)
+            bh = line.get("height", h)
+            bbox = [
+                [bx, by],
+                [bx + bw, by],
+                [bx + bw, by + bh],
+                [bx, by + bh],
+            ]
+
+            results.append((bbox, text, conf))
+
+        return results

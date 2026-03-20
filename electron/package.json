@@ -1,0 +1,49 @@
+{
+  "name": "lizardmorph",
+  "version": "1.0.0",
+  "description": "LizardMorph - Automated lizard morphology analysis",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build": "electron-builder"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.lizardmorph.desktop",
+    "productName": "LizardMorph",
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.education",
+      "target": ["dmg"],
+      "icon": "icons/icon.icns"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "icons/icon.icns"
+    },
+    "extraResources": [
+      {
+        "from": "dist/backend",
+        "to": "backend",
+        "filter": ["**/*"]
+      }
+    ],
+    "asar": false,
+    "files": [
+      "main.js",
+      "preload.js",
+      "python-backend.js",
+      "frontend/**/*"
+    ]
+  }
+}

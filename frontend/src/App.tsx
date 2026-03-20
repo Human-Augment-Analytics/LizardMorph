@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { HashRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import "./App.css";
 import { MainView } from "./views/MainView";
 import { LandingPage } from "./components/LandingPage";
@@ -11,7 +11,8 @@ declare const __BUILD_VERSION__: string;
 
 // Wrapper component to provide navigation to MainView
 const MainViewWrapper: React.FC<{ selectedViewType: LizardViewType }> = ({ selectedViewType }) => {
-  return <MainView selectedViewType={selectedViewType} />;
+  const navigate = useNavigate();
+  return <MainView selectedViewType={selectedViewType} onNavigateHome={() => navigate("/")} />;
 };
 
 // Version display component
@@ -58,6 +59,7 @@ function App() {
         <Route path="/lateral" element={<MainViewWrapper selectedViewType="lateral" />} />
         <Route path="/toepads" element={<MainViewWrapper selectedViewType="toepads" />} />
         <Route path="/toepad" element={<MainViewWrapper selectedViewType="toepads" />} />
+        <Route path="/free" element={<MainViewWrapper selectedViewType="free" />} />
         <Route path="/custom" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

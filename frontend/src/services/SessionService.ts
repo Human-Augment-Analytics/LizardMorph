@@ -1,6 +1,13 @@
 // Session management service for handling session lifecycle and storage
-import { API_URL } from "./config";
+import { API_URL, getApiUrl } from "./config";
 import { CookieUtils } from "./CookieUtils";
+
+async function apiUrl(): Promise<string> {
+  if (window.electronAPI?.isElectron) {
+    return getApiUrl();
+  }
+  return API_URL;
+}
 
 interface SessionInfo {
   success: boolean;
@@ -89,7 +96,8 @@ export class SessionService {
    */
   static async startNewSession(): Promise<string> {
     try {
-      const response = await fetch(`${API_URL}/session/start`, {
+      const base = await apiUrl();
+      const response = await fetch(`${base}/session/start`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -149,7 +157,8 @@ export class SessionService {
       throw new Error("No active session");
     }
 
-    const response = await fetch(`${API_URL}/session/info`, {
+    const base = await apiUrl();
+    const response = await fetch(`${base}/session/info`, {
       method: "GET",
       headers: {
         ...this.getSessionHeaders(),
@@ -176,7 +185,8 @@ export class SessionService {
    */
   static async validateSession(sessionId: string): Promise<boolean> {
     try {
-      const response = await fetch(`${API_URL}/session/info`, {
+      const base = await apiUrl();
+      const response = await fetch(`${base}/session/info`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
