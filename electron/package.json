@@ -22,8 +22,14 @@
     },
     "mac": {
       "category": "public.app-category.education",
-      "target": ["dmg"],
-      "icon": "icons/icon.icns"
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "icon": "icons/icon.icns",
+      "minimumSystemVersion": "11.0"
     },
     "win": {
       "target": [
