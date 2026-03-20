@@ -43,6 +43,9 @@ export class ApiService {
       formData.append("image", file);
     });
     formData.append("view_type", viewType === "toepads" ? "toepad" : viewType);
+    if (viewType === "free") {
+      formData.append("skip_prediction", "true");
+    }
     // Add toepad predictor type if specified
     if (viewType === "toepads" && toepadPredictorType) {
       formData.append("toepad_predictor_type", toepadPredictorType);

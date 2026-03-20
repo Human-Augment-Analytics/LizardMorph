@@ -274,9 +274,9 @@ def predictions_to_xml_single(predictor_name: str, image_path: str, output: str)
     box = create_box(img.shape)
     part_length = range(0, shape.num_parts)
     
-    for item, i in enumerate(sorted(part_length, key=str)):
-        x = np.median([landmark[item][0] for landmark in landmarks])
-        y = np.median([landmark[item][1] for landmark in landmarks])
+    for idx, i in enumerate(sorted(part_length, key=int)):
+        x = np.median([landmark[idx][0] for landmark in landmarks])
+        y = np.median([landmark[idx][1] for landmark in landmarks])
         part = create_part(x, y, i)
         box.append(part)
 
@@ -341,9 +341,9 @@ def predictions_to_xml_single_with_detector(predictor_name: str, image_path: str
     box = create_box(img.shape)
     part_length = range(0, shape.num_parts)
     
-    for item, i in enumerate(sorted(part_length, key=str)):
-        x = np.median([landmark[item][0] for landmark in landmarks])
-        y = np.median([landmark[item][1] for landmark in landmarks])
+    for idx, i in enumerate(sorted(part_length, key=int)):
+        x = np.median([landmark[idx][0] for landmark in landmarks])
+        y = np.median([landmark[idx][1] for landmark in landmarks])
         part = create_part(x, y, i)
         box.append(part)
 

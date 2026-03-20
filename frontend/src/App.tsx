@@ -20,6 +20,7 @@ function App() {
         <Route path="/lateral" element={<MainViewWrapper selectedViewType="lateral" />} />
         <Route path="/toepads" element={<MainViewWrapper selectedViewType="toepads" />} />
         <Route path="/toepad" element={<MainViewWrapper selectedViewType="toepads" />} />
+        <Route path="/free" element={<MainViewWrapper selectedViewType="free" />} />
         <Route path="/custom" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
