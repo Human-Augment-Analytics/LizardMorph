@@ -1,11 +1,11 @@
 """
 run_yolo_bulk.py
 ----------------
-Run YOLO OBB inference on all .jpg files in a directory and report
-whether id (class 5) and ruler (class 4) were detected per image.
+Run YOLO OBB inference on a directory of images to test detection rates.
+Specifically focuses on checking if the ruler scale and specimen ID are found.
 
 Usage:
-    conda run -n lizard python scripts/run_yolo_bulk.py <data_dir> [--model <model_path>] [--limit N]
+    uv run python scripts/run_yolo_bulk.py <data_dir> [--model <model_path>] [--limit N]
 """
 import os
 import argparse
