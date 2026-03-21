@@ -51,7 +51,7 @@ def get_model_path(relative_path):
     return os.path.abspath(os.path.join(BASE_DIR, relative_path))
 
 # Model files for different view types
-DORSAL_PREDICTOR_FILE = get_model_path(os.getenv("DORSAL_PREDICTOR_FILE", "../models/lizard-x-ray/better_predictor_auto.dat"))
+DORSAL_PREDICTOR_FILE = get_model_path(os.getenv("DORSAL_PREDICTOR_FILE", "../models/lizard-x-ray/new_landmarks_2025_predictor.dat"))
 LATERAL_PREDICTOR_FILE = get_model_path(os.getenv("LATERAL_PREDICTOR_FILE", "../models/lizard-x-ray/lateral_predictor_auto.dat"))
 TOEPADS_PREDICTOR_FILE = get_model_path(os.getenv("TOEPADS_PREDICTOR_FILE", "./toepads_predictor_auto.dat"))
 CUSTOM_PREDICTOR_FILE = get_model_path(os.getenv("CUSTOM_PREDICTOR_FILE", "./custom_predictor_auto.dat"))
@@ -73,7 +73,7 @@ ID_EXTRACTOR_MODEL = get_model_path(os.getenv("ID_EXTRACTOR_MODEL", "../models/l
 
 
 # Default predictor file (fallback)
-predictor_file = get_model_path(os.getenv("PREDICTOR_FILE", "../models/lizard-x-ray/better_predictor_auto.dat"))
+predictor_file = get_model_path(os.getenv("PREDICTOR_FILE", "../models/lizard-x-ray/new_landmarks_2025_predictor.dat"))
 
 # Webhook configuration
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "your-webhook-secret-here")
