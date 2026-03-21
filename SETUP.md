@@ -52,7 +52,7 @@ The `.env` file must live at the **repo root** (`LizardMorph/.env`), not inside 
 | `TOEPAD_FINGER_PREDICTOR` | `../models/lizard-toe-pad/finger_predictor_obb.dat` | 9-point finger dlib predictor ⚠️ |
 | `TOEPAD_SCALE_PREDICTOR` | `../models/lizard-toe-pad/lizard_scale.dat` | 2-point ruler predictor |
 | `ID_EXTRACTOR_MODEL` | `../models/lizard-toe-pad/yolo_bounding_box.pt` | Legacy YOLO for ID detection |
-| `DORSAL_PREDICTOR_FILE` | `../models/lizard-x-ray/better_predictor_auto.dat` | Dorsal landmark predictor |
+| `DORSAL_PREDICTOR_FILE` | `../models/lizard-x-ray/new_landmarks_2025_predictor.dat` | Dorsal landmark predictor |
 | `LATERAL_PREDICTOR_FILE` | `../models/lizard-x-ray/lateral_predictor_auto.dat` | Lateral landmark predictor |
 
 > ⚠️ **`TOEPAD_FINGER_PREDICTOR` and `TOEPAD_SCALE_PREDICTOR` must NOT be swapped** — this causes fingers to get 2 ruler landmarks instead of 9.
@@ -78,7 +78,7 @@ TOEPAD_FINGER_PREDICTOR=../models/lizard-toe-pad/finger_predictor_obb.dat
 TOEPAD_SCALE_PREDICTOR=../models/lizard-toe-pad/lizard_scale.dat
 ID_EXTRACTOR_MODEL=../models/lizard-toe-pad/yolo_bounding_box.pt
 
-DORSAL_PREDICTOR_FILE=../models/lizard-x-ray/better_predictor_auto.dat
+DORSAL_PREDICTOR_FILE=../models/lizard-x-ray/new_landmarks_2025_predictor.dat
 LATERAL_PREDICTOR_FILE=../models/lizard-x-ray/lateral_predictor_auto.dat
 ```
 
