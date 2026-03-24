@@ -93,8 +93,8 @@ export class MainView extends Component<MainProps, MainState> {
     lizardCount: 0,
     zoomTransform: d3.zoomIdentity,
     scaleSettings: {
-      pointAId: 17,
-      pointBId: 18,
+      pointAId: this.props.selectedViewType === 'toepads' ? 0 : null,
+      pointBId: this.props.selectedViewType === 'toepads' ? 1 : null,
       value: 10,
       units: "mm",
     },

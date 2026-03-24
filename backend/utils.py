@@ -20,6 +20,20 @@ import shutil
 import random
 
 
+# Dorsal landmark reorder mapping.
+# The dlib predictor (new_landmarks_2025_predictor.dat) outputs 34 parts in its
+# own internal order.  The reference dorsal annotations use a different order
+# (1‑34, 0‑indexed below).  This array maps each reference position to the dlib
+# part index that should fill it.
+#   reference_landmark[i] = dlib_part[ DORSAL_LANDMARK_ORDER[i] ]
+DORSAL_LANDMARK_ORDER = [
+    0, 1, 12, 23, 28, 29, 30, 31, 32, 33,   # ref 1‑10
+    2, 3, 4, 5, 6, 7, 8, 9, 10, 11,          # ref 11‑20
+    13, 14, 15, 16, 17, 18, 19, 20, 21, 22,  # ref 21‑30
+    24, 25, 26, 27,                            # ref 31‑34
+]
+
+
 # Tools for predicting objects and shapes in new images
 
 
@@ -254,17 +268,17 @@ def predictions_to_xml_single(predictor_name: str, image_path: str, output: str)
 
     image_e = ET.Element('image')
     image_e.set('file', str(image_path))
-    
+
     img = cv2.imread(image_path)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = cv2.filter2D(img, -1, kernel)
     img = cv2.bilateralFilter(img, 9, 41, 21)
-    
+
     scales = [0.25, 0.5, 1]
     w = img.shape[1]
     h = img.shape[0]
     landmarks = []
-    
+
     for scale in scales:
         image = cv2.resize(img, (0, 0), fx=scale, fy=scale)
         rect = dlib.rectangle(1, 1, int(w * scale) - 1, int(h * scale) - 1)
@@ -272,12 +286,18 @@ def predictions_to_xml_single(predictor_name: str, image_path: str, output: str)
         landmarks.append(shape_to_np(shape) / scale)
 
     box = create_box(img.shape)
-    part_length = range(0, shape.num_parts)
-    
-    for idx, i in enumerate(sorted(part_length, key=int)):
-        x = np.median([landmark[idx][0] for landmark in landmarks])
-        y = np.median([landmark[idx][1] for landmark in landmarks])
-        part = create_part(x, y, i)
+    num_parts = shape.num_parts
+
+    # Reorder landmarks if this is a 34-landmark dorsal predictor
+    if num_parts == len(DORSAL_LANDMARK_ORDER):
+        order = DORSAL_LANDMARK_ORDER
+    else:
+        order = list(range(num_parts))
+
+    for ref_idx, dlib_idx in enumerate(order):
+        x = np.median([landmark[dlib_idx][0] for landmark in landmarks])
+        y = np.median([landmark[dlib_idx][1] for landmark in landmarks])
+        part = create_part(x, y, ref_idx)
         box.append(part)
 
     box[:] = sorted(box, key=lambda child: (child.tag, float(child.get("name"))))
@@ -339,12 +359,18 @@ def predictions_to_xml_single_with_detector(predictor_name: str, image_path: str
         landmarks.append(shape_to_np(shape) / scale)
 
     box = create_box(img.shape)
-    part_length = range(0, shape.num_parts)
-    
-    for idx, i in enumerate(sorted(part_length, key=int)):
-        x = np.median([landmark[idx][0] for landmark in landmarks])
-        y = np.median([landmark[idx][1] for landmark in landmarks])
-        part = create_part(x, y, i)
+    num_parts = shape.num_parts
+
+    # Reorder landmarks if this is a 34-landmark dorsal predictor
+    if num_parts == len(DORSAL_LANDMARK_ORDER):
+        order = DORSAL_LANDMARK_ORDER
+    else:
+        order = list(range(num_parts))
+
+    for ref_idx, dlib_idx in enumerate(order):
+        x = np.median([landmark[dlib_idx][0] for landmark in landmarks])
+        y = np.median([landmark[dlib_idx][1] for landmark in landmarks])
+        part = create_part(x, y, ref_idx)
         box.append(part)
 
     box[:] = sorted(box, key=lambda child: (child.tag, float(child.get("name"))))
@@ -888,7 +914,8 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                 return box_xml
 
             # --- Collect all detections first ---
-            detections = {'bot_finger': [], 'bot_toe': [], 'up_finger': [], 'up_toe': [], 'scale': [], 'id': []}
+            # Categorize detections
+            detections = {'scale': [], 'bot_finger': [], 'bot_toe': [], 'up_finger': [], 'up_toe': [], 'id': []}
 
             if _is_ort:
                 # ORT path: detector handles preprocessing, dual-pass, and NMS internally
@@ -982,6 +1009,7 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     box_xml.set("left", str(int(detected_rect.left())))
                     box_xml.set("width", str(int(detected_rect.width())))
                     box_xml.set("height", str(int(detected_rect.height())))
+                    box_xml.set("label", "ruler")
                     
                     obb_wh = best_det['obb_wh']
                     ruler_pixel_width = max(obb_wh[0], obb_wh[1])
@@ -1013,9 +1041,10 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     pt1 = mid1 + direction * offset_pixels
                     pt2 = mid2 - direction * offset_pixels
 
-                    # Use IDs 17 and 18 for scale bar to avoid conflicting with toe/finger landmarks (0-16)
-                    part0 = create_part(float(pt1[0]), float(pt1[1]), 17)
-                    part1 = create_part(float(pt2[0]), float(pt2[1]), 18)
+                    # Use IDs 0 and 1 for scale bar (visualized as 1 and 2 in the UI).
+                    # When processed at the first box_idx=0, these become unique_id 0 and 1.
+                    part0 = create_part(float(pt1[0]), float(pt1[1]), 0)
+                    part1 = create_part(float(pt2[0]), float(pt2[1]), 1)
                     box_xml.append(part0)
                     box_xml.append(part1)
                     image_e.append(box_xml)
@@ -1632,7 +1661,7 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
         bounding_boxes.sort(key=lambda x: x.get('confidence', 0), reverse=True)
         
     # Categorize best boxes
-    detections = {'bot_finger': [], 'bot_toe': [], 'up_finger': [], 'up_toe': [], 'scale': [], 'id': []}
+    detections = {'scale': [], 'bot_finger': [], 'bot_toe': [], 'up_finger': [], 'up_toe': [], 'id': []}
     
     for box in bounding_boxes:
         label = box.get('label', '').lower()
@@ -1680,6 +1709,7 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                 box_xml.set("left", str(int(detected_rect.left())))
                 box_xml.set("width", str(int(detected_rect.width())))
                 box_xml.set("height", str(int(detected_rect.height())))
+                box_xml.set("label", "ruler")
                 
                 obb_wh = best_det['obb_wh']
                 ruler_pixel_width = max(obb_wh[0], obb_wh[1])
@@ -1708,8 +1738,9 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                 pt1 = mid1 + direction * offset_pixels
                 pt2 = mid2 - direction * offset_pixels
 
-                part0 = create_part(float(pt1[0]), float(pt1[1]), 17)
-                part1 = create_part(float(pt2[0]), float(pt2[1]), 18)
+                # Use IDs 0 and 1 for scale bar (visualized as 1 and 2 in the UI).
+                part0 = create_part(float(pt1[0]), float(pt1[1]), 0)
+                part1 = create_part(float(pt2[0]), float(pt2[1]), 1)
                 box_xml.append(part0)
                 box_xml.append(part1)
                 image_e.append(box_xml)
