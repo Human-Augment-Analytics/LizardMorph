@@ -212,6 +212,81 @@ export class ApiService {
     }
     return res.json();
   }
+
+  static async listPredictors(): Promise<PredictorMeta[]> {
+    const base = await apiUrl();
+    const res = await fetch(`${base}/predictors`, {
+      method: "GET",
+      headers: {
+        ...SessionService.getSessionHeaders(),
+      },
+    });
+    if (!res.ok) throw new Error("Failed to list predictors");
+    const data = (await res.json()) as {
+      success: boolean;
+      predictors: PredictorMeta[];
+      error?: string;
+    };
+    if (!data.success) throw new Error(data.error ?? "Failed to list predictors");
+    return data.predictors ?? [];
+  }
+
+  static async uploadPredictor(file: File): Promise<PredictorMeta> {
+    const formData = new FormData();
+    formData.append("predictor", file);
+    const base = await apiUrl();
+    const res = await fetch(`${base}/predictors`, {
+      method: "POST",
+      headers: {
+        ...SessionService.getSessionHeaders(),
+      },
+      body: formData,
+    });
+    const data = (await res.json()) as {
+      success: boolean;
+      predictor?: PredictorMeta;
+      error?: string;
+    };
+    if (!res.ok || !data.success || !data.predictor) {
+      throw new Error(data.error ?? "Failed to upload predictor");
+    }
+    return data.predictor;
+  }
+
+  static async deletePredictor(id: string): Promise<void> {
+    const base = await apiUrl();
+    const res = await fetch(`${base}/predictors/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: {
+        ...SessionService.getSessionHeaders(),
+      },
+    });
+    const data = (await res.json()) as { success?: boolean; error?: string };
+    if (!res.ok || data.success !== true) {
+      throw new Error(data.error ?? "Failed to delete predictor");
+    }
+  }
+
+  static async freeAutoplace(
+    filename: string,
+    predictorId: string
+  ): Promise<AnnotationsData> {
+    const base = await apiUrl();
+    const url = `${base}/free_autoplace?filename=${encodeURIComponent(filename)}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...SessionService.getSessionHeaders(),
+      },
+      body: JSON.stringify({ predictor_id: predictorId }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error ?? "Failed to auto-place landmarks");
+    }
+    return res.json();
+  }
 }
 
 interface ExtractIdResult {
@@ -228,4 +303,13 @@ interface SessionInfo {
   created_at: string;
   session_folder: string;
   file_count: number;
+}
+
+export interface PredictorMeta {
+  id: string;
+  display_name: string;
+  stored_filename?: string;
+  uploaded_at?: string;
+  size_bytes?: number;
+  num_parts?: number | null;
 }
