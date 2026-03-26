@@ -35,6 +35,12 @@ We use a Makefile to automate building the frontend and backend. If you don't ha
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
+On Linux, `uv` installs to `~/.local/bin`. If `uv` isn't found after install, add it to your PATH:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
 Once installed, simply run this command from the root directory to create the virtual environment, install Python backend dependencies, install the Node frontend modules, and **download the required models**:
 
 ```bash
@@ -46,6 +52,12 @@ If you only need to download/update the models later, you can run:
 ```bash
 make download-models
 ```
+
+> **Note:** `make download-models` uses `rsync` over SSH to a remote host. If you don't have access/keys on your machine, this step will fail/hang. In that case, populate `models/` manually and run:
+>
+> ```bash
+> make setup-backend setup-frontend
+> ```
 
 Verify everything imported correctly for the backend:
 ```bash
@@ -132,7 +144,7 @@ make dev
 
 The API will be available at `http://localhost:3005` (or your configured `API_PORT`), and the UI will be at `http://localhost:5173`.
 
-> **Note:** Restart the server by cancelling with `Ctrl+C` and running `make dev` again after every `.env` change — environment variables are read at startup.
+> **Note (ports / restarts):** `make dev` will stop any existing backend listener on `API_PORT` (including a Gunicorn process) and stop any existing Vite dev server on port 5173, then restart both. Cancel with `Ctrl+C` to stop the dev processes.
 
 ### Setting up ngrok for External Access
 If you want to make your local development server accessible from the internet:
