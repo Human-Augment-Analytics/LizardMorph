@@ -61,14 +61,22 @@ export class Header extends Component<HeaderProps, HeaderState> {
             <p style={HeaderStyles.infoBoxItalic}>
               Georgia Institute of Technology
             </p>
-            <a
-              href="https://github.com/Human-Augment-Analytics/Lizard-CV-Web-App"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={HeaderStyles.infoBoxLink}
-            >
-              View on GitHub
-            </a>
+            <div style={HeaderStyles.infoBoxLinkRow}>
+              <a
+                href="https://github.com/Human-Augment-Analytics/Lizard-CV-Web-App"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={HeaderStyles.infoBoxLink}
+              >
+                View on GitHub
+              </a>
+              <span
+                style={HeaderStyles.appVersion}
+                title={`Build ${__BUILD_VERSION__}`}
+              >
+                {__APP_VERSION__}
+              </span>
+            </div>
             <div style={HeaderStyles.lizardCount}>
               <strong>Number of Lizards Analyzed: {lizardCount}</strong>
             </div>
