@@ -44,9 +44,16 @@ export class Header extends Component<HeaderProps, HeaderState> {
       onExportAll,
       onClearHistory,
       onOpenMeasurementsModal,
+      selectedViewType,
     } = this.props;
 
     const { isMenuOpen } = this.state;
+    const isFree = selectedViewType === "free";
+    const uploadLabel = loading
+      ? "Uploading..."
+      : isFree
+        ? "Upload Images"
+        : "Upload X-Ray Images";
 
     return (
       <div style={HeaderStyles.header}>
@@ -91,7 +98,7 @@ export class Header extends Component<HeaderProps, HeaderState> {
                 ...(loading ? HeaderStyles.uploadButtonDisabled : {}),
               }}
             >
-              {loading ? "Uploading..." : "Upload X-Ray Images"}
+              {uploadLabel}
             </label>
             <input
               id="file-upload"
@@ -175,17 +182,25 @@ export class Header extends Component<HeaderProps, HeaderState> {
                   marginRight: "12px",
                 }}
               >
-                {this.props.selectedViewType === "lateral" ? "🦖" : this.props.selectedViewType === "toepads" ? "🦶" : "🦎"}
+                {selectedViewType === "lateral"
+                  ? "🦖"
+                  : selectedViewType === "toepads"
+                    ? "🦶"
+                    : isFree
+                      ? "📌"
+                      : "🦎"}
               </div>
               <h2 style={HeaderStyles.title}>
-                Lizard Anolis X-Ray Auto-Annotator
+                {isFree
+                  ? "Free Mode — Manual Landmarking"
+                  : "Lizard Anolis X-Ray Auto-Annotator"}
               </h2>
             </div>
             <p style={HeaderStyles.viewType}>
               View Type:{" "}
-              {this.props.selectedViewType
-                ? this.props.selectedViewType.charAt(0).toUpperCase() +
-                  this.props.selectedViewType.slice(1)
+              {selectedViewType
+                ? selectedViewType.charAt(0).toUpperCase() +
+                  selectedViewType.slice(1)
                 : ""}
             </p>
           </div>
