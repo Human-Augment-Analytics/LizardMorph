@@ -43,6 +43,13 @@ backend/curl_*.txt
 backend/bus.jpg
 backend/landmark_comparison.jpg
 
+# Runtime uploads (server)
+backend/uploads/
+backend/uploads
+
+# Runtime logs (server)
+*.log
+
 # Debug / scratch scripts (stay in backend root, not committed)
 backend/debug_*.py
 

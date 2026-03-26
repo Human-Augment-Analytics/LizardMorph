@@ -1,0 +1,21 @@
+[Unit]
+Description=LizardMorph Backend (Flask API)
+After=network.target
+
+[Service]
+Type=simple
+User=yloh30
+Group=www-data
+WorkingDirectory=/var/www/LizardMorph/backend
+Environment="PATH=/home/yloh30/.local/bin:/home/yloh30/.nvm/versions/node/v20.19.5/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+EnvironmentFile=/var/www/LizardMorph/.env
+ExecStart=/home/yloh30/.local/bin/uv run python app.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+StandardOutput=append:/var/log/lizardmorph/backend-stdout.log
+StandardError=append:/var/log/lizardmorph/backend-stderr.log
+
+[Install]
+WantedBy=multi-user.target
