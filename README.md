@@ -202,6 +202,33 @@ To set up and run the application in a production environment:
 
 Gunicorn logs go to `/var/log/lizardmorph/` (configure in `gunicorn.conf.py`). Ensure the port matches what your reverse proxy (e.g., Nginx) expects.
 
+### GitHub CI/CD (auto-deploy on push to `main`)
+
+This repo supports a simple webhook-driven deployment flow (pull latest `main`, rebuild frontend, restart backend).
+
+- **One-time server setup** (installs systemd unit + sudoers rule):
+
+```bash
+sudo bash /var/www/LizardMorph/systemd/setup.sh
+```
+
+- **Deploy script** (what the webhook runs):
+  - `./deploy.sh` (repo root)
+  - Logs to `/var/log/lizardmorph/deploy.log`
+
+- **GitHub webhook**:
+  - Add a webhook in the GitHub repo settings
+  - **Payload URL**: `https://haag-1.cc.gatech.edu/webhook`
+  - **Content type**: `application/json`
+  - **Secret**: set `WEBHOOK_SECRET` in the repo-root `.env` on the server
+  - **Events**: push
+
+After setup, every push to `main` triggers a deploy. To inspect the last run:
+
+```bash
+tail -n 200 /var/log/lizardmorph/deploy.log
+```
+
 ## Vignette
 
 1. Open a terminal and run `make dev`.
