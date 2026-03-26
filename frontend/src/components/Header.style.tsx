@@ -40,6 +40,22 @@ export class HeaderStyles {
     textDecoration: "none",
   };
 
+  static readonly infoBoxLinkRow: CSSProperties = {
+    display: "flex",
+    alignItems: "baseline",
+    justifyContent: "flex-end",
+    flexWrap: "wrap",
+    gap: "8px",
+    rowGap: "2px",
+  };
+
+  static readonly appVersion: CSSProperties = {
+    fontSize: "0.8em",
+    color: "#6c757d",
+    letterSpacing: "0.02em",
+    whiteSpace: "nowrap",
+  };
+
   static readonly lizardCount: CSSProperties = {
     marginTop: "5px",
     color: "#0056b3",
