@@ -361,11 +361,6 @@ export class MainView extends Component<MainProps, MainState> {
             };
           });
 
-          // Auto-enter edit mode for free view (so user can click to place points)
-          if (this.props.selectedViewType === "free") {
-            this.setState({ isEditMode: true });
-          }
-
           // Extract ID for toepad view type (only for the first/current image)
           if (this.props.selectedViewType === "toepads") {
             try {
