@@ -8,3 +8,4 @@ Flask==2.3.3
 flask-cors==4.0.0
 gunicorn==21.2.0
 pydicom==2.4.3
+pytest==8.3.2
