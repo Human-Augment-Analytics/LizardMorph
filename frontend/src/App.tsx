@@ -5,10 +5,6 @@ import { MainView } from "./views/MainView";
 import { LandingPage } from "./components/LandingPage";
 import type { LizardViewType } from "./components/LandingPage";
 
-// Version information (injected by Vite)
-declare const __APP_VERSION__: string;
-declare const __BUILD_VERSION__: string;
-
 // Wrapper component to provide navigation to MainView
 const MainViewWrapper: React.FC<{ selectedViewType: LizardViewType }> = ({ selectedViewType }) => {
   const navigate = useNavigate();
@@ -44,7 +40,7 @@ const VersionInfo: React.FC = () => {
           <div>Build: {__BUILD_VERSION__}</div>
         </div>
       ) : (
-        `v${__APP_VERSION__}`
+        __APP_VERSION__
       )}
     </div>
   );

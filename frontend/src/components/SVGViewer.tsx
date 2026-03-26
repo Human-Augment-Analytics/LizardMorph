@@ -54,7 +54,10 @@ interface PositionHistory {
 export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   readonly svgRef = createRef<SVGSVGElement>();
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
-  
+
+  /** Set in render() so the d3 zoom filter matches edit mode even when renderSVG does not re-run */
+  private blockZoomWhileEditing = false;
+
   constructor(props: SVGViewerProps) {
     super(props);
     this.state = {
@@ -124,10 +127,21 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     // Update drag behavior if edit mode changed
     if (prevProps.isEditMode !== this.props.isEditMode) {
       this.updateDragBehavior();
-      
+
       // Reset history when edit mode starts on a new image
       if (this.props.isEditMode && this.currentImageId !== this.props.currentImageURL) {
         this.resetHistory();
+      }
+
+      // Re-sync d3 zoom internal transform when leaving edit mode (zoom may have been
+      // skipped on first paint in edit mode, or filter must match props before pan/zoom)
+      if (
+        !this.props.isEditMode &&
+        this.svgRef.current &&
+        this.zoomRef.current
+      ) {
+        const svg = d3.select(this.svgRef.current);
+        svg.call(this.zoomRef.current.transform, this.props.zoomTransform);
       }
     }
 
@@ -480,6 +494,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
             .text(d.id + 1)
             .attr("font-size", `${this.state.labelSize}px`)
             .attr("fill", this.state.labelColor)
+            .attr("stroke", "none")
             .attr("filter", "url(#label-shadow)")
             .attr("opacity", this.isTransparentMode ? 0.6 : 1.0)
             .style("pointer-events", "none");
@@ -514,8 +529,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
             event.preventDefault();
             return false;
           }
-          // Disable zoom/pan when in edit mode
-          if (this.props.isEditMode) {
+          // Disable zoom/pan while editing (read live flag from render(), not props at renderSVG time)
+          if (this.blockZoomWhileEditing) {
             return false;
           }
           return !mouseEvent.button && event.type !== "dblclick";
@@ -524,10 +539,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       // Store the zoom reference for external control
       this.zoomRef.current = zoom;
 
-      // Apply zoom behavior to the SVG only if not in edit mode
-      if (!this.props.isEditMode) {
-        svg.call(zoom);
-      }
+      // Always attach zoom; filter + blockZoomWhileEditing block interaction in edit mode
+      svg.call(zoom);
 
       // Always apply the stored transform to preserve zoom state
       if (
@@ -682,7 +695,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     
     // Find the group element for this landmark
     const clickedGroup = d3.select(event.sourceEvent.target.parentNode as Element);
-    clickedGroup.raise().attr("stroke", "black");
+    // Raise for z-order only — do not set stroke on <g>; it inherits to <text> and outlines the numbers
+    clickedGroup.raise();
     this.handlePointClick(clickedData);
     
     // Update visual selection by finding the correct group and updating its circle
@@ -792,7 +806,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     event: d3.D3DragEvent<SVGGElement, Point, Point>
   ): void => {
     event.sourceEvent.stopPropagation();
-    d3.select(event.sourceEvent.target.parentNode).attr("stroke", "black");
+    // Clear any inherited stroke on the group (legacy drags used stroke here and outlined labels)
+    d3.select(event.sourceEvent.target.parentNode as Element).attr("stroke", "none");
     
     // Reset drag state
     this.isDragging = false;
@@ -1127,6 +1142,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   };
 
   render() {
+    this.blockZoomWhileEditing = this.props.isEditMode;
     const { dataFetched, loading, dataLoading, dataError } = this.props;
 
     return (
