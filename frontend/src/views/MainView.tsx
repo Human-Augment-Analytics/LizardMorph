@@ -16,10 +16,13 @@ import { ImageVersionControls } from "../components/ImageVersionControls";
 import { HistoryPanel } from "../components/HistoryPanel";
 import { MeasurementsAndScalePanel } from "../components/MeasurementsAndScalePanel";
 import { SessionInfo } from "../components/SessionInfo";
-import { MainViewStyles } from "./MainView.style";
+import { getMainViewStyles } from "./MainView.style";
+import { ThemeContext } from "../contexts/ThemeContext";
 import { SVGViewer } from "../components/SVGViewer";
 import { ApiService } from "../services/ApiService";
 import { ExportService } from "../services/ExportService";
+import { FreePredictorPanel } from "../components/FreePredictorPanel";
+import type { PredictorMeta } from "../services/ApiService";
 
 interface MainState {
   currentImageIndex: number;
@@ -57,6 +60,11 @@ interface MainState {
   currentBoundingBoxes: BoundingBox[];
   extractedId: string | null;
   extractedIdConfidence: number | null;
+  availablePredictors: PredictorMeta[];
+  freePredictorId: string | null;
+  predictorsLoading: boolean;
+  predictorsError: string | null;
+  isFreePredictorPanelOpen: boolean;
 }
 
 interface MainProps {
@@ -65,6 +73,8 @@ interface MainProps {
 }
 
 export class MainView extends Component<MainProps, MainState> {
+  static contextType = ThemeContext;
+  declare context: React.ContextType<typeof ThemeContext>;
   readonly svgRef = createRef<SVGSVGElement>();
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
   state: MainState = {
@@ -109,6 +119,11 @@ export class MainView extends Component<MainProps, MainState> {
     currentBoundingBoxes: [],
     extractedId: null,
     extractedIdConfidence: null,
+    availablePredictors: [],
+    freePredictorId: null,
+    predictorsLoading: false,
+    predictorsError: null,
+    isFreePredictorPanelOpen: this.props.selectedViewType === "free",
   };
   componentDidMount(): void {
     this.initializeApp();
@@ -133,6 +148,10 @@ export class MainView extends Component<MainProps, MainState> {
       // Mark session as ready
       this.setState({ sessionReady: true });
       console.log("Session initialized successfully");
+
+      if (this.props.selectedViewType === "free") {
+        await this.refreshPredictors();
+      }
 
       // Now proceed with normal initialization
       this.fetchUploadedFiles();
@@ -167,6 +186,13 @@ export class MainView extends Component<MainProps, MainState> {
         }),
       }));
     }
+
+    if (
+      prevProps.selectedViewType !== this.props.selectedViewType &&
+      this.props.selectedViewType === "free"
+    ) {
+      this.refreshPredictors();
+    }
     
     if (prevState.images !== this.state.images) {
       this.countUniqueImages();
@@ -191,6 +217,90 @@ export class MainView extends Component<MainProps, MainState> {
       this.renderSVG();
     }
   }
+
+  private readonly refreshPredictors = async (): Promise<void> => {
+    try {
+      this.setState({ predictorsLoading: true, predictorsError: null });
+      const predictors = await ApiService.listPredictors();
+      this.setState((prev) => {
+        const stillValid =
+          prev.freePredictorId &&
+          predictors.some((p) => p.id === prev.freePredictorId);
+        return {
+          availablePredictors: predictors,
+          freePredictorId: stillValid ? prev.freePredictorId : null,
+        };
+      });
+    } catch (e) {
+      this.setState({
+        predictorsError: e instanceof Error ? e.message : "Failed to load predictors",
+      });
+    } finally {
+      this.setState({ predictorsLoading: false });
+    }
+  };
+
+  private readonly handleUploadFreePredictor = async (file: File): Promise<void> => {
+    try {
+      this.setState({ predictorsLoading: true, predictorsError: null });
+      const meta = await ApiService.uploadPredictor(file);
+      const predictors = await ApiService.listPredictors();
+      this.setState({
+        availablePredictors: predictors,
+        freePredictorId: meta.id,
+      });
+    } catch (e) {
+      this.setState({
+        predictorsError: e instanceof Error ? e.message : "Failed to upload predictor",
+      });
+    } finally {
+      this.setState({ predictorsLoading: false });
+    }
+  };
+
+  private readonly handleDeleteSelectedFreePredictor = async (): Promise<void> => {
+    const id = this.state.freePredictorId;
+    if (!id) return;
+    const ok = window.confirm("Delete the selected predictor? This cannot be undone.");
+    if (!ok) return;
+    try {
+      this.setState({ predictorsLoading: true, predictorsError: null });
+      await ApiService.deletePredictor(id);
+      const predictors = await ApiService.listPredictors();
+      this.setState({ availablePredictors: predictors, freePredictorId: null });
+    } catch (e) {
+      this.setState({
+        predictorsError: e instanceof Error ? e.message : "Failed to delete predictor",
+      });
+    } finally {
+      this.setState({ predictorsLoading: false });
+    }
+  };
+
+  private readonly handleFreeAutoplace = async (): Promise<void> => {
+    const filename = this.state.imageFilename;
+    const predictorId = this.state.freePredictorId;
+    if (!filename || !predictorId) return;
+
+    try {
+      this.setState({ dataLoading: true, dataError: null });
+      const result = await ApiService.freeAutoplace(filename, predictorId);
+      const coords = (result.coords ?? []) as Point[];
+      this.setState({
+        scatterData: coords,
+        originalScatterData: JSON.parse(JSON.stringify(coords)),
+        needsScaling: true,
+        selectedPoint: null,
+        currentBoundingBoxes: result.bounding_boxes || [],
+      });
+    } catch (e) {
+      this.setState({
+        dataError: e instanceof Error ? e : new Error("Auto-place failed"),
+      });
+    } finally {
+      this.setState({ dataLoading: false });
+    }
+  };
   private readonly countUniqueImages = (): void => {
     this.setState((prevState) => {
       const uniqueImages = new Set(prevState.images.map((img) => img.name));
@@ -1011,9 +1121,11 @@ export class MainView extends Component<MainProps, MainState> {
     }
   };
   render() {
+    const { resolved: theme, preference: themePreference, setPreference: setThemePref } = this.context;
+    const mainStyles = getMainViewStyles(theme);
     return (
-      <div style={MainViewStyles.container}>
-        {this.state.sessionReady && <SessionInfo onNavigateHome={this.props.onNavigateHome} />}
+      <div style={mainStyles.container}>
+        {this.state.sessionReady && <SessionInfo onNavigateHome={this.props.onNavigateHome} theme={theme} themePreference={themePreference} onThemeChange={setThemePref} />}
         <Header
           lizardCount={this.state.lizardCount}
           loading={this.state.loading}
@@ -1033,8 +1145,9 @@ export class MainView extends Component<MainProps, MainState> {
           onOpenMeasurementsModal={this.handleOpenMeasurementsAndScaleModal}
           toepadPredictorType={this.state.toepadPredictorType}
           onToepadPredictorTypeChange={this.handleToepadPredictorTypeChange}
+          theme={theme}
         />
-        <div style={MainViewStyles.mainContentArea}>
+        <div style={mainStyles.mainContentArea}>
           {" "}
           <HistoryPanel
             uploadHistory={this.state.uploadHistory.filter(
@@ -1044,8 +1157,9 @@ export class MainView extends Component<MainProps, MainState> {
             uploadProgress={this.state.uploadProgress}
             onSelectImage={this.changeCurrentImage}
             onLoadFromUploads={this.loadImageFromUploads}
+            theme={theme}
           />
-          <div style={MainViewStyles.svgContainer}>
+          <div style={mainStyles.svgContainer}>
             {" "}
             <NavigationControls
               currentImageIndex={this.state.currentImageIndex}
@@ -1057,6 +1171,7 @@ export class MainView extends Component<MainProps, MainState> {
               onNext={() =>
                 this.changeCurrentImage(this.state.currentImageIndex + 1)
               }
+              theme={theme}
             />
             <ImageVersionControls
               dataFetched={this.state.dataFetched}
@@ -1072,7 +1187,69 @@ export class MainView extends Component<MainProps, MainState> {
               isEditMode={this.state.isEditMode}
               onToggleEditMode={this.handleToggleEditMode}
               onResetZoom={this.handleResetZoom}
+              theme={theme}
             />
+            {this.props.selectedViewType === "free" && (
+              <div
+                style={{
+                  marginTop: 12,
+                  border: `1px solid ${theme === "dark" ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.10)"}`,
+                  borderRadius: 12,
+                  overflow: "hidden",
+                  background: theme === "dark" ? "rgba(30,42,58,0.85)" : "rgba(255,255,255,0.85)",
+                }}
+              >
+                <button
+                  onClick={() =>
+                    this.setState((prev) => ({
+                      isFreePredictorPanelOpen: !prev.isFreePredictorPanelOpen,
+                    }))
+                  }
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    padding: "10px 12px",
+                    background: theme === "dark" ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)",
+                    border: "none",
+                    cursor: "pointer",
+                    fontWeight: 800,
+                    color: theme === "dark" ? "#e0e0e0" : "#111",
+                  }}
+                  title="Toggle predictor panel"
+                >
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span>Predictor</span>
+                    <span style={{ fontWeight: 700, fontSize: 12, color: theme === "dark" ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.55)" }}>
+                      (Free mode)
+                    </span>
+                  </span>
+                  <span style={{ fontSize: 12, color: theme === "dark" ? "rgba(255,255,255,0.65)" : "rgba(0,0,0,0.65)" }}>
+                    {this.state.isFreePredictorPanelOpen ? "Hide" : "Show"}
+                  </span>
+                </button>
+
+                {this.state.isFreePredictorPanelOpen && (
+                  <div style={{ padding: "0 0 12px 0" }}>
+                    <FreePredictorPanel
+                      predictors={this.state.availablePredictors}
+                      selectedPredictorId={this.state.freePredictorId}
+                      predictorsLoading={this.state.predictorsLoading}
+                      error={this.state.predictorsError}
+                      hasCurrentImage={Boolean(this.state.imageFilename)}
+                      onRefresh={this.refreshPredictors}
+                      onSelectPredictorId={(id) => this.setState({ freePredictorId: id })}
+                      onUploadPredictor={this.handleUploadFreePredictor}
+                      onDeleteSelected={this.handleDeleteSelectedFreePredictor}
+                      onAutoplace={this.handleFreeAutoplace}
+                      theme={theme}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
             {/* Display extracted ID for toepad view */}
             {this.props.selectedViewType === "toepads" && this.state.extractedId && (() => {
               const filenameWithoutExt = this.state.imageFilename?.replace(/\.[^/.]+$/, "") ?? "";
@@ -1177,6 +1354,7 @@ export class MainView extends Component<MainProps, MainState> {
                 isModalOpen={this.state.isMeasurementsAndScaleModalOpen}
                 boundingBoxes={this.state.currentBoundingBoxes}
                 fitToContainerWidth={this.props.selectedViewType === "toepads"}
+                theme={theme}
               />
             </div>
           </div>
@@ -1191,6 +1369,7 @@ export class MainView extends Component<MainProps, MainState> {
             isModal={true}
             onClose={this.handleCloseMeasurementsAndScaleModal}
             viewType={this.props.selectedViewType}
+            theme={theme}
           />
         )}
       </div>

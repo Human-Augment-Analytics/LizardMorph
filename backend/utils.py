@@ -21,7 +21,7 @@ import random
 
 
 # Dorsal landmark reorder mapping.
-# The dlib predictor (new_landmarks_2025_predictor.dat) outputs 34 parts in its
+# The dlib predictor (dorsal_predictor_clahe_best.dat) outputs 34 parts in its
 # own internal order.  The reference dorsal annotations use a different order
 # (1‑34, 0‑indexed below).  This array maps each reference position to the dlib
 # part index that should fill it.
@@ -254,11 +254,37 @@ def predictions_to_xml(
             image_e.set("error", str(error))
             images_e.append(image_e)
         
-    images_e[:] = sorted(
-            images_e, key=lambda child: (child.tag, float(child.get("error"))), reverse=True
-    )
-
     pretty_xml(root, output)
+
+
+def detect_scale_bar(img_bgr):
+    """Tiered heuristic for scale bar detection."""
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY) if len(img_bgr.shape) == 3 else img_bgr
+    for thresh_val, min_aspect, min_height, min_area in [
+        (240, 5, 150, 500), (220, 4, 120, 400), (200, 3, 100, 200), (180, 2.5, 80, 100)
+    ]:
+        _, thresh = cv2.threshold(gray, thresh_val, 255, cv2.THRESH_BINARY)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        candidates = []
+        for c in contours:
+            x, y, w, h = cv2.boundingRect(c)
+            aspect = h / max(w, 1)
+            area = cv2.contourArea(c)
+            if aspect > min_aspect and h > min_height and area > min_area:
+                candidates.append((x, y, w, h, area))
+        if candidates:
+            candidates.sort(key=lambda c: c[4], reverse=True)
+            x, y, w, h, _ = candidates[0]
+            pad_x, pad_y = int(w * 0.25), int(h * 0.25)
+            # Clip to image boundaries
+            img_h, img_w = img_bgr.shape[:2]
+            return (
+                max(0, x - pad_x),
+                max(0, y - pad_y),
+                min(img_w - (x - pad_x), w + 2 * pad_x),
+                min(img_h - (y - pad_y), h + 2 * pad_y)
+            )
+    return None
 
 def predictions_to_xml_single(predictor_name: str, image_path: str, output: str):
     """Generates dlib format xml file for a single image."""
@@ -270,6 +296,13 @@ def predictions_to_xml_single(predictor_name: str, image_path: str, output: str)
     image_e.set('file', str(image_path))
 
     img = cv2.imread(image_path)
+
+    # Apply CLAHE on the luminance channel to match training preprocessing
+    img_yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    img_yuv[:, :, 0] = clahe.apply(img_yuv[:, :, 0])
+    img = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
+
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = cv2.filter2D(img, -1, kernel)
     img = cv2.bilateralFilter(img, 9, 41, 21)
@@ -294,9 +327,81 @@ def predictions_to_xml_single(predictor_name: str, image_path: str, output: str)
     else:
         order = list(range(num_parts))
 
+    pretty_xml(root, output)
+
+
+def predictions_to_xml_dorsal_hybrid(
+    image_path: str,
+    output: str,
+    body_predictor_path: str,
+    scale_predictor_path: str,
+    cached_dlib_predictors: dict = None
+):
+    """
+    Generates dlib format XML for dorsal view using the 'Hybrid Safe' configuration.
+    Uses a global body model (34 pts) and a specialized scale model (2 pts) for better accuracy.
+    """
+    # Load predictors
+    if cached_dlib_predictors and "dorsal" in cached_dlib_predictors:
+        body_pred = cached_dlib_predictors["dorsal"]
+    else:
+        body_pred = dlib.shape_predictor(body_predictor_path)
+
+    if cached_dlib_predictors and "scale" in cached_dlib_predictors:
+        scale_pred = cached_dlib_predictors["scale"]
+    else:
+        scale_pred = dlib.shape_predictor(scale_predictor_path)
+
+    # Initial image load
+    img_bgr = cv2.imread(image_path)
+    if img_bgr is None:
+        raise ValueError(f"Failed to load image: {image_path}")
+    h, w = img_bgr.shape[:2]
+
+    # Preprocessing (CLAHE)
+    img_yuv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2YUV)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    img_yuv[:, :, 0] = clahe.apply(img_yuv[:, :, 0])
+    img_prepped_bgr = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
+    img_prepped_rgb = cv2.cvtColor(img_prepped_bgr, cv2.COLOR_BGR2RGB)
+
+    # Scale Bar Detection (heuristic on original/raw BGR image)
+    scale_bbox = detect_scale_bar(img_bgr)
+
+    # 1. Body Prediction (baseline 34 pts on full image)
+    full_rect = dlib.rectangle(1, 1, w - 1, h - 1)
+    body_shape = body_pred(img_prepped_rgb, full_rect)
+    final_lms = shape_to_np(body_shape)
+
+    # 2. Scale Refinement (2 pts on crop)
+    if scale_bbox:
+        l, t, bw, bh = scale_bbox
+        scale_rect = dlib.rectangle(int(l), int(t), int(l + bw), int(t + bh))
+        scale_shape = scale_pred(img_prepped_rgb, scale_rect)
+        scale_lms = shape_to_np(scale_shape)
+        # Replace landmarks 0 and 1 in the 34-point set
+        if len(scale_lms) >= 2 and len(final_lms) >= 2:
+            final_lms[0] = scale_lms[0]
+            final_lms[1] = scale_lms[1]
+            print(f"Scale refinement applied for {os.path.basename(image_path)}")
+    else:
+        print(f"No scale bar detected for {os.path.basename(image_path)}, using global baseline.")
+
+    # Convert to standard XML format
+    root, images_e = initialize_xml()
+    image_e = ET.Element('image')
+    image_e.set('file', str(image_path))
+    box = create_box(img_bgr.shape)
+
+    # Reorder according to DORSAL_LANDMARK_ORDER
+    # The 'final_lms' are already in dlib internal order (0-33)
+    if len(final_lms) == len(DORSAL_LANDMARK_ORDER):
+        order = DORSAL_LANDMARK_ORDER
+    else:
+        order = list(range(len(final_lms)))
+
     for ref_idx, dlib_idx in enumerate(order):
-        x = np.median([landmark[dlib_idx][0] for landmark in landmarks])
-        y = np.median([landmark[dlib_idx][1] for landmark in landmarks])
+        x, y = final_lms[dlib_idx]
         part = create_part(x, y, ref_idx)
         box.append(part)
 
@@ -310,7 +415,7 @@ def predictions_to_xml_single_with_detector(predictor_name: str, image_path: str
     """
     Generates dlib format xml file for a single image using dlib fhog object detector for bounding box detection.
     This follows the approach from visualize_predictions.py.
-    
+
     Parameters:
     ----------
         predictor_name (str): Path to the shape predictor file
@@ -324,8 +429,15 @@ def predictions_to_xml_single_with_detector(predictor_name: str, image_path: str
 
     image_e = ET.Element('image')
     image_e.set('file', str(image_path))
-    
+
     img = cv2.imread(image_path)
+
+    # Apply CLAHE on the luminance channel to match training preprocessing
+    img_yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    img_yuv[:, :, 0] = clahe.apply(img_yuv[:, :, 0])
+    img = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
+
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = cv2.filter2D(img, -1, kernel)
     img = cv2.bilateralFilter(img, 9, 41, 21)

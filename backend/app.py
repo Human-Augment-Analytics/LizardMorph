@@ -25,7 +25,15 @@ from dotenv import load_dotenv
 import psutil
 import threading
 import time
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+import predictor_library
+
+# prometheus_client is optional in some environments (e.g. minimal installs, tests)
+try:
+    from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+except Exception:  # pragma: no cover
+    Counter = Histogram = Gauge = None
+    generate_latest = None
+    CONTENT_TYPE_LATEST = "text/plain"
 
 # Load ENV variables
 load_dotenv()
@@ -50,8 +58,17 @@ def get_model_path(relative_path):
         return os.path.join(BASE_DIR, clean)
     return os.path.abspath(os.path.join(BASE_DIR, relative_path))
 
+# Global predictor library (Free mode)
+PREDICTOR_LIBRARY_DIR = get_model_path(
+    os.getenv("PREDICTOR_LIBRARY_DIR", "../models/custom_predictors")
+)
+PREDICTOR_LIBRARY_INDEX = os.path.join(PREDICTOR_LIBRARY_DIR, "predictors.json")
+PREDICTOR_LIBRARY_FILES = os.path.join(PREDICTOR_LIBRARY_DIR, "files")
+PREDICTOR_MAX_BYTES = int(os.getenv("PREDICTOR_MAX_BYTES", str(100 * 1024 * 1024)))
+
 # Model files for different view types
-DORSAL_PREDICTOR_FILE = get_model_path(os.getenv("DORSAL_PREDICTOR_FILE", "../models/lizard-x-ray/new_landmarks_2025_predictor.dat"))
+DORSAL_PREDICTOR_FILE = get_model_path(os.getenv("DORSAL_PREDICTOR_FILE", "../models/lizard-x-ray/dorsal_predictor_clahe_best.dat"))
+SCALE_PREDICTOR_FILE = get_model_path(os.getenv("SCALE_PREDICTOR_FILE", "../models/lizard-x-ray/scale_predictor_clahe.dat"))
 LATERAL_PREDICTOR_FILE = get_model_path(os.getenv("LATERAL_PREDICTOR_FILE", "../models/lizard-x-ray/lateral_predictor_auto.dat"))
 TOEPADS_PREDICTOR_FILE = get_model_path(os.getenv("TOEPADS_PREDICTOR_FILE", "./toepads_predictor_auto.dat"))
 CUSTOM_PREDICTOR_FILE = get_model_path(os.getenv("CUSTOM_PREDICTOR_FILE", "./custom_predictor_auto.dat"))
@@ -73,7 +90,7 @@ ID_EXTRACTOR_MODEL = get_model_path(os.getenv("ID_EXTRACTOR_MODEL", "../models/l
 
 
 # Default predictor file (fallback)
-predictor_file = get_model_path(os.getenv("PREDICTOR_FILE", "../models/lizard-x-ray/new_landmarks_2025_predictor.dat"))
+predictor_file = get_model_path(os.getenv("PREDICTOR_FILE", "../models/lizard-x-ray/dorsal_predictor_clahe_best.dat"))
 
 # Webhook configuration
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "your-webhook-secret-here")
@@ -160,13 +177,18 @@ def get_cached_dlib_predictors():
     if not _cached_dlib_predictors:
         try:
             import dlib
+            if DORSAL_PREDICTOR_FILE and os.path.exists(DORSAL_PREDICTOR_FILE):
+                logger.info(f"Loading dorsal predictor: {DORSAL_PREDICTOR_FILE}")
+                _cached_dlib_predictors['dorsal'] = dlib.shape_predictor(DORSAL_PREDICTOR_FILE)
+            if SCALE_PREDICTOR_FILE and os.path.exists(SCALE_PREDICTOR_FILE):
+                logger.info(f"Loading scale predictor: {SCALE_PREDICTOR_FILE}")
+                _cached_dlib_predictors['scale'] = dlib.shape_predictor(SCALE_PREDICTOR_FILE)
             if TOEPAD_TOE_PREDICTOR and os.path.exists(TOEPAD_TOE_PREDICTOR):
                 logger.info(f"Loading toe predictor: {TOEPAD_TOE_PREDICTOR}")
                 _cached_dlib_predictors['toe'] = dlib.shape_predictor(TOEPAD_TOE_PREDICTOR)
             if TOEPAD_FINGER_PREDICTOR and os.path.exists(TOEPAD_FINGER_PREDICTOR):
                 logger.info(f"Loading finger predictor: {TOEPAD_FINGER_PREDICTOR}")
                 _cached_dlib_predictors['finger'] = dlib.shape_predictor(TOEPAD_FINGER_PREDICTOR)
-            # Scale bars use YOLO only, no dlib predictor needed
             logger.info(f"Dlib predictors loaded and cached: {list(_cached_dlib_predictors.keys())}")
         except ImportError:
             logger.warning("dlib not installed, skipping predictor caching")
@@ -317,12 +339,15 @@ for folder in [
 export_handler = ExportHandler(OUTPUTS_FOLDER)
 session_manager = SessionManager(SESSIONS_FOLDER)
 
-# Initialize Prometheus metrics
-REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP requests', ['method', 'endpoint', 'status'])
-REQUEST_LATENCY = Histogram('http_request_duration_seconds', 'HTTP request latency', ['method', 'endpoint'])
-CPU_USAGE = Gauge('cpu_usage_percent', 'CPU usage percentage')
-MEMORY_USAGE = Gauge('memory_usage_percent', 'Memory usage percentage')
-DISK_USAGE = Gauge('disk_usage_percent', 'Disk usage percentage')
+# Initialize Prometheus metrics (no-op if prometheus_client missing)
+if Counter and Histogram and Gauge:
+    REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP requests', ['method', 'endpoint', 'status'])
+    REQUEST_LATENCY = Histogram('http_request_duration_seconds', 'HTTP request latency', ['method', 'endpoint'])
+    CPU_USAGE = Gauge('cpu_usage_percent', 'CPU usage percentage')
+    MEMORY_USAGE = Gauge('memory_usage_percent', 'Memory usage percentage')
+    DISK_USAGE = Gauge('disk_usage_percent', 'Disk usage percentage')
+else:
+    REQUEST_COUNT = REQUEST_LATENCY = CPU_USAGE = MEMORY_USAGE = DISK_USAGE = None
 
 # Background thread to update system metrics with memory optimization
 def update_system_metrics():
@@ -333,9 +358,12 @@ def update_system_metrics():
             memory = psutil.virtual_memory()
             disk = psutil.disk_usage('/')
             
-            CPU_USAGE.set(cpu_percent)
-            MEMORY_USAGE.set(memory.percent)
-            DISK_USAGE.set(disk.percent)
+            if CPU_USAGE:
+                CPU_USAGE.set(cpu_percent)
+            if MEMORY_USAGE:
+                MEMORY_USAGE.set(memory.percent)
+            if DISK_USAGE:
+                DISK_USAGE.set(disk.percent)
             
             # Force garbage collection after metrics update
             import gc
@@ -345,9 +373,10 @@ def update_system_metrics():
             print(f"Error updating system metrics: {e}")
         time.sleep(30)  # Reduced frequency to save memory
 
-# Start system metrics collection
-metrics_thread = threading.Thread(target=update_system_metrics, daemon=True)
-metrics_thread.start()
+# Start system metrics collection only if Prometheus is enabled
+if CPU_USAGE or MEMORY_USAGE or DISK_USAGE:
+    metrics_thread = threading.Thread(target=update_system_metrics, daemon=True)
+    metrics_thread.start()
 
 # Health check endpoint (used by Electron to detect backend readiness)
 @app.route("/health", methods=["GET"])
@@ -357,11 +386,15 @@ def health_check():
 # Prometheus metrics endpoint
 @app.route('/metrics')
 def metrics():
+    if not generate_latest:
+        return jsonify({"success": False, "error": "prometheus_client not installed"}), 501
     return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
 
 # System metrics endpoint
 @app.route('/system/metrics')
 def system_metrics():
+    if not generate_latest:
+        return jsonify({"success": False, "error": "prometheus_client not installed"}), 501
     return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
 
 # Decorator to track metrics for all endpoints
@@ -372,11 +405,14 @@ def track_metrics(f):
         try:
             response = f(*args, **kwargs)
             status = response[1] if isinstance(response, tuple) else 200
-            REQUEST_COUNT.labels(method=request.method, endpoint=request.endpoint, status=status).inc()
-            REQUEST_LATENCY.labels(method=request.method, endpoint=request.endpoint).observe(time.time() - start_time)
+            if REQUEST_COUNT:
+                REQUEST_COUNT.labels(method=request.method, endpoint=request.endpoint, status=status).inc()
+            if REQUEST_LATENCY:
+                REQUEST_LATENCY.labels(method=request.method, endpoint=request.endpoint).observe(time.time() - start_time)
             return response
         except Exception as e:
-            REQUEST_COUNT.labels(method=request.method, endpoint=request.endpoint, status=500).inc()
+            if REQUEST_COUNT:
+                REQUEST_COUNT.labels(method=request.method, endpoint=request.endpoint, status=500).inc()
             raise e
     wrapper.__name__ = f.__name__
     return wrapper
@@ -548,6 +584,154 @@ def get_view_type_config(view_type):
     logger.info(f"  - YOLO model: {yolo_model}")
     
     return predictor_file, detector_file, yolo_model
+
+
+@app.route("/predictors", methods=["GET"])
+@cross_origin()
+@track_metrics
+def list_predictors():
+    try:
+        predictors = predictor_library.list_predictors(PREDICTOR_LIBRARY_INDEX)
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "predictors": [
+                        {
+                            "id": p.id,
+                            "display_name": p.display_name,
+                            "stored_filename": p.stored_filename,
+                            "uploaded_at": p.uploaded_at,
+                            "size_bytes": p.size_bytes,
+                            "num_parts": p.num_parts,
+                        }
+                        for p in predictors
+                    ],
+                }
+            ),
+            200,
+        )
+    except Exception as e:
+        logger.error(f"Error listing predictors: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/predictors", methods=["POST"])
+@cross_origin()
+@track_metrics
+def upload_predictor():
+    try:
+        f = request.files.get("predictor")
+        if f is None:
+            return jsonify({"success": False, "error": "Missing file field 'predictor'"}), 400
+
+        predictor_library.ensure_dir(PREDICTOR_LIBRARY_DIR)
+        predictor_library.ensure_dir(PREDICTOR_LIBRARY_FILES)
+
+        file_bytes = f.read() or b""
+        meta = predictor_library.add_predictor(
+            index_path=PREDICTOR_LIBRARY_INDEX,
+            files_dir=PREDICTOR_LIBRARY_FILES,
+            original_filename=f.filename,
+            file_bytes=file_bytes,
+            max_bytes=PREDICTOR_MAX_BYTES,
+            validate_with_dlib=not app.config.get("TESTING", False),
+        )
+
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "predictor": {
+                        "id": meta.id,
+                        "display_name": meta.display_name,
+                        "stored_filename": meta.stored_filename,
+                        "uploaded_at": meta.uploaded_at,
+                        "size_bytes": meta.size_bytes,
+                        "num_parts": meta.num_parts,
+                    },
+                }
+            ),
+            200,
+        )
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 422
+    except Exception as e:
+        logger.error(f"Error uploading predictor: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/predictors/<predictor_id>", methods=["DELETE"])
+@cross_origin()
+@track_metrics
+def delete_predictor(predictor_id):
+    try:
+        predictor_library.ensure_dir(PREDICTOR_LIBRARY_DIR)
+        predictor_library.ensure_dir(PREDICTOR_LIBRARY_FILES)
+        ok = predictor_library.delete_predictor(
+            index_path=PREDICTOR_LIBRARY_INDEX,
+            files_dir=PREDICTOR_LIBRARY_FILES,
+            predictor_id=predictor_id,
+        )
+        if not ok:
+            return jsonify({"success": False, "error": "Predictor not found"}), 404
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        logger.error(f"Error deleting predictor: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/free_autoplace", methods=["POST"])
+@cross_origin()
+@track_metrics
+def free_autoplace():
+    """
+    Free mode explicit auto-landmarking using a globally stored .dat predictor.
+
+    This overwrites any existing XML for the given filename in the current session.
+    """
+    try:
+        filename = request.args.get("filename")
+        if not filename:
+            return jsonify({"error": "filename parameter is required"}), 400
+
+        body = request.get_json(silent=True) or {}
+        predictor_id = body.get("predictor_id") or request.args.get("predictor_id")
+        if not predictor_id:
+            return jsonify({"error": "predictor_id is required"}), 400
+
+        # Get session-specific folders
+        session_id = get_session_id()
+        session_data = get_session_folders(session_id)
+
+        safe_name = os.path.basename(filename)
+        image_path = os.path.join(session_data["upload_folder"], safe_name)
+        if not os.path.exists(image_path):
+            return jsonify({"error": f"File {safe_name} not found in session uploads folder"}), 404
+
+        meta = predictor_library.get_predictor(PREDICTOR_LIBRARY_INDEX, predictor_id)
+        if meta is None:
+            return jsonify({"error": "Predictor not found"}), 404
+
+        predictor_path = predictor_library.resolve_predictor_path(PREDICTOR_LIBRARY_FILES, meta)
+        if not os.path.exists(predictor_path):
+            return jsonify({"error": "Predictor file missing on server"}), 404
+
+        xml_path = os.path.join(session_data["outputs_folder"], f"output_{safe_name}.xml")
+
+        # Always overwrite XML
+        utils.predictions_to_xml_single(predictor_path, image_path, xml_path)
+        utils.dlib_xml_to_pandas(xml_path)
+        utils.dlib_xml_to_tps(xml_path)
+
+        data = visual_individual_performance.parse_xml_for_frontend(xml_path)
+        data["name"] = safe_name
+        data["session_id"] = session_id
+        data["view_type"] = "free"
+        return jsonify(data), 200
+    except Exception as e:
+        logger.error(f"Error in free_autoplace: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 
 def cleanup_on_startup():
@@ -825,6 +1009,15 @@ def upload():
                             cached_dlib_predictors=get_cached_dlib_predictors()
                         )
                         logger.info(f"YOLO processing completed for {unique_name}")
+                    elif view_type.lower() == "dorsal":
+                        logger.info(f"Using Hybrid Best-Performance prediction for dorsal view")
+                        utils.predictions_to_xml_dorsal_hybrid(
+                            image_path,
+                            xml_output_path,
+                            DORSAL_PREDICTOR_FILE,
+                            SCALE_PREDICTOR_FILE,
+                            cached_dlib_predictors=get_cached_dlib_predictors()
+                        )
                     elif detector_file_path and os.path.exists(detector_file_path):
                         utils.predictions_to_xml_single_with_detector(
                             predictor_file_path, image_path, xml_output_path, detector_file_path
@@ -1295,6 +1488,15 @@ def process_existing():
                     finger_predictor_path=TOEPAD_FINGER_PREDICTOR,
                     target_predictor_type=toepad_predictor_type,
                     cached_yolo_model=get_cached_yolo_model(),
+                    cached_dlib_predictors=get_cached_dlib_predictors()
+                )
+            elif view_type.lower() == "dorsal":
+                logger.info(f"Using Hybrid Best-Performance prediction for dorsal view (existing image)")
+                utils.predictions_to_xml_dorsal_hybrid(
+                    image_path,
+                    xml_path,
+                    DORSAL_PREDICTOR_FILE,
+                    SCALE_PREDICTOR_FILE,
                     cached_dlib_predictors=get_cached_dlib_predictors()
                 )
             elif detector_file_path and os.path.exists(detector_file_path):

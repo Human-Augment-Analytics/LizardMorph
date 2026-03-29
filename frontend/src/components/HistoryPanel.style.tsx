@@ -1,89 +1,95 @@
 import type { CSSProperties } from "react";
+import type { ResolvedTheme } from "../contexts/ThemeContext";
+import { getTokens } from "../contexts/themeTokens";
 
-export class HistoryPanelStyles {
-  static readonly historyContainer: CSSProperties = {
-    width: "27vw",
-    borderRight: "1px solid #ccc",
-    overflowY: "auto",
-    padding: "10px",
-  };
+export function getHistoryPanelStyles(theme: ResolvedTheme) {
+  const t = getTokens(theme);
+  return {
+    historyContainer: {
+      width: "27vw",
+      borderRight: `1px solid ${t.border}`,
+      overflowY: "auto",
+      padding: "10px",
+      color: t.text,
+    } as CSSProperties,
 
-  static readonly historyTableContainer: CSSProperties = {
-    maxHeight: "calc(100vh - 350px)",
-    overflowY: "auto",
-    border: "1px solid #ddd",
-    borderRadius: "4px",
-  };
+    historyTableContainer: {
+      maxHeight: "calc(100vh - 350px)",
+      overflowY: "auto",
+      border: `1px solid ${t.borderLight}`,
+      borderRadius: "4px",
+    } as CSSProperties,
 
-  static readonly historyTable: CSSProperties = {
-    width: "100%",
-    borderCollapse: "collapse",
-  };
+    historyTable: {
+      width: "100%",
+      borderCollapse: "collapse",
+    } as CSSProperties,
 
-  static readonly historyTableHeader: CSSProperties = {
-    backgroundColor: "#f3f3f3",
-  };
+    historyTableHeader: {
+      backgroundColor: t.bgTertiary,
+    } as CSSProperties,
 
-  static readonly historyTableHeaderCell: CSSProperties = {
-    padding: "8px",
-    textAlign: "left",
-    borderBottom: "1px solid #ddd",
-    color: "black",
-  };
+    historyTableHeaderCell: {
+      padding: "8px",
+      textAlign: "left",
+      borderBottom: `1px solid ${t.borderLight}`,
+      color: t.text,
+    } as CSSProperties,
 
-  static readonly historyTableRow: CSSProperties = {
-    cursor: "pointer",
-  };
+    historyTableRow: {
+      cursor: "pointer",
+    } as CSSProperties,
 
-  static readonly historyTableRowSelected: CSSProperties = {
-    backgroundColor: "#f0f0f0",
-  };
+    historyTableRowSelected: {
+      backgroundColor: t.surfaceHover,
+    } as CSSProperties,
 
-  static readonly historyTableCell: CSSProperties = {
-    padding: "8px",
-    borderBottom: "1px solid #eee",
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    color: "white",
-  };
+    historyTableCell: {
+      padding: "8px",
+      borderBottom: `1px solid ${theme === "dark" ? t.borderLight : "#eee"}`,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      color: t.text,
+    } as CSSProperties,
 
-  static readonly historyTableCellSelected: CSSProperties = {
-    fontWeight: "bold",
-    color: "black",
-  };
+    historyTableCellSelected: {
+      fontWeight: "bold",
+      color: t.text,
+    } as CSSProperties,
 
-  static readonly historyTableEmptyCell: CSSProperties = {
-    padding: "10px",
-    textAlign: "center",
-    color: "#666",
-  };
+    historyTableEmptyCell: {
+      padding: "10px",
+      textAlign: "center",
+      color: t.textMuted,
+    } as CSSProperties,
 
-  static readonly progressContainer: CSSProperties = {
-    marginTop: "8px",
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-  };
+    progressContainer: {
+      marginTop: "8px",
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+    } as CSSProperties,
 
-  static readonly progressBar: CSSProperties = {
-    flex: 1,
-    height: "6px",
-    backgroundColor: "#e0e0e0",
-    borderRadius: "3px",
-    overflow: "hidden",
-  };
+    progressBar: {
+      flex: 1,
+      height: "6px",
+      backgroundColor: theme === "dark" ? "#3a4a5e" : "#e0e0e0",
+      borderRadius: "3px",
+      overflow: "hidden",
+    } as CSSProperties,
 
-  static readonly progressFill: CSSProperties = {
-    height: "100%",
-    backgroundColor: "#4CAF50",
-    transition: "width 0.3s ease",
-  };
+    progressFill: {
+      height: "100%",
+      backgroundColor: "#4CAF50",
+      transition: "width 0.3s ease",
+    } as CSSProperties,
 
-  static readonly progressText: CSSProperties = {
-    fontSize: "0.7em",
-    color: "#666",
-    minWidth: "30px",
-    textAlign: "right",
+    progressText: {
+      fontSize: "0.7em",
+      color: t.textMuted,
+      minWidth: "30px",
+      textAlign: "right",
+    } as CSSProperties,
   };
 }
