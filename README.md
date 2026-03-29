@@ -72,7 +72,7 @@ The `.env` file must live at the **repo root** (`LizardMorph/.env`), not inside 
 | `TOEPAD_FINGER_PREDICTOR` | `../models/lizard-toe-pad/finger_predictor_obb.dat` | 9-point finger dlib predictor ⚠️ |
 | `TOEPAD_SCALE_PREDICTOR` | `../models/lizard-toe-pad/lizard_scale.dat` | 2-point ruler predictor |
 | `ID_EXTRACTOR_MODEL` | `../models/lizard-toe-pad/yolo_bounding_box.pt` | Legacy YOLO for ID detection |
-| `DORSAL_PREDICTOR_FILE` | `../models/lizard-x-ray/new_landmarks_2025_predictor.dat` | Dorsal landmark predictor |
+| `DORSAL_PREDICTOR_FILE` | `../models/lizard-x-ray/dorsal_predictor_clahe_best.dat` | Dorsal landmark predictor |
 | `LATERAL_PREDICTOR_FILE` | `../models/lizard-x-ray/lateral_predictor_auto.dat` | Lateral landmark predictor |
 
 > ⚠️ **`TOEPAD_FINGER_PREDICTOR` and `TOEPAD_SCALE_PREDICTOR` must NOT be swapped** — this causes fingers to get 2 ruler landmarks instead of 9.
@@ -98,7 +98,7 @@ TOEPAD_FINGER_PREDICTOR=../models/lizard-toe-pad/finger_predictor_obb.dat
 TOEPAD_SCALE_PREDICTOR=../models/lizard-toe-pad/lizard_scale.dat
 ID_EXTRACTOR_MODEL=../models/lizard-toe-pad/yolo_bounding_box.pt
 
-DORSAL_PREDICTOR_FILE=../models/lizard-x-ray/new_landmarks_2025_predictor.dat
+DORSAL_PREDICTOR_FILE=../models/lizard-x-ray/dorsal_predictor_clahe_best.dat
 LATERAL_PREDICTOR_FILE=../models/lizard-x-ray/lateral_predictor_auto.dat
 ```
 
@@ -116,7 +116,7 @@ models/
 │   ├── lizard_scale.dat             ← 2-point ruler predictor
 │   └── yolo_bounding_box.pt         ← ID text detection model
 └── lizard-x-ray/
-    ├── new_landmarks_2025_predictor.dat ← Dorsal landmark predictor
+    ├── dorsal_predictor_clahe_best.dat ← Dorsal landmark predictor
     └── lateral_predictor_auto.dat       ← Lateral landmark predictor
 ```
 
@@ -229,7 +229,7 @@ uv run python scripts/<script>.py --help
 
 | Symptom / Issue | Likely Cause / Fix |
 |-----------------|--------------------|
-| **Missing predictor file error** | The machine learning model file (`new_landmarks_2025_predictor.dat`) is required but not included in the repository due to its size. Download the predictor file and place it in the `models/lizard-x-ray/` directory. Update `.env`. |
+| **Missing predictor file error** | The machine learning model file (`dorsal_predictor_clahe_best.dat`) is required but not included in the repository due to its size. Download the predictor file and place it in the `models/lizard-x-ray/` directory. Update `.env`. |
 | **Finger boxes have 2 landmarks** | `TOEPAD_FINGER_PREDICTOR` points to `lizard_scale.dat`. Fix `.env`, restart Flask. |
 | **`No module named dlib`** | Wrong Python env. Verify the virtual environment with `uv` by running `make setup`. Make sure you use `uv run`. |
 | **Frontend shows no boxes** | ONNX model IR version too high. Reconvert to IR 8: `uv run python scripts/do_export.py`. |

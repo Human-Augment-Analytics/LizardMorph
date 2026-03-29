@@ -67,7 +67,7 @@ PREDICTOR_LIBRARY_FILES = os.path.join(PREDICTOR_LIBRARY_DIR, "files")
 PREDICTOR_MAX_BYTES = int(os.getenv("PREDICTOR_MAX_BYTES", str(100 * 1024 * 1024)))
 
 # Model files for different view types
-DORSAL_PREDICTOR_FILE = get_model_path(os.getenv("DORSAL_PREDICTOR_FILE", "../models/lizard-x-ray/new_landmarks_2025_predictor.dat"))
+DORSAL_PREDICTOR_FILE = get_model_path(os.getenv("DORSAL_PREDICTOR_FILE", "../models/lizard-x-ray/dorsal_predictor_clahe_best.dat"))
 LATERAL_PREDICTOR_FILE = get_model_path(os.getenv("LATERAL_PREDICTOR_FILE", "../models/lizard-x-ray/lateral_predictor_auto.dat"))
 TOEPADS_PREDICTOR_FILE = get_model_path(os.getenv("TOEPADS_PREDICTOR_FILE", "./toepads_predictor_auto.dat"))
 CUSTOM_PREDICTOR_FILE = get_model_path(os.getenv("CUSTOM_PREDICTOR_FILE", "./custom_predictor_auto.dat"))
@@ -89,7 +89,7 @@ ID_EXTRACTOR_MODEL = get_model_path(os.getenv("ID_EXTRACTOR_MODEL", "../models/l
 
 
 # Default predictor file (fallback)
-predictor_file = get_model_path(os.getenv("PREDICTOR_FILE", "../models/lizard-x-ray/new_landmarks_2025_predictor.dat"))
+predictor_file = get_model_path(os.getenv("PREDICTOR_FILE", "../models/lizard-x-ray/dorsal_predictor_clahe_best.dat"))
 
 # Webhook configuration
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "your-webhook-secret-here")

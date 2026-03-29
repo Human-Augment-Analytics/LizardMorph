@@ -1,6 +1,7 @@
 import { Component } from "react";
-import { ImageVersionControlsStyles } from "./ImageVersionControls.style";
+import { getImageVersionControlsStyles } from "./ImageVersionControls.style";
 import type { ImageSet } from "../models/ImageSet";
+import type { ResolvedTheme } from "../contexts/ThemeContext";
 
 interface ImageVersionControlsProps {
   dataFetched: boolean;
@@ -12,6 +13,7 @@ interface ImageVersionControlsProps {
   isEditMode: boolean;
   onToggleEditMode: () => void;
   onResetZoom: () => void;
+  theme: ResolvedTheme;
 }
 
 export class ImageVersionControls extends Component<ImageVersionControlsProps> {
@@ -26,23 +28,25 @@ export class ImageVersionControls extends Component<ImageVersionControlsProps> {
       isEditMode,
       onToggleEditMode,
       onResetZoom,
+      theme,
     } = this.props;
+    const styles = getImageVersionControlsStyles(theme);
 
     if (!dataFetched || !imageSet.original) return null;
     return (
       <div style={{
-        ...ImageVersionControlsStyles.imageVersionButtons,
+        ...styles.imageVersionButtons,
       }}>
         <button
           onClick={() => onVersionChange(imageSet.original)}
           disabled={loading || dataLoading}
           style={{
-            ...ImageVersionControlsStyles.versionButton,
+            ...styles.versionButton,
             ...(currentImageURL === imageSet.original
-              ? ImageVersionControlsStyles.versionButtonActive
+              ? styles.versionButtonActive
               : {}),
             ...(loading || dataLoading
-              ? ImageVersionControlsStyles.versionButtonDisabled
+              ? styles.versionButtonDisabled
               : {}),
           }}
         >
@@ -52,12 +56,12 @@ export class ImageVersionControls extends Component<ImageVersionControlsProps> {
           onClick={() => onVersionChange(imageSet.inverted)}
           disabled={loading || dataLoading}
           style={{
-            ...ImageVersionControlsStyles.versionButton,
+            ...styles.versionButton,
             ...(currentImageURL === imageSet.inverted
-              ? ImageVersionControlsStyles.versionButtonActive
+              ? styles.versionButtonActive
               : {}),
             ...(loading || dataLoading
-              ? ImageVersionControlsStyles.versionButtonDisabled
+              ? styles.versionButtonDisabled
               : {}),
           }}
         >
@@ -67,12 +71,12 @@ export class ImageVersionControls extends Component<ImageVersionControlsProps> {
           onClick={() => onVersionChange(imageSet.color_contrasted)}
           disabled={loading || dataLoading}
           style={{
-            ...ImageVersionControlsStyles.versionButton,
+            ...styles.versionButton,
             ...(currentImageURL === imageSet.color_contrasted
-              ? ImageVersionControlsStyles.versionButtonActive
+              ? styles.versionButtonActive
               : {}),
             ...(loading || dataLoading
-              ? ImageVersionControlsStyles.versionButtonDisabled
+              ? styles.versionButtonDisabled
               : {}),
           }}
         >
