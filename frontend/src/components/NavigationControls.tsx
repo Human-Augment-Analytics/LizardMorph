@@ -1,5 +1,6 @@
 import { Component } from "react";
-import { NavigationControlsStyles } from "./NavigationControls.style";
+import { getNavigationControlsStyles } from "./NavigationControls.style";
+import type { ResolvedTheme } from "../contexts/ThemeContext";
 
 interface NavigationControlsProps {
   currentImageIndex: number;
@@ -7,30 +8,32 @@ interface NavigationControlsProps {
   loading: boolean;
   onPrevious: () => void;
   onNext: () => void;
+  theme: ResolvedTheme;
 }
 
 export class NavigationControls extends Component<NavigationControlsProps> {
   render() {
-    const { currentImageIndex, totalImages, loading, onPrevious, onNext } =
+    const { currentImageIndex, totalImages, loading, onPrevious, onNext, theme } =
       this.props;
+    const styles = getNavigationControlsStyles(theme);
 
     if (totalImages <= 1) return null;
     return (
-      <div style={NavigationControlsStyles.navigationControls}>
+      <div style={styles.navigationControls}>
         <button
           onClick={onPrevious}
           disabled={currentImageIndex === 0 || loading}
           style={{
-            ...NavigationControlsStyles.navButton,
+            ...styles.navButton,
             ...(currentImageIndex === 0 || loading
-              ? NavigationControlsStyles.navButtonDisabled
+              ? styles.navButtonDisabled
               : {}),
           }}
         >
           Previous Image
         </button>
 
-        <span style={NavigationControlsStyles.imageCounter}>
+        <span style={styles.imageCounter}>
           Image {currentImageIndex + 1} of {totalImages}
         </span>
 
@@ -38,9 +41,9 @@ export class NavigationControls extends Component<NavigationControlsProps> {
           onClick={onNext}
           disabled={currentImageIndex === totalImages - 1 || loading}
           style={{
-            ...NavigationControlsStyles.navButton,
+            ...styles.navButton,
             ...(currentImageIndex === totalImages - 1 || loading
-              ? NavigationControlsStyles.navButtonDisabled
+              ? styles.navButtonDisabled
               : {}),
           }}
         >

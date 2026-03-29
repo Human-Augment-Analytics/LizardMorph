@@ -1,63 +1,67 @@
-// filepath: c:\src\Git\LizardMorph\frontend\src\components\SVGViewer.style.tsx
 import type { CSSProperties } from "react";
+import type { ResolvedTheme } from "../contexts/ThemeContext";
+import { getTokens } from "../contexts/themeTokens";
 
-export class SVGViewerStyles {
-  public static readonly svgContainer: CSSProperties = {
-    flex: 1,
-    position: "relative",
-    overflow: "hidden",
-    backgroundColor: "#f0f0f0",
-  };
+export function getSVGViewerStyles(theme: ResolvedTheme) {
+  const t = getTokens(theme);
+  return {
+    svgContainer: {
+      flex: 1,
+      position: "relative",
+      overflow: "hidden",
+      backgroundColor: t.bgTertiary,
+    } as CSSProperties,
 
-  public static readonly placeholderMessage: CSSProperties = {
-    position: "absolute",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%)",
-    textAlign: "center",
-    color: "#666",
-    fontSize: "18px",
-    zIndex: 1,
-  };
+    placeholderMessage: {
+      position: "absolute",
+      top: "50%",
+      left: "50%",
+      transform: "translate(-50%, -50%)",
+      textAlign: "center",
+      color: t.textMuted,
+      fontSize: "18px",
+      zIndex: 1,
+    } as CSSProperties,
 
-  public static readonly placeholderSubtext: CSSProperties = {
-    fontSize: "14px",
-    marginTop: "10px",
-    color: "#999",
-  };
+    placeholderSubtext: {
+      fontSize: "14px",
+      marginTop: "10px",
+      color: t.textMuted,
+    } as CSSProperties,
 
-  public static readonly svg: CSSProperties = {
-    border: "2px solid #ddd",
-    backgroundColor: "white",
-    cursor: "crosshair",
-  };
+    svg: {
+      border: `2px solid ${t.borderLight}`,
+      backgroundColor: theme === "dark" ? "#2a2a2a" : "white",
+      cursor: "crosshair",
+    } as CSSProperties,
 
-  public static readonly svgWithData: CSSProperties = {
-    border: "2px solid #007acc",
-  };
+    svgWithData: {
+      border: "2px solid #007acc",
+    } as CSSProperties,
 
-  public static readonly loadingOverlay: CSSProperties = {
-    position: "absolute",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%)",
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
-    color: "white",
-    padding: "20px",
-    borderRadius: "5px",
-    zIndex: 2,
-  };
+    loadingOverlay: {
+      position: "absolute",
+      top: "50%",
+      left: "50%",
+      transform: "translate(-50%, -50%)",
+      backgroundColor: "rgba(0, 0, 0, 0.7)",
+      color: "white",
+      padding: "20px",
+      borderRadius: "5px",
+      zIndex: 2,
+    } as CSSProperties,
 
-  public static readonly errorOverlay: CSSProperties = {
-    position: "absolute",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%)",
-    backgroundColor: "rgba(255, 0, 0, 0.8)",
-    color: "white",
-    padding: "20px",
-    borderRadius: "5px",
-    zIndex: 2,
-    textAlign: "center",
+    errorOverlay: {
+      position: "absolute",
+      top: "50%",
+      left: "50%",
+      transform: "translate(-50%, -50%)",
+      backgroundColor: "rgba(255, 0, 0, 0.8)",
+      color: "white",
+      padding: "20px",
+      borderRadius: "5px",
+      zIndex: 2,
+      textAlign: "center",
+    } as CSSProperties,
   };
 }

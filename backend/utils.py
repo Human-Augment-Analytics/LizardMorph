@@ -21,7 +21,7 @@ import random
 
 
 # Dorsal landmark reorder mapping.
-# The dlib predictor (new_landmarks_2025_predictor.dat) outputs 34 parts in its
+# The dlib predictor (dorsal_predictor_clahe_best.dat) outputs 34 parts in its
 # own internal order.  The reference dorsal annotations use a different order
 # (1‑34, 0‑indexed below).  This array maps each reference position to the dlib
 # part index that should fill it.
@@ -270,6 +270,13 @@ def predictions_to_xml_single(predictor_name: str, image_path: str, output: str)
     image_e.set('file', str(image_path))
 
     img = cv2.imread(image_path)
+
+    # Apply CLAHE on the luminance channel to match training preprocessing
+    img_yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    img_yuv[:, :, 0] = clahe.apply(img_yuv[:, :, 0])
+    img = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
+
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = cv2.filter2D(img, -1, kernel)
     img = cv2.bilateralFilter(img, 9, 41, 21)
@@ -310,7 +317,7 @@ def predictions_to_xml_single_with_detector(predictor_name: str, image_path: str
     """
     Generates dlib format xml file for a single image using dlib fhog object detector for bounding box detection.
     This follows the approach from visualize_predictions.py.
-    
+
     Parameters:
     ----------
         predictor_name (str): Path to the shape predictor file
@@ -324,8 +331,15 @@ def predictions_to_xml_single_with_detector(predictor_name: str, image_path: str
 
     image_e = ET.Element('image')
     image_e.set('file', str(image_path))
-    
+
     img = cv2.imread(image_path)
+
+    # Apply CLAHE on the luminance channel to match training preprocessing
+    img_yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    img_yuv[:, :, 0] = clahe.apply(img_yuv[:, :, 0])
+    img = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
+
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = cv2.filter2D(img, -1, kernel)
     img = cv2.bilateralFilter(img, 9, 41, 21)

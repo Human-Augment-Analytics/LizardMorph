@@ -1,271 +1,307 @@
 import type { CSSProperties } from "react";
+import type { ResolvedTheme } from "../contexts/ThemeContext";
+import { getTokens } from "../contexts/themeTokens";
 
-export class HeaderStyles {
-  static readonly header: CSSProperties = {
-    padding: "15px",
-    borderBottom: "1px solid #ccc",
-    textAlign: "center",
-    position: "relative",
-  };
+export function getHeaderStyles(theme: ResolvedTheme) {
+  const t = getTokens(theme);
+  return {
+    header: {
+      padding: "15px",
+      borderBottom: `1px solid ${t.border}`,
+      textAlign: "center",
+      position: "relative",
+      backgroundColor: t.bg,
+      color: t.text,
+    } as CSSProperties,
 
-  static readonly infoBox: CSSProperties = {
-    position: "absolute",
-    top: "10px",
-    right: "15px",
-    padding: "12px",
-    backgroundColor: "#f8f9fa",
-    borderRadius: "8px",
-    boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-    border: "1px solid #dee2e6",
-    textAlign: "right",
-    minWidth: "300px",
-  };
+    infoBox: {
+      position: "absolute",
+      top: "10px",
+      right: "15px",
+      padding: "12px",
+      backgroundColor: t.surface,
+      borderRadius: "8px",
+      boxShadow: `0 2px 4px ${theme === "dark" ? "rgba(0,0,0,0.3)" : "rgba(0,0,0,0.1)"}`,
+      border: `1px solid ${t.borderLight}`,
+      textAlign: "right",
+      minWidth: "300px",
+    } as CSSProperties,
 
-  static readonly infoBoxContent: CSSProperties = {
-    fontSize: "0.9em",
-    color: "#495057",
-  };
+    infoBoxContent: {
+      fontSize: "0.9em",
+      color: t.textSecondary,
+    } as CSSProperties,
 
-  static readonly infoBoxParagraph: CSSProperties = {
-    margin: "4px 0",
-  };
+    infoBoxParagraph: {
+      margin: "4px 0",
+    } as CSSProperties,
 
-  static readonly infoBoxItalic: CSSProperties = {
-    margin: "4px 0",
-    fontStyle: "italic",
-  };
+    infoBoxItalic: {
+      margin: "4px 0",
+      fontStyle: "italic",
+    } as CSSProperties,
 
-  static readonly infoBoxLink: CSSProperties = {
-    color: "#0056b3",
-    textDecoration: "none",
-  };
+    infoBoxLink: {
+      color: t.textLink,
+      textDecoration: "none",
+    } as CSSProperties,
 
-  static readonly infoBoxLinkRow: CSSProperties = {
-    display: "flex",
-    alignItems: "baseline",
-    justifyContent: "flex-end",
-    flexWrap: "wrap",
-    gap: "8px",
-    rowGap: "2px",
-  };
+    infoBoxLinkRow: {
+      display: "flex",
+      alignItems: "baseline",
+      justifyContent: "flex-end",
+      flexWrap: "wrap",
+      gap: "8px",
+      rowGap: "2px",
+    } as CSSProperties,
 
-  static readonly appVersion: CSSProperties = {
-    fontSize: "0.8em",
-    color: "#6c757d",
-    letterSpacing: "0.02em",
-    whiteSpace: "nowrap",
-  };
+    appVersion: {
+      fontSize: "0.8em",
+      color: t.textMuted,
+      letterSpacing: "0.02em",
+      whiteSpace: "nowrap",
+    } as CSSProperties,
 
-  static readonly lizardCount: CSSProperties = {
-    marginTop: "5px",
-    color: "#0056b3",
-  };
+    lizardCount: {
+      marginTop: "5px",
+      color: t.textLink,
+    } as CSSProperties,
 
-  static readonly mainContent: CSSProperties = {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    maxWidth: "1200px",
-    margin: "0 0 0 15px",
-    padding: "0 20px",
-    marginRight: "340px",
-    gap: "60px",
-  };
+    mainContent: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      maxWidth: "1200px",
+      margin: "0 0 0 15px",
+      padding: "0 20px",
+      marginRight: "340px",
+      gap: "60px",
+    } as CSSProperties,
 
-  static readonly buttonContainer: CSSProperties = {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "flex-start",
-    gap: "15px",
-    width: "220px",
-  };
+    buttonContainer: {
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "flex-start",
+      gap: "15px",
+      width: "220px",
+    } as CSSProperties,
 
-  static readonly dropdownContainer: CSSProperties = {
-    position: "relative",
-    width: "100%",
-  };
+    dropdownContainer: {
+      position: "relative",
+      width: "100%",
+    } as CSSProperties,
 
-  static readonly dropdownButton: CSSProperties = {
-    padding: "12px 20px",
-    backgroundColor: "#607D8B",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-    width: "100%",
-    boxSizing: "border-box",
-    fontWeight: "bold",
-    fontSize: "14px",
-    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-  };
+    dropdownButton: {
+      padding: "12px 20px",
+      backgroundColor: "#607D8B",
+      color: "white",
+      border: "none",
+      borderRadius: "4px",
+      cursor: "pointer",
+      width: "100%",
+      boxSizing: "border-box",
+      fontWeight: "bold",
+      fontSize: "14px",
+      boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+    } as CSSProperties,
 
-  static readonly dropdownContent: CSSProperties = {
-    position: "absolute",
-    top: "100%",
-    left: 0,
-    backgroundColor: "#f9f9f9",
-    minWidth: "220px",
-    boxShadow: "0px 8px 16px 0px rgba(0,0,0,0.2)",
-    zIndex: 1,
-    display: "flex",
-    flexDirection: "column",
-    gap: "5px",
-    padding: "5px",
-    borderRadius: "4px",
-  };
+    dropdownContent: {
+      position: "absolute",
+      top: "100%",
+      left: 0,
+      backgroundColor: t.surface,
+      minWidth: "220px",
+      boxShadow: `0px 8px 16px 0px ${theme === "dark" ? "rgba(0,0,0,0.4)" : "rgba(0,0,0,0.2)"}`,
+      zIndex: 1,
+      display: "flex",
+      flexDirection: "column",
+      gap: "5px",
+      padding: "5px",
+      borderRadius: "4px",
+    } as CSSProperties,
 
-  static readonly uploadButton: CSSProperties = {
-    padding: "12px 20px",
-    backgroundColor: "#2196F3",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-    display: "inline-block",
-    fontWeight: "bold",
-    fontSize: "14px",
-    textAlign: "center",
-    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-    width: "100%",
-    boxSizing: "border-box",
-  };
+    uploadButton: {
+      padding: "12px 20px",
+      backgroundColor: "#2196F3",
+      color: "white",
+      border: "none",
+      borderRadius: "4px",
+      cursor: "pointer",
+      display: "inline-block",
+      fontWeight: "bold",
+      fontSize: "14px",
+      textAlign: "center",
+      boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+      width: "100%",
+      boxSizing: "border-box",
+    } as CSSProperties,
 
-  static readonly uploadButtonDisabled: CSSProperties = {
-    cursor: "not-allowed",
-    opacity: 0.7,
-  };
+    uploadButtonDisabled: {
+      cursor: "not-allowed",
+      opacity: 0.7,
+    } as CSSProperties,
 
-  static readonly exportButton: CSSProperties = {
-    padding: "12px 20px",
-    backgroundColor: "#4CAF50",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-    width: "100%",
-    boxSizing: "border-box",
-    fontWeight: "bold",
-    fontSize: "14px",
-    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-  };
+    exportButton: {
+      padding: "12px 20px",
+      backgroundColor: "#4CAF50",
+      color: "white",
+      border: "none",
+      borderRadius: "4px",
+      cursor: "pointer",
+      width: "100%",
+      boxSizing: "border-box",
+      fontWeight: "bold",
+      fontSize: "14px",
+      boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+    } as CSSProperties,
 
-  static readonly exportButtonDisabled: CSSProperties = {
-    cursor: "not-allowed",
-    opacity: 0.7,
-  };
+    exportButtonDisabled: {
+      cursor: "not-allowed",
+      opacity: 0.7,
+    } as CSSProperties,
 
-  static readonly clearHistoryButton: CSSProperties = {
-    padding: "12px 20px",
-    backgroundColor: "#f44336",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-    width: "100%",
-    boxSizing: "border-box",
-    fontWeight: "bold",
-    fontSize: "14px",
-    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-  };
+    clearHistoryButton: {
+      padding: "12px 20px",
+      backgroundColor: "#f44336",
+      color: "white",
+      border: "none",
+      borderRadius: "4px",
+      cursor: "pointer",
+      width: "100%",
+      boxSizing: "border-box",
+      fontWeight: "bold",
+      fontSize: "14px",
+      boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+    } as CSSProperties,
 
-  static readonly clearHistoryButtonDisabled: CSSProperties = {
-    cursor: "not-allowed",
-    opacity: 0.7,
-  };
+    clearHistoryButtonDisabled: {
+      cursor: "not-allowed",
+      opacity: 0.7,
+    } as CSSProperties,
 
-  static readonly setScaleButton: CSSProperties = {
-    padding: "12px 20px",
-    backgroundColor: "#FF9800",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-    width: "100%",
-    boxSizing: "border-box",
-    fontWeight: "bold",
-    fontSize: "14px",
-    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-  };
+    setScaleButton: {
+      padding: "12px 20px",
+      backgroundColor: "#FF9800",
+      color: "white",
+      border: "none",
+      borderRadius: "4px",
+      cursor: "pointer",
+      width: "100%",
+      boxSizing: "border-box",
+      fontWeight: "bold",
+      fontSize: "14px",
+      boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+    } as CSSProperties,
 
-  static readonly setScaleButtonDisabled: CSSProperties = {
-    cursor: "not-allowed",
-    opacity: 0.7,
-  };
+    setScaleButtonDisabled: {
+      cursor: "not-allowed",
+      opacity: 0.7,
+    } as CSSProperties,
 
-  static readonly measurementsButton: CSSProperties = {
-    padding: "12px 20px",
-    backgroundColor: "#9C27B0",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-    width: "100%",
-    boxSizing: "border-box",
-    fontWeight: "bold",
-    fontSize: "14px",
-    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-  };
+    measurementsButton: {
+      padding: "12px 20px",
+      backgroundColor: "#9C27B0",
+      color: "white",
+      border: "none",
+      borderRadius: "4px",
+      cursor: "pointer",
+      width: "100%",
+      boxSizing: "border-box",
+      fontWeight: "bold",
+      fontSize: "14px",
+      boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+    } as CSSProperties,
 
-  static readonly measurementsButtonDisabled: CSSProperties = {
-    cursor: "not-allowed",
-    opacity: 0.7,
-  };
+    measurementsButtonDisabled: {
+      cursor: "not-allowed",
+      opacity: 0.7,
+    } as CSSProperties,
 
-  static readonly titleContainer: CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  };
+    titleContainer: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+    } as CSSProperties,
 
-  static readonly logo: CSSProperties = {
-    height: "40px",
-    marginRight: "12px",
-  };
+    logo: {
+      height: "40px",
+      marginRight: "12px",
+    } as CSSProperties,
 
-  static readonly title: CSSProperties = {
-    margin: 0,
-    whiteSpace: "nowrap",
-  };
+    title: {
+      margin: 0,
+      whiteSpace: "nowrap",
+      color: t.text,
+    } as CSSProperties,
 
-  static readonly viewType: CSSProperties = {
-    margin: "8px 0 0 0",
-    fontSize: "0.9em",
-    color: "#666",
-    fontWeight: "500",
-    textTransform: "capitalize",
-    letterSpacing: "0.5px",
-  };
+    viewType: {
+      margin: "8px 0 0 0",
+      fontSize: "0.9em",
+      color: t.textMuted,
+      fontWeight: "500",
+      textTransform: "capitalize",
+      letterSpacing: "0.5px",
+    } as CSSProperties,
 
-  static readonly rightSpacer: CSSProperties = {
-    width: "220px",
-  };
+    rightSpacer: {
+      width: "220px",
+    } as CSSProperties,
 
-  static readonly errorMessage: CSSProperties = {
-    color: "red",
-  };
+    errorMessage: {
+      color: t.error,
+    } as CSSProperties,
 
-  static readonly predictorSelector: CSSProperties = {
-    marginTop: "10px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  };
+    predictorSelector: {
+      marginTop: "10px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+    } as CSSProperties,
 
-  static readonly predictorLabel: CSSProperties = {
-    fontSize: "0.9em",
-    color: "#666",
-    fontWeight: "500",
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-  };
+    predictorLabel: {
+      fontSize: "0.9em",
+      color: t.textMuted,
+      fontWeight: "500",
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+    } as CSSProperties,
 
-  static readonly predictorSelect: CSSProperties = {
-    padding: "6px 12px",
-    borderRadius: "4px",
-    border: "1px solid #ccc",
-    fontSize: "0.9em",
-    backgroundColor: "white",
-    cursor: "pointer",
+    predictorSelect: {
+      padding: "6px 12px",
+      borderRadius: "4px",
+      border: `1px solid ${t.border}`,
+      fontSize: "0.9em",
+      backgroundColor: t.bg,
+      color: t.text,
+      cursor: "pointer",
+    } as CSSProperties,
+
+    themeToggle: {
+      display: "flex",
+      gap: "2px",
+      marginTop: "8px",
+      justifyContent: "flex-end",
+      backgroundColor: theme === "dark" ? "#2a3a4e" : "#e8e8e8",
+      borderRadius: "6px",
+      padding: "2px",
+    } as CSSProperties,
+
+    themeToggleButton: {
+      padding: "4px 10px",
+      border: "none",
+      borderRadius: "4px",
+      cursor: "pointer",
+      fontSize: "12px",
+      backgroundColor: "transparent",
+      color: t.textMuted,
+      transition: "all 0.2s ease",
+    } as CSSProperties,
+
+    themeToggleButtonActive: {
+      backgroundColor: t.bg,
+      color: t.text,
+      boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+    } as CSSProperties,
   };
 }

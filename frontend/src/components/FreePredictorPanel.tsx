@@ -1,5 +1,6 @@
 import type { PredictorMeta } from "../services/ApiService";
 import React from "react";
+import type { ResolvedTheme } from "../contexts/ThemeContext";
 
 interface Props {
   predictors: PredictorMeta[];
@@ -12,20 +13,22 @@ interface Props {
   onUploadPredictor: (file: File) => void;
   onDeleteSelected: () => void;
   onAutoplace: () => void;
+  theme: ResolvedTheme;
 }
 
 export function FreePredictorPanel(props: Props) {
   const selected = props.selectedPredictorId;
   const canAutoplace = Boolean(selected) && props.hasCurrentImage && !props.predictorsLoading;
   const isBusy = props.predictorsLoading;
+  const isDark = props.theme === "dark";
 
   const cardStyle: React.CSSProperties = {
     marginTop: 12,
     padding: "14px 14px",
-    border: "1px solid rgba(0, 0, 0, 0.10)",
+    border: `1px solid ${isDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.10)"}`,
     borderRadius: 12,
-    background: "rgba(255, 255, 255, 0.92)",
-    boxShadow: "0 8px 24px rgba(0, 0, 0, 0.06)",
+    background: isDark ? "rgba(30, 42, 58, 0.92)" : "rgba(255, 255, 255, 0.92)",
+    boxShadow: `0 8px 24px ${isDark ? "rgba(0,0,0,0.2)" : "rgba(0,0,0,0.06)"}`,
     backdropFilter: "blur(6px)",
   };
 
@@ -42,13 +45,13 @@ export function FreePredictorPanel(props: Props) {
     fontWeight: 800,
     fontSize: 14,
     letterSpacing: "0.2px",
-    color: "#111",
+    color: isDark ? "#e0e0e0" : "#111",
   };
 
   const subtitleStyle: React.CSSProperties = {
     marginTop: 4,
     fontSize: 12,
-    color: "rgba(0, 0, 0, 0.65)",
+    color: isDark ? "rgba(255,255,255,0.6)" : "rgba(0,0,0,0.65)",
     lineHeight: 1.35,
   };
 
@@ -69,24 +72,26 @@ export function FreePredictorPanel(props: Props) {
   const labelStyle: React.CSSProperties = {
     fontSize: 12,
     fontWeight: 700,
-    color: "rgba(0, 0, 0, 0.75)",
+    color: isDark ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.75)",
   };
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
     padding: "9px 10px",
     borderRadius: 10,
-    border: "1px solid rgba(0, 0, 0, 0.14)",
-    background: "white",
+    border: `1px solid ${isDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.14)"}`,
+    background: isDark ? "#2a3a4e" : "white",
+    color: isDark ? "#e0e0e0" : "#111",
+    colorScheme: isDark ? "dark" : "light",
     outline: "none",
   };
 
   const buttonBase: React.CSSProperties = {
     padding: "9px 12px",
     borderRadius: 10,
-    border: "1px solid rgba(0, 0, 0, 0.14)",
-    background: "white",
-    color: "#111",
+    border: `1px solid ${isDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.14)"}`,
+    background: isDark ? "#2a3a4e" : "white",
+    color: isDark ? "#e0e0e0" : "#111",
     fontWeight: 700,
     cursor: "pointer",
     userSelect: "none",
@@ -108,7 +113,7 @@ export function FreePredictorPanel(props: Props) {
 
   const mutedButton: React.CSSProperties = {
     ...buttonBase,
-    background: "rgba(0, 0, 0, 0.04)",
+    background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
   };
 
   const actionsRowStyle: React.CSSProperties = {

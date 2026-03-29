@@ -1,9 +1,10 @@
 import React, { Component } from "react";
-import { MeasurementsAndScalePanelStyles as styles } from "./MeasurementsAndScalePanel.style";
+import { getMeasurementsAndScalePanelStyles } from "./MeasurementsAndScalePanel.style";
 import type { Measurement } from "../models/Measurement";
 import type { Point } from "../models/Point";
 import type { ScaleSettings as ScaleSettingsType } from "../models/ScaleSettings";
 import { UNITS } from "../models/ScaleSettings";
+import type { ResolvedTheme } from "../contexts/ThemeContext";
 
 interface MeasurementsAndScalePanelProps {
   points: Point[];
@@ -14,6 +15,7 @@ interface MeasurementsAndScalePanelProps {
   isModal?: boolean;
   onClose?: () => void;
   viewType?: string;
+  theme: ResolvedTheme;
 }
 
 export class MeasurementsAndScalePanel extends Component<MeasurementsAndScalePanelProps> {
@@ -92,7 +94,8 @@ export class MeasurementsAndScalePanel extends Component<MeasurementsAndScalePan
   }
 
   render() {
-    const { points, scaleSettings, onScaleSettingsChange, isModal, onClose } = this.props;
+    const { points, scaleSettings, onScaleSettingsChange, isModal, onClose, theme } = this.props;
+    const styles = getMeasurementsAndScalePanelStyles(theme);
 
     const handlePointAChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
       const pointAId = e.target.value ? parseInt(e.target.value, 10) : null;
