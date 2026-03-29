@@ -68,6 +68,7 @@ PREDICTOR_MAX_BYTES = int(os.getenv("PREDICTOR_MAX_BYTES", str(100 * 1024 * 1024
 
 # Model files for different view types
 DORSAL_PREDICTOR_FILE = get_model_path(os.getenv("DORSAL_PREDICTOR_FILE", "../models/lizard-x-ray/dorsal_predictor_clahe_best.dat"))
+SCALE_PREDICTOR_FILE = get_model_path(os.getenv("SCALE_PREDICTOR_FILE", "../models/lizard-x-ray/scale_predictor_clahe.dat"))
 LATERAL_PREDICTOR_FILE = get_model_path(os.getenv("LATERAL_PREDICTOR_FILE", "../models/lizard-x-ray/lateral_predictor_auto.dat"))
 TOEPADS_PREDICTOR_FILE = get_model_path(os.getenv("TOEPADS_PREDICTOR_FILE", "./toepads_predictor_auto.dat"))
 CUSTOM_PREDICTOR_FILE = get_model_path(os.getenv("CUSTOM_PREDICTOR_FILE", "./custom_predictor_auto.dat"))
@@ -176,13 +177,18 @@ def get_cached_dlib_predictors():
     if not _cached_dlib_predictors:
         try:
             import dlib
+            if DORSAL_PREDICTOR_FILE and os.path.exists(DORSAL_PREDICTOR_FILE):
+                logger.info(f"Loading dorsal predictor: {DORSAL_PREDICTOR_FILE}")
+                _cached_dlib_predictors['dorsal'] = dlib.shape_predictor(DORSAL_PREDICTOR_FILE)
+            if SCALE_PREDICTOR_FILE and os.path.exists(SCALE_PREDICTOR_FILE):
+                logger.info(f"Loading scale predictor: {SCALE_PREDICTOR_FILE}")
+                _cached_dlib_predictors['scale'] = dlib.shape_predictor(SCALE_PREDICTOR_FILE)
             if TOEPAD_TOE_PREDICTOR and os.path.exists(TOEPAD_TOE_PREDICTOR):
                 logger.info(f"Loading toe predictor: {TOEPAD_TOE_PREDICTOR}")
                 _cached_dlib_predictors['toe'] = dlib.shape_predictor(TOEPAD_TOE_PREDICTOR)
             if TOEPAD_FINGER_PREDICTOR and os.path.exists(TOEPAD_FINGER_PREDICTOR):
                 logger.info(f"Loading finger predictor: {TOEPAD_FINGER_PREDICTOR}")
                 _cached_dlib_predictors['finger'] = dlib.shape_predictor(TOEPAD_FINGER_PREDICTOR)
-            # Scale bars use YOLO only, no dlib predictor needed
             logger.info(f"Dlib predictors loaded and cached: {list(_cached_dlib_predictors.keys())}")
         except ImportError:
             logger.warning("dlib not installed, skipping predictor caching")
@@ -1003,6 +1009,15 @@ def upload():
                             cached_dlib_predictors=get_cached_dlib_predictors()
                         )
                         logger.info(f"YOLO processing completed for {unique_name}")
+                    elif view_type.lower() == "dorsal":
+                        logger.info(f"Using Hybrid Best-Performance prediction for dorsal view")
+                        utils.predictions_to_xml_dorsal_hybrid(
+                            image_path,
+                            xml_output_path,
+                            DORSAL_PREDICTOR_FILE,
+                            SCALE_PREDICTOR_FILE,
+                            cached_dlib_predictors=get_cached_dlib_predictors()
+                        )
                     elif detector_file_path and os.path.exists(detector_file_path):
                         utils.predictions_to_xml_single_with_detector(
                             predictor_file_path, image_path, xml_output_path, detector_file_path
@@ -1473,6 +1488,15 @@ def process_existing():
                     finger_predictor_path=TOEPAD_FINGER_PREDICTOR,
                     target_predictor_type=toepad_predictor_type,
                     cached_yolo_model=get_cached_yolo_model(),
+                    cached_dlib_predictors=get_cached_dlib_predictors()
+                )
+            elif view_type.lower() == "dorsal":
+                logger.info(f"Using Hybrid Best-Performance prediction for dorsal view (existing image)")
+                utils.predictions_to_xml_dorsal_hybrid(
+                    image_path,
+                    xml_path,
+                    DORSAL_PREDICTOR_FILE,
+                    SCALE_PREDICTOR_FILE,
                     cached_dlib_predictors=get_cached_dlib_predictors()
                 )
             elif detector_file_path and os.path.exists(detector_file_path):
