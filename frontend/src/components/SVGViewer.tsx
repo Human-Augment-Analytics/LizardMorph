@@ -1,6 +1,7 @@
 import { Component, createRef } from "react";
 import * as d3 from "d3";
-import { SVGViewerStyles } from "./SVGViewer.style";
+import { getSVGViewerStyles } from "./SVGViewer.style";
+import type { ResolvedTheme } from "../contexts/ThemeContext";
 import type { Point } from "../models/Point";
 import type { UploadHistoryItem } from "../models/UploadHistoryItem";
 import type { BoundingBox } from "../models/AnnotationsData";
@@ -34,6 +35,7 @@ interface SVGViewerProps {
   boundingBoxes?: BoundingBox[];
   maxWidth?: number; // Optional max width for constrained views like toepads
   fitToContainerWidth?: boolean; // Scale to fit container width instead of height
+  theme: ResolvedTheme;
 }
 
 interface SVGViewerState {
@@ -66,7 +68,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       labelSize: 8,
       labelColor: '#ffffff',
       showLabels: true,
-      showBoundingBoxes: true,
+      showBoundingBoxes: false,
       showControls: false
     };
   }
@@ -1144,13 +1146,14 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   render() {
     this.blockZoomWhileEditing = this.props.isEditMode;
     const { dataFetched, loading, dataLoading, dataError } = this.props;
+    const viewerStyles = getSVGViewerStyles(this.props.theme);
 
     return (
-      <div style={SVGViewerStyles.svgContainer}>
+      <div style={viewerStyles.svgContainer}>
         {!dataFetched && !loading && this.props.uploadHistory.length === 0 && (
-          <div style={SVGViewerStyles.placeholderMessage}>
+          <div style={viewerStyles.placeholderMessage}>
             <p>Upload one or more X-ray images to begin analysis</p>
-            <p style={SVGViewerStyles.placeholderSubtext}>
+            <p style={viewerStyles.placeholderSubtext}>
               The images will appear here
             </p>
           </div>
@@ -1321,18 +1324,18 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           xmlns="http://www.w3.org/2000/svg"
           xmlnsXlink="http://www.w3.org/1999/xlink"
           style={{
-            ...SVGViewerStyles.svg,
-            ...(dataFetched ? SVGViewerStyles.svgWithData : {}),
+            ...viewerStyles.svg,
+            ...(dataFetched ? viewerStyles.svgWithData : {}),
           }}
           onContextMenu={this.handleContextMenu}
         />
 
         {dataLoading && dataFetched && (
-          <div style={SVGViewerStyles.loadingOverlay}>Loading image...</div>
+          <div style={viewerStyles.loadingOverlay}>Loading image...</div>
         )}
 
         {dataError && !loading && (
-          <div style={SVGViewerStyles.errorOverlay}>
+          <div style={viewerStyles.errorOverlay}>
             Error: {dataError.message}
           </div>
         )}

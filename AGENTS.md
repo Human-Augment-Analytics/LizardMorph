@@ -68,7 +68,7 @@ LizardMorph/
 │   │   ├── finger_predictor_obb.dat  ← dlib 9-pt finger predictor
 │   │   └── lizard_scale.dat          ← dlib 2-pt ruler predictor
 │   └── lizard-x-ray/           ← Dorsal / lateral landmark predictors
-│       ├── new_landmarks_2025_predictor.dat
+│       ├── dorsal_predictor_clahe_best.dat
 │       └── lateral_predictor_auto.dat
 │
 ├── docs/                       ← Deployment guides, research notes, plans
@@ -96,7 +96,7 @@ LizardMorph/
 
 | View type | Predictor | YOLO | Notes |
 |-----------|-----------|------|-------|
-| `dorsal` | `new_landmarks_2025_predictor.dat` | — | X-ray top-down |
+| `dorsal` | `dorsal_predictor_clahe_best.dat` | — | X-ray top-down |
 | `lateral` | `lateral_predictor_auto.dat` | — | X-ray side view |
 | `toepad` | `toe/finger/scale_predictor_obb.dat` | `yolo_obb_6class_h7.onnx` | 6-class OBB |
 | `free` | — | — | No ML, manual only |
@@ -123,7 +123,7 @@ API_PORT=3005
 VITE_API_URL="/api"
 
 # Model paths (relative to backend/ dir at runtime)
-DORSAL_PREDICTOR_FILE=../models/lizard-x-ray/new_landmarks_2025_predictor.dat
+DORSAL_PREDICTOR_FILE=../models/lizard-x-ray/dorsal_predictor_clahe_best.dat
 LATERAL_PREDICTOR_FILE=../models/lizard-x-ray/lateral_predictor_auto.dat
 TOEPAD_TOE_PREDICTOR=../models/lizard-toe-pad/toe_predictor_obb.dat
 TOEPAD_FINGER_PREDICTOR=../models/lizard-toe-pad/finger_predictor_obb.dat

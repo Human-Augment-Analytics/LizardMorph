@@ -16,7 +16,8 @@ import { ImageVersionControls } from "../components/ImageVersionControls";
 import { HistoryPanel } from "../components/HistoryPanel";
 import { MeasurementsAndScalePanel } from "../components/MeasurementsAndScalePanel";
 import { SessionInfo } from "../components/SessionInfo";
-import { MainViewStyles } from "./MainView.style";
+import { getMainViewStyles } from "./MainView.style";
+import { ThemeContext } from "../contexts/ThemeContext";
 import { SVGViewer } from "../components/SVGViewer";
 import { ApiService } from "../services/ApiService";
 import { ExportService } from "../services/ExportService";
@@ -72,6 +73,8 @@ interface MainProps {
 }
 
 export class MainView extends Component<MainProps, MainState> {
+  static contextType = ThemeContext;
+  declare context: React.ContextType<typeof ThemeContext>;
   readonly svgRef = createRef<SVGSVGElement>();
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
   state: MainState = {
@@ -120,7 +123,7 @@ export class MainView extends Component<MainProps, MainState> {
     freePredictorId: null,
     predictorsLoading: false,
     predictorsError: null,
-    isFreePredictorPanelOpen: false,
+    isFreePredictorPanelOpen: this.props.selectedViewType === "free",
   };
   componentDidMount(): void {
     this.initializeApp();
@@ -145,6 +148,10 @@ export class MainView extends Component<MainProps, MainState> {
       // Mark session as ready
       this.setState({ sessionReady: true });
       console.log("Session initialized successfully");
+
+      if (this.props.selectedViewType === "free") {
+        await this.refreshPredictors();
+      }
 
       // Now proceed with normal initialization
       this.fetchUploadedFiles();
@@ -1114,9 +1121,11 @@ export class MainView extends Component<MainProps, MainState> {
     }
   };
   render() {
+    const { resolved: theme, preference: themePreference, setPreference: setThemePref } = this.context;
+    const mainStyles = getMainViewStyles(theme);
     return (
-      <div style={MainViewStyles.container}>
-        {this.state.sessionReady && <SessionInfo onNavigateHome={this.props.onNavigateHome} />}
+      <div style={mainStyles.container}>
+        {this.state.sessionReady && <SessionInfo onNavigateHome={this.props.onNavigateHome} theme={theme} themePreference={themePreference} onThemeChange={setThemePref} />}
         <Header
           lizardCount={this.state.lizardCount}
           loading={this.state.loading}
@@ -1136,8 +1145,9 @@ export class MainView extends Component<MainProps, MainState> {
           onOpenMeasurementsModal={this.handleOpenMeasurementsAndScaleModal}
           toepadPredictorType={this.state.toepadPredictorType}
           onToepadPredictorTypeChange={this.handleToepadPredictorTypeChange}
+          theme={theme}
         />
-        <div style={MainViewStyles.mainContentArea}>
+        <div style={mainStyles.mainContentArea}>
           {" "}
           <HistoryPanel
             uploadHistory={this.state.uploadHistory.filter(
@@ -1147,8 +1157,9 @@ export class MainView extends Component<MainProps, MainState> {
             uploadProgress={this.state.uploadProgress}
             onSelectImage={this.changeCurrentImage}
             onLoadFromUploads={this.loadImageFromUploads}
+            theme={theme}
           />
-          <div style={MainViewStyles.svgContainer}>
+          <div style={mainStyles.svgContainer}>
             {" "}
             <NavigationControls
               currentImageIndex={this.state.currentImageIndex}
@@ -1160,6 +1171,7 @@ export class MainView extends Component<MainProps, MainState> {
               onNext={() =>
                 this.changeCurrentImage(this.state.currentImageIndex + 1)
               }
+              theme={theme}
             />
             <ImageVersionControls
               dataFetched={this.state.dataFetched}
@@ -1175,15 +1187,16 @@ export class MainView extends Component<MainProps, MainState> {
               isEditMode={this.state.isEditMode}
               onToggleEditMode={this.handleToggleEditMode}
               onResetZoom={this.handleResetZoom}
+              theme={theme}
             />
             {this.props.selectedViewType === "free" && (
               <div
                 style={{
                   marginTop: 12,
-                  border: "1px solid rgba(0, 0, 0, 0.10)",
+                  border: `1px solid ${theme === "dark" ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.10)"}`,
                   borderRadius: 12,
                   overflow: "hidden",
-                  background: "rgba(255, 255, 255, 0.85)",
+                  background: theme === "dark" ? "rgba(30,42,58,0.85)" : "rgba(255,255,255,0.85)",
                 }}
               >
                 <button
@@ -1199,21 +1212,21 @@ export class MainView extends Component<MainProps, MainState> {
                     justifyContent: "space-between",
                     gap: 10,
                     padding: "10px 12px",
-                    background: "rgba(0, 0, 0, 0.02)",
+                    background: theme === "dark" ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)",
                     border: "none",
                     cursor: "pointer",
                     fontWeight: 800,
-                    color: "#111",
+                    color: theme === "dark" ? "#e0e0e0" : "#111",
                   }}
                   title="Toggle predictor panel"
                 >
                   <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span>Predictor</span>
-                    <span style={{ fontWeight: 700, fontSize: 12, color: "rgba(0,0,0,0.55)" }}>
+                    <span style={{ fontWeight: 700, fontSize: 12, color: theme === "dark" ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.55)" }}>
                       (Free mode)
                     </span>
                   </span>
-                  <span style={{ fontSize: 12, color: "rgba(0,0,0,0.65)" }}>
+                  <span style={{ fontSize: 12, color: theme === "dark" ? "rgba(255,255,255,0.65)" : "rgba(0,0,0,0.65)" }}>
                     {this.state.isFreePredictorPanelOpen ? "Hide" : "Show"}
                   </span>
                 </button>
@@ -1231,6 +1244,7 @@ export class MainView extends Component<MainProps, MainState> {
                       onUploadPredictor={this.handleUploadFreePredictor}
                       onDeleteSelected={this.handleDeleteSelectedFreePredictor}
                       onAutoplace={this.handleFreeAutoplace}
+                      theme={theme}
                     />
                   </div>
                 )}
@@ -1340,6 +1354,7 @@ export class MainView extends Component<MainProps, MainState> {
                 isModalOpen={this.state.isMeasurementsAndScaleModalOpen}
                 boundingBoxes={this.state.currentBoundingBoxes}
                 fitToContainerWidth={this.props.selectedViewType === "toepads"}
+                theme={theme}
               />
             </div>
           </div>
@@ -1354,6 +1369,7 @@ export class MainView extends Component<MainProps, MainState> {
             isModal={true}
             onClose={this.handleCloseMeasurementsAndScaleModal}
             viewType={this.props.selectedViewType}
+            theme={theme}
           />
         )}
       </div>
