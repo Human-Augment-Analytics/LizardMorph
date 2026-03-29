@@ -1,75 +1,83 @@
 import type { CSSProperties } from "react";
+import type { ResolvedTheme } from "../contexts/ThemeContext";
+import { getTokens } from "../contexts/themeTokens";
 
-export class MainViewStyles {
-  static readonly container: CSSProperties = {
-    display: "flex",
-    flexDirection: "column",
-    height: "100vh",
-  };
+export function getMainViewStyles(theme: ResolvedTheme) {
+  const t = getTokens(theme);
+  return {
+    container: {
+      display: "flex",
+      flexDirection: "column",
+      height: "100vh",
+      backgroundColor: t.bg,
+      color: t.text,
+    } as CSSProperties,
 
-  static readonly mainContentArea: CSSProperties = {
-    display: "flex",
-    flex: 1,
-    overflow: "visible",
-  };
+    mainContentArea: {
+      display: "flex",
+      flex: 1,
+      overflow: "visible",
+    } as CSSProperties,
 
-  static readonly svgContainer: CSSProperties = {
-    flex: 1,
-    overflow: "visible",
-    position: "relative",
-  };
+    svgContainer: {
+      flex: 1,
+      overflow: "visible",
+      position: "relative",
+    } as CSSProperties,
 
-  static readonly measurementsPanel: CSSProperties = {
-    width: "27vw",
-    borderLeft: "1px solid #ccc",
-    display: "flex",
-    flexDirection: "column",
-    overflow: "hidden",
-  };
+    measurementsPanel: {
+      width: "27vw",
+      borderLeft: `1px solid ${t.border}`,
+      display: "flex",
+      flexDirection: "column",
+      overflow: "hidden",
+    } as CSSProperties,
 
-  static readonly placeholderMessage: CSSProperties = {
-    position: "absolute",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%)",
-    textAlign: "center",
-    color: "#666",
-  };
+    placeholderMessage: {
+      position: "absolute",
+      top: "50%",
+      left: "50%",
+      transform: "translate(-50%, -50%)",
+      textAlign: "center",
+      color: t.textMuted,
+    } as CSSProperties,
 
-  static readonly placeholderSubtext: CSSProperties = {
-    fontSize: "0.9em",
-  };
+    placeholderSubtext: {
+      fontSize: "0.9em",
+    } as CSSProperties,
 
-  static readonly svg: CSSProperties = {
-    display: "block",
-    margin: "0 auto",
-    boxShadow: "0 0 5px rgba(0,0,0,0.2)",
-  };
+    svg: {
+      display: "block",
+      margin: "0 auto",
+      boxShadow: "0 0 5px rgba(0,0,0,0.2)",
+    } as CSSProperties,
 
-  static readonly svgWithData: CSSProperties = {
-    backgroundColor: "#f9f9f9",
-  };
+    svgWithData: {
+      backgroundColor: t.bgSecondary,
+    } as CSSProperties,
 
-  static readonly loadingOverlay: CSSProperties = {
-    position: "absolute",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%)",
-    backgroundColor: "rgba(255,255,255,0.8)",
-    padding: "15px",
-    borderRadius: "5px",
-    boxShadow: "0 0 10px rgba(0,0,0,0.1)",
-  };
+    loadingOverlay: {
+      position: "absolute",
+      top: "50%",
+      left: "50%",
+      transform: "translate(-50%, -50%)",
+      backgroundColor: t.overlay,
+      padding: "15px",
+      borderRadius: "5px",
+      boxShadow: "0 0 10px rgba(0,0,0,0.1)",
+      color: t.text,
+    } as CSSProperties,
 
-  static readonly errorOverlay: CSSProperties = {
-    position: "absolute",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%)",
-    backgroundColor: "rgba(255,220,220,0.9)",
-    padding: "15px",
-    borderRadius: "5px",
-    color: "red",
-    boxShadow: "0 0 10px rgba(255,0,0,0.2)",
+    errorOverlay: {
+      position: "absolute",
+      top: "50%",
+      left: "50%",
+      transform: "translate(-50%, -50%)",
+      backgroundColor: t.errorBg,
+      padding: "15px",
+      borderRadius: "5px",
+      color: t.error,
+      boxShadow: "0 0 10px rgba(255,0,0,0.2)",
+    } as CSSProperties,
   };
 }

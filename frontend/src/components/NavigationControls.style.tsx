@@ -1,32 +1,37 @@
 import type { CSSProperties } from "react";
+import type { ResolvedTheme } from "../contexts/ThemeContext";
+import { getTokens } from "../contexts/themeTokens";
 
-export class NavigationControlsStyles {
-  static readonly navigationControls: CSSProperties = {
-    marginTop: "10px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "10px",
-  };
+export function getNavigationControlsStyles(theme: ResolvedTheme) {
+  const t = getTokens(theme);
+  return {
+    navigationControls: {
+      marginTop: "10px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: "10px",
+    } as CSSProperties,
 
-  static readonly navButton: CSSProperties = {
-    padding: "8px 12px",
-    backgroundColor: "#f0f0f0",
-    color: "black",
-    border: "none",
-    borderRadius: "4px",
-    fontSize: "14px",
-    cursor: "pointer",
-  };
+    navButton: {
+      padding: "8px 12px",
+      backgroundColor: t.bgTertiary,
+      color: t.text,
+      border: "none",
+      borderRadius: "4px",
+      fontSize: "14px",
+      cursor: "pointer",
+    } as CSSProperties,
 
-  static readonly navButtonDisabled: CSSProperties = {
-    cursor: "not-allowed",
-    opacity: 0.7,
-  };
+    navButtonDisabled: {
+      cursor: "not-allowed",
+      opacity: 0.7,
+    } as CSSProperties,
 
-  static readonly imageCounter: CSSProperties = {
-    fontSize: "14px",
-    fontWeight: "bold",
-    color: "#333",
+    imageCounter: {
+      fontSize: "14px",
+      fontWeight: "bold",
+      color: t.text,
+    } as CSSProperties,
   };
 }
