@@ -1,34 +1,39 @@
 import type { CSSProperties } from "react";
+import type { ResolvedTheme } from "../contexts/ThemeContext";
+import { getTokens } from "../contexts/themeTokens";
 
-export class ImageVersionControlsStyles {
-  static readonly imageVersionButtons: CSSProperties = {
-    marginTop: "10px",
-    display: "flex",
-    gap: "12px",
-    justifyContent: "center",
-    padding: "5px",
-    flexDirection: 'row',
-    alignItems: 'center',
-  };
+export function getImageVersionControlsStyles(theme: ResolvedTheme) {
+  const t = getTokens(theme);
+  return {
+    imageVersionButtons: {
+      marginTop: "10px",
+      display: "flex",
+      gap: "12px",
+      justifyContent: "center",
+      padding: "5px",
+      flexDirection: "row",
+      alignItems: "center",
+    } as CSSProperties,
 
-  static readonly versionButton: CSSProperties = {
-    padding: "8px 12px",
-    backgroundColor: "#f0f0f0",
-    color: "black",
-    border: "none",
-    borderRadius: "4px",
-    fontSize: "14px",
-    cursor: "pointer",
-    opacity: 1,
-  };
+    versionButton: {
+      padding: "8px 12px",
+      backgroundColor: t.bgTertiary,
+      color: t.text,
+      border: "none",
+      borderRadius: "4px",
+      fontSize: "14px",
+      cursor: "pointer",
+      opacity: 1,
+    } as CSSProperties,
 
-  static readonly versionButtonActive: CSSProperties = {
-    backgroundColor: "#2196F3",
-    color: "white",
-  };
+    versionButtonActive: {
+      backgroundColor: "#2196F3",
+      color: "white",
+    } as CSSProperties,
 
-  static readonly versionButtonDisabled: CSSProperties = {
-    cursor: "not-allowed",
-    opacity: 0.7,
+    versionButtonDisabled: {
+      cursor: "not-allowed",
+      opacity: 0.7,
+    } as CSSProperties,
   };
 }

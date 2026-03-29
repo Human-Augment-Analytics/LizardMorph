@@ -81,3 +81,7 @@ monitoring/web.yml
 
 # AI configuration
 .claude
+.worktrees/
+
+# Local experiments / training artifacts
+Experiment/

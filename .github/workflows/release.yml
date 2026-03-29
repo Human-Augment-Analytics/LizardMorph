@@ -12,7 +12,7 @@ on:
 
 # Upload models as a GitHub release asset named "models.tar.gz" on a release
 # tagged "models" before running this workflow. The archive should contain:
-#   models/lizard-x-ray/new_landmarks_2025_predictor.dat
+#   models/lizard-x-ray/dorsal_predictor_clahe_best.dat
 #   models/lizard-x-ray/lateral_predictor_auto.dat
 #   models/lizard-toe-pad/yolo_obb_6class_h7.onnx
 #   models/lizard-toe-pad/toe_predictor_obb.dat
