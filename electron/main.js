@@ -37,6 +37,7 @@ async function createWindow() {
       // when loaded from file:// protocol (needed for base64 image display)
       webSecurity: isDev,
     },
+    icon: path.join(__dirname, "icons", "icon.png"),
   });
 
   mainWindow.loadURL(

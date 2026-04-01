@@ -160,8 +160,13 @@ def create_image(tps_file_path, output_folder):
             
             print(f"Plotting {len(x_coords)} points")
             
+            # TPS stores Y with 0 at the bottom (math convention), but the image
+            # extent above has Y increasing downward (0.5 at top). Flip Y so
+            # landmarks are plotted in the correct position.
+            y_coords_img = [height_pixels - y for y in y_coords]
+            
             # Plot points
-            ax.scatter(x_coords, y_coords, s=50, color='red', marker='o', edgecolors='black')
+            ax.scatter(x_coords, y_coords_img, s=50, color='red', marker='o', edgecolors='black')
             
             # Add point labels - Commented out as per user request ("numbers blocking view")
             # for j, (x, y) in enumerate(zip(x_coords, y_coords)):
