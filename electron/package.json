@@ -1,6 +1,6 @@
 {
   "name": "lizardmorph",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "LizardMorph - Automated lizard morphology analysis",
   "main": "main.js",
   "scripts": {
@@ -28,14 +28,14 @@
           "arch": ["x64", "arm64"]
         }
       ],
-      "icon": "icons/icon.icns",
+      "icon": "icons/icon.png",
       "minimumSystemVersion": "11.0"
     },
     "win": {
       "target": [
         "nsis"
       ],
-      "icon": "icons/icon.icns"
+      "icon": "icons/icon.png"
     },
     "extraResources": [
       {
