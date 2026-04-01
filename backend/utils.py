@@ -327,6 +327,15 @@ def predictions_to_xml_single(predictor_name: str, image_path: str, output: str)
     else:
         order = list(range(num_parts))
 
+    for ref_idx, dlib_idx in enumerate(order):
+        x = np.median([landmark[dlib_idx][0] for landmark in landmarks])
+        y = np.median([landmark[dlib_idx][1] for landmark in landmarks])
+        part = create_part(x, y, ref_idx)
+        box.append(part)
+
+    box[:] = sorted(box, key=lambda child: (child.tag, float(child.get("name"))))
+    image_e.append(box)
+    images_e.append(image_e)
     pretty_xml(root, output)
 
 
