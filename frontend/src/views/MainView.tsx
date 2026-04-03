@@ -133,10 +133,6 @@ export class MainView extends Component<MainProps, MainState> {
     if (this.intervalId) {
       clearInterval(this.intervalId);
     }
-    // Clean up history on component unmount
-    this.clearHistory();
-    // Remove beforeunload event listener
-    window.removeEventListener("beforeunload", this.handleBeforeUnload);
   }
   private async initializeApp(): Promise<void> {
     try {
@@ -153,9 +149,11 @@ export class MainView extends Component<MainProps, MainState> {
         await this.refreshPredictors();
       }
 
-      // Now proceed with normal initialization
+      console.log("Initialized view type:", this.props.selectedViewType);
+      
+      // Removed setupBeforeUnloadHandler(); to ensure session persists across refreshes
       this.fetchUploadedFiles();
-      this.setupBeforeUnloadHandler();
+      this.countUniqueImages();
     } catch (error) {
       console.error("Failed to initialize app:", error);
       // Show error to user or handle gracefully
@@ -173,19 +171,9 @@ export class MainView extends Component<MainProps, MainState> {
 
   // Effect to count unique images in upload folder
   componentDidUpdate(prevProps: MainProps, prevState: MainState): void {
-    // Filter history when viewType changes
-    if (prevProps.selectedViewType !== this.props.selectedViewType) {
-      this.setState((currentState) => ({
-        uploadHistory: currentState.uploadHistory.filter(
-          item => item.viewType === this.props.selectedViewType || !item.viewType
-        ),
-        // Also filter images to only show those for current viewType
-        images: currentState.images.filter((_img, idx) => {
-          const historyItem = currentState.uploadHistory.find(h => h.index === idx);
-          return historyItem?.viewType === this.props.selectedViewType || !historyItem?.viewType;
-        }),
-      }));
-    }
+    // If view type changed, we might want to auto-select the first image for the new view
+    // but we'll handle that in a separate initialization/fetch logic or just let the user click.
+    // The key is to STOP destructive filtering here.
 
     if (
       prevProps.selectedViewType !== this.props.selectedViewType &&
@@ -946,19 +934,19 @@ export class MainView extends Component<MainProps, MainState> {
     try {
       const files = await ApiService.fetchUploadedFiles();
 
-      // Create history entries for files that aren't in current upload history
+      // Create history entries for files
       const currentFileNames = new Set(
         this.state.uploadHistory.map((item) => item.name)
       );
       const newHistory = [...this.state.uploadHistory];
 
-      files.forEach((file: string) => {
-        if (!currentFileNames.has(file)) {
+      files.forEach((fileObj) => {
+        if (!currentFileNames.has(fileObj.filename)) {
           newHistory.push({
-            name: file,
+            name: fileObj.filename,
             timestamp: "From uploads folder",
             index: -1, // Will be set when loaded
-            viewType: this.props.selectedViewType,
+            viewType: fileObj.view_type,
           });
         }
       });
@@ -967,11 +955,19 @@ export class MainView extends Component<MainProps, MainState> {
         this.setState({ uploadHistory: newHistory });
       }
 
-      // Update lizard count to include ALL files in the upload folder
+      // Update lizard count
       this.setState({ lizardCount: files.length });
+
+      // AUTO-LOAD: If no image is currently selected, try to load the first image for the CURRENT view
+      if (!this.state.imageFilename && newHistory.length > 0) {
+        const firstInView = newHistory.find(h => h.viewType === this.props.selectedViewType);
+        if (firstInView) {
+          console.log("Auto-loading first image for current view:", firstInView.name);
+          this.loadImageFromUploads(firstInView.name);
+        }
+      }
     } catch (error) {
       console.log("Error fetching upload directory files:", error);
-      // Even if fetch fails, count unique images in the current session
       this.countUniqueImages();
     }
   };
@@ -1098,28 +1094,15 @@ export class MainView extends Component<MainProps, MainState> {
     this.setState({ toepadPredictorType: type });
   };
 
-  // Add cleanup functionality to clear history when the app closes, including beforeunload event handler
-  private readonly setupBeforeUnloadHandler = (): void => {
-    window.addEventListener("beforeunload", this.handleBeforeUnload);
-    window.addEventListener("unload", this.handleBeforeUnload);
-  };
-  private readonly handleBeforeUnload = async (): Promise<void> => {
-    try {
-      // Clear session history before page closes
-      await this.clearHistory();
-    } catch (error) {
-      console.error("Failed to clear session on page close:", error);
-    }
-  };
-
+  // Automatically called on clearBtn click from header
   private readonly clearHistory = async (): Promise<void> => {
     try {
       await ApiService.clearHistory();
-      console.log("Session history cleared");
     } catch (error) {
       console.error("Failed to clear history:", error);
     }
   };
+
   render() {
     const { resolved: theme, preference: themePreference, setPreference: setThemePref } = this.context;
     const mainStyles = getMainViewStyles(theme);
@@ -1151,7 +1134,7 @@ export class MainView extends Component<MainProps, MainState> {
           {" "}
           <HistoryPanel
             uploadHistory={this.state.uploadHistory.filter(
-              item => item.viewType === this.props.selectedViewType || !item.viewType
+              item => item.viewType === this.props.selectedViewType
             )}
             currentImageIndex={this.state.currentImageIndex}
             uploadProgress={this.state.uploadProgress}
@@ -1162,15 +1145,42 @@ export class MainView extends Component<MainProps, MainState> {
           <div style={mainStyles.svgContainer}>
             {" "}
             <NavigationControls
-              currentImageIndex={this.state.currentImageIndex}
-              totalImages={this.state.images.length}
+              currentImageIndex={(() => {
+                const filtered = this.state.images.filter((img) => {
+                  const historyItem = this.state.uploadHistory.find(h => h.name === img.name);
+                  return historyItem?.viewType === this.props.selectedViewType;
+                });
+                return filtered.findIndex(img => img.name === this.state.imageFilename);
+              })()}
+              totalImages={this.state.images.filter((img) => {
+                const historyItem = this.state.uploadHistory.find(h => h.name === img.name);
+                return historyItem?.viewType === this.props.selectedViewType;
+              }).length}
               loading={this.state.loading}
-              onPrevious={() =>
-                this.changeCurrentImage(this.state.currentImageIndex - 1)
-              }
-              onNext={() =>
-                this.changeCurrentImage(this.state.currentImageIndex + 1)
-              }
+              onPrevious={() => {
+                const filtered = this.state.images.filter((img) => {
+                  const historyItem = this.state.uploadHistory.find(h => h.name === img.name);
+                  return historyItem?.viewType === this.props.selectedViewType;
+                });
+                const filteredIdx = filtered.findIndex(img => img.name === this.state.imageFilename);
+                if (filteredIdx > 0) {
+                  const prevImg = filtered[filteredIdx - 1];
+                  const absoluteIdx = this.state.images.findIndex(img => img.name === prevImg.name);
+                  this.changeCurrentImage(absoluteIdx);
+                }
+              }}
+              onNext={() => {
+                const filtered = this.state.images.filter((img) => {
+                  const historyItem = this.state.uploadHistory.find(h => h.name === img.name);
+                  return historyItem?.viewType === this.props.selectedViewType;
+                });
+                const filteredIdx = filtered.findIndex(img => img.name === this.state.imageFilename);
+                if (filteredIdx >= 0 && filteredIdx < filtered.length - 1) {
+                  const nextImg = filtered[filteredIdx + 1];
+                  const absoluteIdx = this.state.images.findIndex(img => img.name === nextImg.name);
+                  this.changeCurrentImage(absoluteIdx);
+                }
+              }}
               theme={theme}
             />
             <ImageVersionControls

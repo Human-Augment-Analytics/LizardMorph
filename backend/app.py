@@ -918,6 +918,9 @@ def upload():
                 )
 
                 image.save(image_path)
+                
+                # Update session metadata with view type for this image
+                session_manager.update_image_view_type(session_id, unique_name, view_type)
 
                 # Process images with memory cleanup
                 try:
@@ -1397,21 +1400,22 @@ def list_uploads():
         if not os.path.exists(upload_folder):
             return jsonify([]), 200
 
-        # Get all files from the session upload folder with common image extensions
-        valid_extensions = {".jpg", ".jpeg", ".png", ".tif", ".bmp"}
-        files = []
+        # Get session metadata to associate view types with files
+        metadata = session_manager.get_metadata(session_id)
+        image_views = metadata.get("image_views", {})
 
-        for filename in os.listdir(upload_folder):
+        results = []
+        for filename in sorted(os.listdir(upload_folder)):
             if os.path.isfile(os.path.join(upload_folder, filename)):
-                # Check if the file has a valid image extension
                 _, ext = os.path.splitext(filename)
                 if ext.lower() in valid_extensions:
-                    files.append(filename)
+                    view_type = image_views.get(filename, "dorsal")  # Default to dorsal if unknown
+                    results.append({"filename": filename, "view_type": view_type})
 
         logger.info(
-            f"Found {len(files)} files in session upload folder for session: {session_id[:8]}"
+            f"Found {len(results)} files in session upload folder for session: {session_id[:8]}"
         )
-        return jsonify(files), 200
+        return jsonify(results), 200
     except Exception as e:
         logger.error(f"Error listing session upload directory: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -1446,6 +1450,10 @@ def process_existing():
         session_data = get_session_folders(session_id)
 
         image_path = os.path.join(session_data["upload_folder"], filename)
+        
+        # Update session metadata with view type for this image (in case it wasn't set during upload)
+        session_manager.update_image_view_type(session_id, filename, view_type)
+        
         if not os.path.exists(image_path):
             return (
                 jsonify(

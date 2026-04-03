@@ -95,7 +95,7 @@ export class ApiService {
       color_contrasted: buildUrl("color_contrasted"),
     };
   }
-  static async fetchUploadedFiles(): Promise<string[]> {
+  static async fetchUploadedFiles(): Promise<{ filename: string; view_type: string }[]> {
     const base = await apiUrl();
     const res = await fetch(`${base}/list_uploads`, {
       method: "GET",

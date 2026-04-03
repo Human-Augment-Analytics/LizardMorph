@@ -33,7 +33,7 @@ export class SessionService {
     this.sessionId = this.getStoredSessionId();
     console.log(
       `Using ${
-        this.useCookies ? "cookies" : "sessionStorage"
+        this.useCookies ? "cookies" : "localStorage"
       } for session persistence`
     );
   }
@@ -54,7 +54,7 @@ export class SessionService {
         this.sessionId = cachedSessionId;
         console.log(
           `Reusing cached session: ${cachedSessionId.substring(0, 8)} (${
-            this.useCookies ? "from cookies" : "from sessionStorage"
+            this.useCookies ? "from cookies" : "from localStorage"
           })`
         );
         return cachedSessionId;
@@ -69,7 +69,7 @@ export class SessionService {
           this.updateStoredTimestamp();
           console.log(
             `Reusing validated session: ${cachedSessionId.substring(0, 8)} (${
-              this.useCookies ? "from cookies" : "from sessionStorage"
+              this.useCookies ? "from cookies" : "from localStorage"
             })`
           );
           return cachedSessionId;
@@ -115,7 +115,7 @@ export class SessionService {
         this.storeSession(data.session_id);
         console.log(
           `Started new session: ${data.session_id.substring(0, 8)} (stored in ${
-            this.useCookies ? "cookies" : "sessionStorage"
+            this.useCookies ? "cookies" : "localStorage"
           })`
         );
         return data.session_id;
@@ -232,8 +232,8 @@ export class SessionService {
   /**
    * Get the current storage strategy being used
    */
-  static getStorageType(): "cookies" | "sessionStorage" {
-    return this.useCookies ? "cookies" : "sessionStorage";
+  static getStorageType(): "cookies" | "localStorage" {
+    return this.useCookies ? "cookies" : "localStorage";
   }
 
   /**
@@ -250,7 +250,7 @@ export class SessionService {
     if (this.useCookies) {
       return CookieUtils.getCookie(this.SESSION_KEY);
     }
-    return sessionStorage.getItem(this.SESSION_KEY);
+    return localStorage.getItem(this.SESSION_KEY);
   }
 
   /**
@@ -260,7 +260,7 @@ export class SessionService {
     if (this.useCookies) {
       return CookieUtils.getCookie(this.SESSION_TIMESTAMP_KEY);
     }
-    return sessionStorage.getItem(this.SESSION_TIMESTAMP_KEY);
+    return localStorage.getItem(this.SESSION_TIMESTAMP_KEY);
   }
 
   /**
@@ -279,8 +279,8 @@ export class SessionService {
         this.COOKIE_EXPIRY_DAYS
       );
     } else {
-      sessionStorage.setItem(this.SESSION_KEY, sessionId);
-      sessionStorage.setItem(this.SESSION_TIMESTAMP_KEY, Date.now().toString());
+      localStorage.setItem(this.SESSION_KEY, sessionId);
+      localStorage.setItem(this.SESSION_TIMESTAMP_KEY, Date.now().toString());
     }
   }
 
@@ -296,7 +296,7 @@ export class SessionService {
         this.COOKIE_EXPIRY_DAYS
       );
     } else {
-      sessionStorage.setItem(this.SESSION_TIMESTAMP_KEY, now);
+      localStorage.setItem(this.SESSION_TIMESTAMP_KEY, now);
     }
   }
 
@@ -308,8 +308,8 @@ export class SessionService {
       CookieUtils.deleteCookie(this.SESSION_KEY);
       CookieUtils.deleteCookie(this.SESSION_TIMESTAMP_KEY);
     } else {
-      sessionStorage.removeItem(this.SESSION_KEY);
-      sessionStorage.removeItem(this.SESSION_TIMESTAMP_KEY);
+      localStorage.removeItem(this.SESSION_KEY);
+      localStorage.removeItem(this.SESSION_TIMESTAMP_KEY);
     }
   }
 }
