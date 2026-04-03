@@ -13,7 +13,7 @@ interface SessionInfoState {
   loading: boolean;
   error: string | null;
   isCached: boolean;
-  storageType: "cookies" | "sessionStorage";
+  storageType: "cookies" | "localStorage";
 }
 
 interface SessionInfoProps {
