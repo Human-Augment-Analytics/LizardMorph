@@ -1,6 +1,6 @@
 {
   "name": "lizardmorph",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "LizardMorph - Automated lizard morphology analysis",
   "main": "main.js",
   "scripts": {
