@@ -795,7 +795,7 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
     and each detection is processed with its corresponding predictor.
     
     For scale bars: Uses YOLO only (no ml-morph/dlib predictor). Creates two landmarks by removing
-    1mm from the left and right edges of the YOLO bounding box.
+    0mm from the left and 1mm from the right edges of the YOLO bounding box (asymmetrical padding).
     
     For all toe/finger detections: The image region is cropped to the YOLO bounding box
     before running the dlib predictor, then coordinates are transformed back.
@@ -810,7 +810,7 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
         finger_predictor_path (str): Path to the finger dlib shape predictor file (.dat)
         conf_threshold (float): Confidence threshold for YOLO detections
         padding_ratio (float): Padding ratio for bounding boxes when using cropped predictors (default: 0.3 = 30%)
-        scale_bar_length_mm (float): Length of the scale bar in mm (default: 10.0). Used to calculate 1mm offset.
+        scale_bar_length_mm (float): Length of the scale bar in mm (default: 10.0). Used to calculate padding offsets.
         target_predictor_type (str): Optional filter to only process specific type ('toe', 'finger', 'scale'). 
                                      If None, processes all detections. If specified, only processes that type.
         cached_yolo_model: Optional pre-loaded YOLO model to avoid reloading
@@ -1022,8 +1022,8 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                 box_xml = ET.Element('box')
                 box_xml.set('top', str(int(min_ly)))
                 box_xml.set('left', str(int(min_lx)))
-                box_xml.set('width', str(int(bbox_w)))
-                box_xml.set('height', str(int(bbox_h)))
+                box_xml.set('width', str(max(1, int(bbox_w))))
+                box_xml.set('height', str(max(1, int(bbox_h))))
                 if label:
                     box_xml.set('label', label)
 
@@ -1128,17 +1128,18 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     box_xml = ET.Element("box")
                     box_xml.set("top", str(int(detected_rect.top())))
                     box_xml.set("left", str(int(detected_rect.left())))
-                    box_xml.set("width", str(int(detected_rect.width())))
-                    box_xml.set("height", str(int(detected_rect.height())))
+                    box_xml.set("width", str(max(1, int(detected_rect.width()))))
+                    box_xml.set("height", str(max(1, int(detected_rect.height()))))
                     box_xml.set("label", "ruler")
                     
                     obb_wh = best_det['obb_wh']
                     ruler_pixel_width = max(obb_wh[0], obb_wh[1])
 
-                    # Physical ruler is 2mm longer than the marked scale bar (1mm margin each side)
-                    total_length_mm = scale_bar_length_mm + 2.0
+                    # Physical ruler is 1.55mm longer than the marked scale bar (0.55mm left, 1mm right)
+                    total_length_mm = scale_bar_length_mm + 1.55
                     pixels_per_mm = ruler_pixel_width / total_length_mm
-                    offset_pixels = pixels_per_mm * 1.0
+                    left_offset_pixels = pixels_per_mm * 0.55
+                    right_offset_pixels = pixels_per_mm * 1.0
 
                     # OBB corners are (4, 2). Find the short edges to get the long axis endpoints.
                     corners = best_det['corners']
@@ -1159,8 +1160,8 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     length = np.linalg.norm(vec)
                     direction = vec / length if length > 0 else np.array([1.0, 0.0])
 
-                    pt1 = mid1 + direction * offset_pixels
-                    pt2 = mid2 - direction * offset_pixels
+                    pt1 = mid1 + direction * left_offset_pixels
+                    pt2 = mid2 - direction * right_offset_pixels
 
                     # Use IDs 0 and 1 for scale bar (visualized as 1 and 2 in the UI).
                     # When processed at the first box_idx=0, these become unique_id 0 and 1.
@@ -1178,8 +1179,8 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     box_xml = ET.Element("box")
                     box_xml.set("top", str(int(detected_rect.top())))
                     box_xml.set("left", str(int(detected_rect.left())))
-                    box_xml.set("width", str(int(detected_rect.width())))
-                    box_xml.set("height", str(int(detected_rect.height())))
+                    box_xml.set("width", str(max(1, int(detected_rect.width()))))
+                    box_xml.set("height", str(max(1, int(detected_rect.height()))))
                     box_xml.set("label", "id")
                     image_e.append(box_xml)
                     obj_count += 1
@@ -1828,16 +1829,17 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                 box_xml = ET.Element("box")
                 box_xml.set("top", str(int(detected_rect.top())))
                 box_xml.set("left", str(int(detected_rect.left())))
-                box_xml.set("width", str(int(detected_rect.width())))
-                box_xml.set("height", str(int(detected_rect.height())))
+                box_xml.set("width", str(max(1, int(detected_rect.width()))))
+                box_xml.set("height", str(max(1, int(detected_rect.height()))))
                 box_xml.set("label", "ruler")
                 
                 obb_wh = best_det['obb_wh']
                 ruler_pixel_width = max(obb_wh[0], obb_wh[1])
-                # Physical ruler is 2mm longer than the marked scale bar (1mm margin each side)
-                total_length_mm = scale_bar_length_mm + 2.0
+                # Physical ruler is 1.55mm longer than the marked scale bar (0.55mm left, 1mm right)
+                total_length_mm = scale_bar_length_mm + 1.55
                 pixels_per_mm = ruler_pixel_width / total_length_mm
-                offset_pixels = pixels_per_mm * 1.0
+                left_offset_pixels = pixels_per_mm * 0.55
+                right_offset_pixels = pixels_per_mm * 1.0
 
                 dist01 = np.linalg.norm(corners[0] - corners[1])
                 dist12 = np.linalg.norm(corners[1] - corners[2])
@@ -1856,8 +1858,8 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                 length = np.linalg.norm(vec)
                 direction = vec / length if length > 0 else np.array([1.0, 0.0])
 
-                pt1 = mid1 + direction * offset_pixels
-                pt2 = mid2 - direction * offset_pixels
+                pt1 = mid1 + direction * left_offset_pixels
+                pt2 = mid2 - direction * right_offset_pixels
 
                 # Use IDs 0 and 1 for scale bar (visualized as 1 and 2 in the UI).
                 part0 = create_part(float(pt1[0]), float(pt1[1]), 0)
@@ -1874,8 +1876,8 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                 box_xml = ET.Element("box")
                 box_xml.set("top", str(int(detected_rect.top())))
                 box_xml.set("left", str(int(detected_rect.left())))
-                box_xml.set("width", str(int(detected_rect.width())))
-                box_xml.set("height", str(int(detected_rect.height())))
+                box_xml.set("width", str(max(1, int(detected_rect.width()))))
+                box_xml.set("height", str(max(1, int(detected_rect.height()))))
                 box_xml.set("label", "id")
                 image_e.append(box_xml)
                 obj_count += 1
