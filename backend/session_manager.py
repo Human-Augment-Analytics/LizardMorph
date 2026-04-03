@@ -2,6 +2,7 @@ import os
 import shutil
 import uuid
 import time
+import json
 import logging
 from datetime import datetime
 from typing import Optional, Dict, List
@@ -350,3 +351,40 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Error deleting session {session_id}: {str(e)}")
             return {"success": False, "error": f"Error deleting session: {str(e)}"}
+    def get_metadata(self, session_id: str) -> Dict:
+        """Get session metadata from metadata.json."""
+        session_data = self.get_session(session_id)
+        if not session_data:
+            return {}
+
+        metadata_path = os.path.join(session_data["session_folder"], "metadata.json")
+        if os.path.exists(metadata_path):
+            try:
+                with open(metadata_path, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.error(f"Error reading metadata for session {session_id}: {e}")
+        
+        return {"image_views": {}}
+
+    def save_metadata(self, session_id: str, metadata: Dict):
+        """Save session metadata to metadata.json."""
+        session_data = self.get_session(session_id)
+        if not session_data:
+            return
+
+        metadata_path = os.path.join(session_data["session_folder"], "metadata.json")
+        try:
+            with open(metadata_path, 'w') as f:
+                json.dump(metadata, f, indent=4)
+        except Exception as e:
+            logger.error(f"Error saving metadata for session {session_id}: {e}")
+
+    def update_image_view_type(self, session_id: str, filename: str, view_type: str):
+        """Update the view type for a specific image in the session metadata."""
+        metadata = self.get_metadata(session_id)
+        if "image_views" not in metadata:
+            metadata["image_views"] = {}
+        
+        metadata["image_views"][filename] = view_type
+        self.save_metadata(session_id, metadata)
