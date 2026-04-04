@@ -81,7 +81,7 @@ export function getHistoryPanelStyles(theme: ResolvedTheme) {
 
     progressFill: {
       height: "100%",
-      backgroundColor: "#4CAF50",
+      backgroundColor: "#4F7942",
       transition: "width 0.3s ease",
     } as CSSProperties,
 

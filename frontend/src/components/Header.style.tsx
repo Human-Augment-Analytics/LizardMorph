@@ -143,7 +143,7 @@ export function getHeaderStyles(theme: ResolvedTheme) {
 
     exportButton: {
       padding: "12px 20px",
-      backgroundColor: "#4CAF50",
+      backgroundColor: "#4F7942",
       color: "white",
       border: "none",
       borderRadius: "4px",
