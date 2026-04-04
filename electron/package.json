@@ -9,7 +9,9 @@
     "build:win": "electron-builder --win",
     "build": "electron-builder"
   },
-  "dependencies": {},
+  "dependencies": {
+    "electron-updater": "^6.8.3"
+  },
   "devDependencies": {
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0"
@@ -20,12 +22,29 @@
     "directories": {
       "output": "release"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Human-Augment-Analytics",
+        "repo": "LizardMorph"
+      }
+    ],
     "mac": {
       "category": "public.app-category.education",
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "icon": "icons/icon.png",
@@ -41,7 +60,9 @@
       {
         "from": "dist/backend",
         "to": "backend",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "asar": false,

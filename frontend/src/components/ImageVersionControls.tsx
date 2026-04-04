@@ -87,7 +87,7 @@ export class ImageVersionControls extends Component<ImageVersionControlsProps> {
           onClick={onToggleEditMode}
           style={{
             padding: '8px 16px',
-            backgroundColor: isEditMode ? '#ffc107' : '#4CAF50',
+            backgroundColor: isEditMode ? '#ffc107' : '#4F7942',
             color: 'white',
             border: 'none',
             borderRadius: '4px',
