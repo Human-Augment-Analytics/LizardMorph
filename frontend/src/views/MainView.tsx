@@ -589,12 +589,12 @@ export class MainView extends Component<MainProps, MainState> {
         // Only calculate scale once per image load
         const scaleX = d3
           .scaleLinear()
-          .domain([0.5, this.state.imageWidth + 0.5])
+          .domain([0, this.state.imageWidth])
           .range([0, width]);
 
         const scaleY = d3
           .scaleLinear()
-          .domain([0.5, this.state.imageHeight + 0.5])
+          .domain([0, this.state.imageHeight])
           .range([0, height]);
 
         // Store scales in refs (simulated with state for this conversion)

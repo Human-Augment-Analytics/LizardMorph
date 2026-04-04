@@ -1,4 +1,5 @@
 import { Component } from "react";
+import lizard_logo from "../../public/lizard.svg";
 import { ApiService } from "../services/ApiService";
 import { SessionService } from "../services/SessionService";
 import type { ResolvedTheme, ThemePreference } from "../contexts/ThemeContext";
@@ -129,6 +130,16 @@ export class SessionInfo extends Component<SessionInfoProps, SessionInfoState> {
           }}
           title="Return to home page"
         >
+          <img
+            src={lizard_logo}
+            alt="LizardMorph Logo"
+            style={{
+              height: "24px",
+              width: "24px",
+              marginRight: "4px",
+              objectFit: "contain",
+            }}
+          />
           &larr; Back to Home
         </button>
         <span>
