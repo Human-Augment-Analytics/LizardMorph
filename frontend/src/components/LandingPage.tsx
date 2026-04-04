@@ -93,7 +93,12 @@ function getLandingPageStyles(isDark: boolean) {
     },
     icon: {
       fontSize: "4rem",
-      marginBottom: "1.5rem",
+      height: "4rem",
+      width: "4rem",
+      margin: "0 auto 1.5rem auto",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
       color: "#4CAF50",
       transition: "all 0.3s ease",
     },
@@ -213,13 +218,11 @@ export const LandingPage: React.FC = () => {
           <div style={LandingPageStyles.cardContent}>
             <div style={{
               ...LandingPageStyles.icon,
-              display: "flex",
-              justifyContent: "center",
               ...(hoveredCard === "dorsal" ? LandingPageStyles.iconHover : {})
             }}>
               <img
                 src={lizard_logo}
-                alt="LizardMorph Logo"
+                alt="Dorsal View"
                 style={{
                   height: "100%",
                   width: "100%",
@@ -254,7 +257,16 @@ export const LandingPage: React.FC = () => {
               ...LandingPageStyles.icon,
               ...(hoveredCard === "lateral" ? LandingPageStyles.iconHover : {})
             }}>
-              🦖
+              <img
+                src={lizard_logo}
+                alt="Lateral View"
+                style={{
+                  height: "100%",
+                  width: "100%",
+                  objectFit: "contain",
+                  transform: "rotate(90deg)",
+                }}
+              />
             </div>
             <h3 style={{
               ...LandingPageStyles.optionTitle,
@@ -283,7 +295,15 @@ export const LandingPage: React.FC = () => {
               ...LandingPageStyles.icon,
               ...(hoveredCard === "toepads" ? LandingPageStyles.iconHover : {})
             }}>
-              🦶
+              <img
+                src={lizard_logo}
+                alt="Toepad View"
+                style={{
+                  height: "90%",
+                  width: "90%",
+                  objectFit: "contain",
+                }}
+              />
             </div>
             <h3 style={{
               ...LandingPageStyles.optionTitle,
@@ -312,7 +332,16 @@ export const LandingPage: React.FC = () => {
               ...LandingPageStyles.icon,
               ...(hoveredCard === "free" ? LandingPageStyles.iconHover : {})
             }}>
-              📌
+              <img
+                src={lizard_logo}
+                alt="Free Mode"
+                style={{
+                  height: "80%",
+                  width: "80%",
+                  objectFit: "contain",
+                  opacity: 0.8,
+                }}
+              />
             </div>
             <h3 style={{
               ...LandingPageStyles.optionTitle,
