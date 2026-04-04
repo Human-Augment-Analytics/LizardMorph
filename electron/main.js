@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const fs = require("fs");
 const { startBackend, stopBackend } = require("./python-backend");
@@ -90,7 +91,48 @@ async function createWindow() {
   }
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+  if (!isDev) {
+    autoUpdater.checkForUpdatesAndNotify();
+  }
+});
+
+// Auto-updater events
+autoUpdater.on("update-available", () => {
+  log("Update available.");
+});
+
+autoUpdater.on("update-not-available", () => {
+  log("Update not available.");
+});
+
+autoUpdater.on("error", (err) => {
+  log(`Error in auto-updater: ${err.message}`);
+});
+
+autoUpdater.on("download-progress", (progressObj) => {
+  let log_message = "Download speed: " + progressObj.bytesPerSecond;
+  log_message = log_message + " - Downloaded " + progressObj.percent + "%";
+  log_message = log_message + " (" + progressObj.transferred + "/" + progressObj.total + ")";
+  log(log_message);
+});
+
+autoUpdater.on("update-downloaded", (info) => {
+  log("Update downloaded.");
+  dialog
+    .showMessageBox({
+      type: "info",
+      title: "Update Ready",
+      message: "A new version of LizardMorph has been downloaded. Restart the application to apply the updates.",
+      buttons: ["Restart", "Later"],
+    })
+    .then((result) => {
+      if (result.response === 0) {
+        autoUpdater.quitAndInstall();
+      }
+    });
+});
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {

@@ -1235,7 +1235,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
                       style={{
                         padding: '2px 8px',
                         fontSize: '10px',
-                        background: this.state.showLabels ? '#4CAF50' : '#666',
+                        background: this.state.showLabels ? '#4F7942' : '#666',
                         color: 'white',
                         border: 'none',
                         borderRadius: '3px',

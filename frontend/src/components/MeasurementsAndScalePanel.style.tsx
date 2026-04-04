@@ -143,7 +143,7 @@ export function getMeasurementsAndScalePanelStyles(theme: ResolvedTheme) {
       fontSize: "20px",
       fontWeight: "bold" as const,
       color: t.text,
-      borderBottom: "2px solid #4CAF50",
+      borderBottom: "2px solid #4F7942",
       paddingBottom: "8px",
       marginBottom: "20px",
       marginTop: "20px",
