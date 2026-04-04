@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../contexts/ThemeContext";
 import { getTokens } from "../contexts/themeTokens";
+import lizard_logo from "../../public/lizard.svg";
 
 export type LizardViewType = "dorsal" | "lateral" | "toepads" | "custom" | "free";
 
@@ -212,9 +213,19 @@ export const LandingPage: React.FC = () => {
           <div style={LandingPageStyles.cardContent}>
             <div style={{
               ...LandingPageStyles.icon,
+              display: "flex",
+              justifyContent: "center",
               ...(hoveredCard === "dorsal" ? LandingPageStyles.iconHover : {})
             }}>
-              🦎
+              <img
+                src={lizard_logo}
+                alt="LizardMorph Logo"
+                style={{
+                  height: "100%",
+                  width: "100%",
+                  objectFit: "contain",
+                }}
+              />
             </div>
             <h3 style={{
               ...LandingPageStyles.optionTitle,

@@ -265,12 +265,12 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         // Only calculate scale once per image load
         const scaleX = d3
           .scaleLinear()
-          .domain([0.5, this.props.imageWidth + 0.5])
+          .domain([0, this.props.imageWidth])
           .range([0, width]);
 
         const scaleY = d3
           .scaleLinear()
-          .domain([0.5, this.props.imageHeight + 0.5])
+          .domain([0, this.props.imageHeight])
           .range([0, height]); // Scale the data
         const scaledData = this.props.originalScatterData.map(
           (point: Point) => {
@@ -331,10 +331,10 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         
         // Scale functions for bounding boxes
         const scaleX = d3.scaleLinear()
-          .domain([0.5, this.props.imageWidth + 0.5])
+          .domain([0, this.props.imageWidth])
           .range([0, width]);
         const scaleY = d3.scaleLinear()
-          .domain([0.5, this.props.imageHeight + 0.5])
+          .domain([0, this.props.imageHeight])
           .range([0, height]);
         
         // Color scheme based on class label
@@ -436,10 +436,10 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       // Always scale from originalScatterData to match current SVG dimensions
       // (this ensures correct scaling when maxWidth constraint is applied)
       const scaleXForPoints = d3.scaleLinear()
-        .domain([0.5, this.props.imageWidth + 0.5])
+        .domain([0, this.props.imageWidth])
         .range([0, width]);
       const scaleYForPoints = d3.scaleLinear()
-        .domain([0.5, this.props.imageHeight + 0.5])
+        .domain([0, this.props.imageHeight])
         .range([0, height]);
 
       const scaledPointsForRender = this.props.originalScatterData.map((point: Point) => ({
@@ -1119,14 +1119,14 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     const height = +svg.attr("height");
     
     // Only update if dimensions changed
-    if (width !== this.cachedScales.svgWidth || height !== this.cachedScales.svgHeight) {
+    if (!this.cachedScales.scaleXToImg || !this.cachedScales.scaleYToImg || 
+        this.cachedScales.svgWidth !== width || this.cachedScales.svgHeight !== height) {
+      this.cachedScales.scaleXToImg = d3.scaleLinear().domain([0, width]).range([0, this.props.imageWidth]);
+      this.cachedScales.scaleYToImg = d3.scaleLinear().domain([0, height]).range([0, this.props.imageHeight]);
+      this.cachedScales.scaleXDisplay = d3.scaleLinear().domain([0, this.props.imageWidth]).range([0, width]);
+      this.cachedScales.scaleYDisplay = d3.scaleLinear().domain([0, this.props.imageHeight]).range([0, height]);
       this.cachedScales.svgWidth = width;
       this.cachedScales.svgHeight = height;
-      
-      this.cachedScales.scaleXToImg = d3.scaleLinear().domain([0, width]).range([0.5, this.props.imageWidth + 0.5]);
-      this.cachedScales.scaleYToImg = d3.scaleLinear().domain([0, height]).range([0.5, this.props.imageHeight + 0.5]);
-      this.cachedScales.scaleXDisplay = d3.scaleLinear().domain([0.5, this.props.imageWidth + 0.5]).range([0, width]);
-      this.cachedScales.scaleYDisplay = d3.scaleLinear().domain([0.5, this.props.imageHeight + 0.5]).range([0, height]);
     }
   };
 

@@ -204,8 +204,7 @@ export class ExportService {
         
         zip.file(`${baseName}.tps`, result.tpsContent);
         if (result.imageBlob) {
-          const imageExt = result.name.split('.').pop()?.toLowerCase() || 'png';
-          zip.file(`annotated_${baseName}.${imageExt}`, result.imageBlob);
+          zip.file(`annotated_${baseName}.png`, result.imageBlob);
         }
       });
       const allOriginalCoords = images.map((image, i) => i === currentIndex ? originalScatterData : image.originalCoords || image.coords);

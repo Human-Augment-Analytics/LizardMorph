@@ -46,26 +46,11 @@ export class SessionService {
     const cachedTimestamp = this.getStoredTimestamp();
 
     if (cachedSessionId && cachedTimestamp) {
-      const timestamp = parseInt(cachedTimestamp, 10);
-      const now = Date.now();
-
-      // Check if cached session is still within the cache duration
-      if (now - timestamp < this.SESSION_CACHE_DURATION) {
-        this.sessionId = cachedSessionId;
-        console.log(
-          `Reusing cached session: ${cachedSessionId.substring(0, 8)} (${
-            this.useCookies ? "from cookies" : "from localStorage"
-          })`
-        );
-        return cachedSessionId;
-      }
-
-      // Cache expired, validate with server
+      // Always validate with server (backend may have restarted, losing in-memory sessions)
       try {
         const isValid = await this.validateSession(cachedSessionId);
         if (isValid) {
           this.sessionId = cachedSessionId;
-          // Update timestamp
           this.updateStoredTimestamp();
           console.log(
             `Reusing validated session: ${cachedSessionId.substring(0, 8)} (${
@@ -74,7 +59,6 @@ export class SessionService {
           );
           return cachedSessionId;
         } else {
-          // Session is invalid, clear it and start new one
           console.log("Cached session is invalid, starting new session");
           this.clearSession();
         }

@@ -6,18 +6,16 @@ import re
 import glob
 import ntpath
 
-# Not part of the standard library
+import os
+import shutil
+import random
 import numpy as np
-import pandas as pd
 import cv2
 try:
     import dlib
 except ImportError:
     dlib = None
     print("Warning: dlib not found, some features will be unavailable")
-import os
-import shutil
-import random
 
 
 # Dorsal landmark reorder mapping.
@@ -1012,8 +1010,8 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     points.append((float(p.x + x_off), float(p.y + y_off)))
                 return np.array(points, dtype=float)
 
-            def _generate_landmark_xml(landmarks_global, label=None):
-                """Generate XML box element from landmark coordinates."""
+            def _generate_landmark_xml(landmarks_global, label=None, box_idx=0):
+                """Generate XML box element from landmark coordinates with unique IDs."""
                 min_lx, min_ly = np.min(landmarks_global, axis=0)
                 max_lx, max_ly = np.max(landmarks_global, axis=0)
                 bbox_w = max_lx - min_lx
@@ -1029,7 +1027,8 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
 
                 for pt_i, point in enumerate(landmarks_global):
                     part = ET.SubElement(box_xml, 'part')
-                    part.set('name', str(pt_i))
+                    # Use unique ID per box to prevent D3 key collisions in UI
+                    part.set('name', str(box_idx * 100 + pt_i))
                     part.set('x', str(int(point[0])))
                     part.set('y', str(int(point[1])))
                 return box_xml
@@ -1135,10 +1134,10 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     obb_wh = best_det['obb_wh']
                     ruler_pixel_width = max(obb_wh[0], obb_wh[1])
 
-                    # Physical ruler is 1.55mm longer than the marked scale bar (0.55mm left, 1mm right)
-                    total_length_mm = scale_bar_length_mm + 1.55
+                    # Physical ruler is 1.0mm longer than the marked scale bar (0.0mm left, 1.0mm right)
+                    total_length_mm = scale_bar_length_mm + 1.0
                     pixels_per_mm = ruler_pixel_width / total_length_mm
-                    left_offset_pixels = pixels_per_mm * 0.55
+                    left_offset_pixels = pixels_per_mm * 0.0
                     right_offset_pixels = pixels_per_mm * 1.0
 
                     # OBB corners are (4, 2). Find the short edges to get the long axis endpoints.
@@ -1163,10 +1162,9 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     pt1 = mid1 + direction * left_offset_pixels
                     pt2 = mid2 - direction * right_offset_pixels
 
-                    # Use IDs 0 and 1 for scale bar (visualized as 1 and 2 in the UI).
-                    # When processed at the first box_idx=0, these become unique_id 0 and 1.
-                    part0 = create_part(float(pt1[0]), float(pt1[1]), 0)
-                    part1 = create_part(float(pt2[0]), float(pt2[1]), 1)
+                    # Use IDs 0 and 1 for scale bar, uniquely shifted by obj_count
+                    part0 = create_part(float(pt1[0]), float(pt1[1]), obj_count * 100 + 0)
+                    part1 = create_part(float(pt2[0]), float(pt2[1]), obj_count * 100 + 1)
                     box_xml.append(part0)
                     box_xml.append(part1)
                     image_e.append(box_xml)
@@ -1190,7 +1188,7 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                      print(f"DEBUG {category}: predictors={list(predictors.keys())}, curr_predictor={'FOUND' if curr_predictor else 'NONE'}")
                      if curr_predictor:
                           landmarks_global = _predict_on_crop(curr_predictor, img_raw_bgr, best_det['corners'])
-                          image_e.append(_generate_landmark_xml(landmarks_global, label=category))
+                          image_e.append(_generate_landmark_xml(landmarks_global, label=category, box_idx=obj_count))
                           obj_count += 1
                      else:
                           print(f"WARNING: No predictor for {category}, SKIPPING!")
@@ -1222,7 +1220,7 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                              points.append((float(p.x + x_off), float(h_img - 1 - (p.y + y_off))))
                          
                          landmarks_global = np.array(points, dtype=float)
-                         image_e.append(_generate_landmark_xml(landmarks_global, label=category))
+                         image_e.append(_generate_landmark_xml(landmarks_global, label=category, box_idx=obj_count))
                          obj_count += 1
 
             print(f"\nTotal detections: {obj_count}")
@@ -1277,6 +1275,7 @@ def dlib_xml_to_pandas(xml_file: str, parse=False):
     ----------
         df(dataframe): returns a pandas dataframe containing the data in the xml_file.
     """
+    import pandas as pd
     tree = ET.parse(xml_file)
     root = tree.getroot()
     landmark_list = []
@@ -1305,7 +1304,7 @@ def dlib_xml_to_pandas(xml_file: str, parse=False):
                             "Y" + parts.attrib["name"]: float(parts.attrib["y"]),
                         }
 
-                    landmark_list.append(data)
+                        landmark_list.append(data)
     dataset = pd.DataFrame(landmark_list)
     if dataset.empty or "id" not in dataset.columns:
         basename = ntpath.splitext(xml_file)[0]
@@ -1754,8 +1753,8 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
             points.append((float(p.x + x_off), float(p.y + y_off)))
         return np.array(points, dtype=float)
 
-    def _generate_landmark_xml(landmarks_global, label=None):
-        """Generate XML box element from landmark coordinates."""
+    def _generate_landmark_xml(landmarks_global, label=None, box_idx=0):
+        """Generate XML box element from landmark coordinates with unique IDs."""
         min_lx, min_ly = np.min(landmarks_global, axis=0)
         max_lx, max_ly = np.max(landmarks_global, axis=0)
         bbox_w = max_lx - min_lx
@@ -1771,7 +1770,8 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
 
         for pt_i, point in enumerate(landmarks_global):
             part = ET.SubElement(box_xml, 'part')
-            part.set('name', str(pt_i))
+            # Use unique ID per box to prevent D3 key collisions in UI
+            part.set('name', str(box_idx * 100 + pt_i))
             part.set('x', str(int(point[0])))
             part.set('y', str(int(point[1])))
         return box_xml
@@ -1835,10 +1835,10 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                 
                 obb_wh = best_det['obb_wh']
                 ruler_pixel_width = max(obb_wh[0], obb_wh[1])
-                # Physical ruler is 1.55mm longer than the marked scale bar (0.55mm left, 1mm right)
-                total_length_mm = scale_bar_length_mm + 1.55
+                # Physical ruler: 0mm left padding, 1mm right padding. Total 1.0mm overhead.
+                total_length_mm = scale_bar_length_mm + 1.0
                 pixels_per_mm = ruler_pixel_width / total_length_mm
-                left_offset_pixels = pixels_per_mm * 0.55
+                left_offset_pixels = pixels_per_mm * 0.0
                 right_offset_pixels = pixels_per_mm * 1.0
 
                 dist01 = np.linalg.norm(corners[0] - corners[1])
@@ -1861,9 +1861,9 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                 pt1 = mid1 + direction * left_offset_pixels
                 pt2 = mid2 - direction * right_offset_pixels
 
-                # Use IDs 0 and 1 for scale bar (visualized as 1 and 2 in the UI).
-                part0 = create_part(float(pt1[0]), float(pt1[1]), 0)
-                part1 = create_part(float(pt2[0]), float(pt2[1]), 1)
+                # Use unique IDs for scale bar landmarks
+                part0 = create_part(float(pt1[0]), float(pt1[1]), obj_count * 100 + 0)
+                part1 = create_part(float(pt2[0]), float(pt2[1]), obj_count * 100 + 1)
                 box_xml.append(part0)
                 box_xml.append(part1)
                 image_e.append(box_xml)
@@ -1886,7 +1886,7 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                 curr_predictor = predictors.get('finger') if 'finger' in category else predictors.get('toe')
                 if curr_predictor:
                      landmarks_global = _predict_on_crop(curr_predictor, img_raw_bgr, best_det['corners'])
-                     image_e.append(_generate_landmark_xml(landmarks_global, label=category))
+                     image_e.append(_generate_landmark_xml(landmarks_global, label=category, box_idx=obj_count))
                      obj_count += 1
 
             elif category in ['up_finger', 'up_toe']:
@@ -1910,7 +1910,7 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                          points.append((float(p.x + x_off), float(h_img - 1 - (p.y + y_off))))
                      
                      landmarks_global = np.array(points, dtype=float)
-                     image_e.append(_generate_landmark_xml(landmarks_global))
+                     image_e.append(_generate_landmark_xml(landmarks_global, label=category, box_idx=obj_count))
                      obj_count += 1
 
         except Exception as e:
