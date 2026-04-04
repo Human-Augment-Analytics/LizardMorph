@@ -1,12 +1,17 @@
 import argparse
 import cv2
 import glob
-import matplotlib.pyplot as plt
+# matplotlib.pyplot lazy-loaded if needed
 import os
 import pydicom
 from pydicom.pixel_data_handlers.util import apply_voi_lut
 import numpy as np
 from PIL import Image, ImageEnhance
+
+def _init_matplotlib():
+    import matplotlib.pyplot as plt
+    plt.switch_backend('Agg')
+    return plt
 
 def dcm_to_jpeg(dcm_file_path, jpeg_file_path):
     dicom = pydicom.dcmread(dcm_file_path)
@@ -92,6 +97,9 @@ def gamma_correction(image, gamma=1.0):
 
 #     args = parser.parse_args()
 def process_images(input_folder, output_folder, sharpness=4, contrast=1.3, blur=3, clip_limit=2.0, tile_grid_size=(8, 8), gamma=1.0, should_plot=False):
+    plt = None
+    if should_plot:
+        plt = _init_matplotlib()
 
     for root, dirs, files in os.walk(input_folder):
         jpg_files = glob.glob(os.path.join(root, '*.jpg'))
@@ -103,7 +111,7 @@ def process_images(input_folder, output_folder, sharpness=4, contrast=1.3, blur=
             image = clahe(image, clip_limit, tile_grid_size)
             image = gamma_correction(image, gamma)
 
-            if should_plot:
+            if should_plot and plt:
               plt.plot()
               plt.title("Processed Image") 
               plt.imshow(image)

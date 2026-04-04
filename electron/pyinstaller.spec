@@ -18,6 +18,13 @@ base_hiddenimports = [
     'PIL',
     'onnxruntime',
     'native_ocr',
+    'utils',
+    'visual_individual_performance',
+    'xray_preprocessing',
+    'export_handler',
+    'session_manager',
+    'predictor_library',
+    'ort_inference',
 ]
 
 if sys.platform == 'darwin':

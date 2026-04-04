@@ -2,7 +2,6 @@ import utils
 import visual_individual_performance
 import xray_preprocessing
 from export_handler import ExportHandler
-from export_handler import ExportHandler
 from session_manager import SessionManager
 try:
     import id_extractor

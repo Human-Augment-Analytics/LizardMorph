@@ -1,6 +1,7 @@
 import React, { Component } from "react";
 import { getHeaderStyles } from "./Header.style";
 import type { ResolvedTheme } from "../contexts/ThemeContext";
+import lizard_logo from "../../public/lizard.svg";
 
 interface HeaderProps {
   lizardCount: number;
@@ -182,17 +183,20 @@ export class Header extends Component<HeaderProps, HeaderState> {
               <div
                 style={{
                   ...styles.logo,
-                  fontSize: "40px",
                   marginRight: "12px",
+                  display: "flex",
+                  alignItems: "center",
                 }}
               >
-                {selectedViewType === "lateral"
-                  ? "🦖"
-                  : selectedViewType === "toepads"
-                    ? "🦶"
-                    : isFree
-                      ? "📌"
-                      : "🦎"}
+                <img
+                  src={lizard_logo}
+                  alt="LizardMorph Logo"
+                  style={{
+                    height: "40px",
+                    width: "40px",
+                    objectFit: "contain",
+                  }}
+                />
               </div>
               <h2 style={styles.title}>
                 {isFree
