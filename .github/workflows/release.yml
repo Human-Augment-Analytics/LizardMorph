@@ -96,7 +96,7 @@ jobs:
         run: |
           cd electron
           npm ci
-          npx electron-builder --mac --${{ matrix.arch }}
+          npx electron-builder --mac --${{ matrix.arch }} --publish never
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
@@ -167,7 +167,7 @@ jobs:
         run: |
           cd electron
           npm ci
-          npx electron-builder --win
+          npx electron-builder --win --publish never
 
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
