@@ -1,8 +1,37 @@
 import { execSync } from 'node:child_process';
 import { fileURLToPath, URL } from 'node:url';
-import { readFileSync } from 'fs';
+import { readFileSync, createReadStream, existsSync } from 'fs';
+import path from 'node:path';
 import { defineConfig, loadEnv } from 'vite';
+import type { Plugin } from 'vite';
 import plugin from '@vitejs/plugin-react';
+
+/**
+ * Vite plugin: serve onnxruntime-web .mjs worker files from node_modules in dev.
+ * Files in public/ can't be import()-ed by Vite's dev server, but ORT needs to
+ * dynamically import these as module workers for multi-threaded WASM.
+ */
+function ortWasmDevPlugin(): Plugin {
+    return {
+        name: 'ort-wasm-dev',
+        configureServer(server) {
+            server.middlewares.use((req, res, next) => {
+                if (req.url && /\/ort-wasm.*\.mjs(\?|$)/.test(req.url)) {
+                    const basename = req.url.split('?')[0].split('/').pop()!;
+                    const filePath = path.join(__dirname, 'node_modules/onnxruntime-web/dist', basename);
+                    if (existsSync(filePath)) {
+                        res.setHeader('Content-Type', 'application/javascript');
+                        res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+                        res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+                        createReadStream(filePath).pipe(res);
+                        return;
+                    }
+                }
+                next();
+            });
+        },
+    };
+}
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
@@ -50,7 +79,7 @@ export default defineConfig(({ mode }) => {
     
     return {
         base: baseURL, 
-        plugins: [plugin()],
+        plugins: [ortWasmDevPlugin(), plugin()],
         resolve: {
             alias: {
                 '@': fileURLToPath(new URL('./src', import.meta.url))
@@ -78,6 +107,10 @@ export default defineConfig(({ mode }) => {
             __BUILD_VERSION__: JSON.stringify(buildVersion)
         },
         server: {
+            headers: {
+                'Cross-Origin-Opener-Policy': 'same-origin',
+                'Cross-Origin-Embedder-Policy': 'require-corp',
+            },
             proxy: {
                 '/api': {
                     target: `http://localhost:${apiPort}`,

@@ -24,19 +24,7 @@ export class ApiService {
     viewType: string, 
     toepadPredictorType?: string
   ): Promise<AnnotationsData[]> {
-    let clientAnnotations: AnnotationsData[] = [];
-    if (viewType === "toepads" || viewType === "toepad") {
-      try {
-        const { OnnxService } = await import("./OnnxService");
-        for (const file of files) {
-          const ann = await OnnxService.detect(file);
-          ann.name = file.name;
-          clientAnnotations.push(ann);
-        }
-      } catch (err) {
-        console.error("Local ONNX inference failed, will fallback to server inference:", err);
-      }
-    }
+    const clientAnnotations: AnnotationsData[] = [];
 
     const formData = new FormData();
     files.forEach((file) => {
