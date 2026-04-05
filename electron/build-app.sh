@@ -65,13 +65,13 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
         echo "--- Packaging arm64 DMG ---"
         rm -rf "$SCRIPT_DIR/dist/backend"
         cp -r "$SCRIPT_DIR/dist-arm64/backend" "$SCRIPT_DIR/dist/backend"
-        npx electron-builder --mac --arm64
+        npx electron-builder --mac --arm64 --publish never
 
         # Then, build x64
         echo "--- Packaging x64 DMG ---"
         rm -rf "$SCRIPT_DIR/dist/backend"
         cp -r "$SCRIPT_DIR/dist-x64/backend" "$SCRIPT_DIR/dist/backend"
-        npx electron-builder --mac --x64
+        npx electron-builder --mac --x64 --publish never
     elif [[ -n "$TARGET_ARCH" ]]; then
         # Build for specific architecture
         if [[ "$TARGET_ARCH" != "arm64" ]] && [[ "$TARGET_ARCH" != "x64" ]]; then
@@ -83,7 +83,7 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
             rm -rf "$SCRIPT_DIR/dist/backend"
             cp -r "$SCRIPT_DIR/dist-${TARGET_ARCH}/backend" "$SCRIPT_DIR/dist/backend"
         fi
-        npx electron-builder --mac --${TARGET_ARCH}
+        npx electron-builder --mac --${TARGET_ARCH} --publish never
     else
         npm run build:mac
     fi

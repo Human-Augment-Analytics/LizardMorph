@@ -1,13 +1,13 @@
 {
   "name": "lizardmorph",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "LizardMorph - Automated lizard morphology analysis",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build:mac": "electron-builder --mac",
-    "build:win": "electron-builder --win",
-    "build": "electron-builder"
+    "build:mac": "electron-builder --mac --publish never",
+    "build:win": "electron-builder --win --publish never",
+    "build": "electron-builder --publish never"
   },
   "dependencies": {
     "electron-updater": "^6.8.3"
