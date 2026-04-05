@@ -946,7 +946,7 @@ export class MainView extends Component<MainProps, MainState> {
             name: fileObj.filename,
             timestamp: "From uploads folder",
             index: -1, // Will be set when loaded
-            viewType: fileObj.view_type,
+            viewType: fileObj.view_type === "toepad" ? "toepads" : fileObj.view_type,
           });
         }
       });
