@@ -97,6 +97,9 @@ REPO_NAME = os.getenv("REPO_NAME", "LizardMorph")
 MAIN_BRANCH = os.getenv("MAIN_BRANCH", "main")
 VERIFY_SIGNATURE = os.getenv("VERIFY_SIGNATURE", "true").lower() == "true"
 
+# Allowed image extensions
+valid_extensions = [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif"]
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"

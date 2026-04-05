@@ -1247,9 +1247,9 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
                   </div>
                   <input
                     type="range"
-                    min="4"
+                    min="0.5"
                     max="24"
-                    step="1"
+                    step="0.5"
                     value={this.state.labelSize}
                     onChange={this.handleLabelSizeChange}
                     style={{
@@ -1258,7 +1258,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
                     }}
                   />
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px', opacity: 0.7 }}>
-                    <span>{this.state.labelSize}px</span>
+                    <span>{this.state.labelSize.toFixed(1)}px</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <span>Color</span>
                       <input
