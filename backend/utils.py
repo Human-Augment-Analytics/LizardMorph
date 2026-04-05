@@ -1134,10 +1134,10 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     obb_wh = best_det['obb_wh']
                     ruler_pixel_width = max(obb_wh[0], obb_wh[1])
 
-                    # Physical ruler is 1.0mm longer than the marked scale bar (0.0mm left, 1.0mm right)
-                    total_length_mm = scale_bar_length_mm + 1.0
+                    # Physical ruler is 1.55mm longer than the marked scale bar (0.55mm left, 1mm right)
+                    total_length_mm = scale_bar_length_mm + 1.55
                     pixels_per_mm = ruler_pixel_width / total_length_mm
-                    left_offset_pixels = pixels_per_mm * 0.0
+                    left_offset_pixels = pixels_per_mm * 0.55
                     right_offset_pixels = pixels_per_mm * 1.0
 
                     # OBB corners are (4, 2). Find the short edges to get the long axis endpoints.
@@ -1162,9 +1162,9 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     pt1 = mid1 + direction * left_offset_pixels
                     pt2 = mid2 - direction * right_offset_pixels
 
-                    # Use IDs 0 and 1 for scale bar, uniquely shifted by obj_count
-                    part0 = create_part(float(pt1[0]), float(pt1[1]), obj_count * 100 + 0)
-                    part1 = create_part(float(pt2[0]), float(pt2[1]), obj_count * 100 + 1)
+                    # Use IDs 0 and 1 for scale bar (visualized as 1 and 2 in the UI).
+                    part0 = create_part(float(pt1[0]), float(pt1[1]), 0)
+                    part1 = create_part(float(pt2[0]), float(pt2[1]), 1)
                     box_xml.append(part0)
                     box_xml.append(part1)
                     image_e.append(box_xml)
@@ -1200,15 +1200,9 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
 
                     curr_predictor = predictors.get('finger') if 'finger' in category else predictors.get('toe')
                     if curr_predictor:
-                         # Corners may be in original image space (ORT path) or flipped space (Ultralytics flip-pass).
-                         # For ORT path, we need to flip y coords to crop from flipped_bgr.
-                         # For Ultralytics flip-pass, corners are already in flipped space.
-                         if _is_ort:
-                             corners_for_crop = np.copy(best_det['corners'])
-                             corners_for_crop[:, 1] = h_img - 1 - corners_for_crop[:, 1]
-                         else:
-                             corners_for_crop = best_det['corners']
-                         crop_rgb, x_off, y_off = _get_padded_crop(flipped_bgr, corners_for_crop)
+                         # Both ORT and Ultralytics flip-pass return up_finger/up_toe corners
+                         # already in flipped image space — use them directly.
+                         crop_rgb, x_off, y_off = _get_padded_crop(flipped_bgr, best_det['corners'])
                          crop_h, crop_w = crop_rgb.shape[:2]
                          rect = dlib.rectangle(0, 0, crop_w, crop_h)
                          shape = curr_predictor(crop_rgb, rect)
@@ -1835,10 +1829,10 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                 
                 obb_wh = best_det['obb_wh']
                 ruler_pixel_width = max(obb_wh[0], obb_wh[1])
-                # Physical ruler: 0mm left padding, 1mm right padding. Total 1.0mm overhead.
-                total_length_mm = scale_bar_length_mm + 1.0
+                # Physical ruler is 1.55mm longer than the marked scale bar (0.55mm left, 1mm right)
+                total_length_mm = scale_bar_length_mm + 1.55
                 pixels_per_mm = ruler_pixel_width / total_length_mm
-                left_offset_pixels = pixels_per_mm * 0.0
+                left_offset_pixels = pixels_per_mm * 0.55
                 right_offset_pixels = pixels_per_mm * 1.0
 
                 dist01 = np.linalg.norm(corners[0] - corners[1])
@@ -1861,9 +1855,9 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                 pt1 = mid1 + direction * left_offset_pixels
                 pt2 = mid2 - direction * right_offset_pixels
 
-                # Use unique IDs for scale bar landmarks
-                part0 = create_part(float(pt1[0]), float(pt1[1]), obj_count * 100 + 0)
-                part1 = create_part(float(pt2[0]), float(pt2[1]), obj_count * 100 + 1)
+                # Use IDs 0 and 1 for scale bar (visualized as 1 and 2 in the UI).
+                part0 = create_part(float(pt1[0]), float(pt1[1]), 0)
+                part1 = create_part(float(pt2[0]), float(pt2[1]), 1)
                 box_xml.append(part0)
                 box_xml.append(part1)
                 image_e.append(box_xml)
