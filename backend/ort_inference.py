@@ -99,6 +99,11 @@ class OrtYoloDetector:
 
         return tensor, scale, x_pad, y_pad
 
+    @staticmethod
+    def _flip_tensor_vertically(tensor: np.ndarray) -> np.ndarray:
+        """Flip a [1, 3, H, W] NCHW tensor vertically (reverse rows)."""
+        return tensor[:, :, ::-1, :].copy()
+
     # ------------------------------------------------------------------
     # Detection parsing
     # ------------------------------------------------------------------
@@ -227,7 +232,7 @@ class OrtYoloDetector:
     # ------------------------------------------------------------------
 
     def detect(self, img_bgr: np.ndarray, conf_threshold: float = CONF_THRESHOLD):
-        """Run single-pass OBB detection on a BGR image.
+        """Run dual-pass OBB detection on a BGR image.
 
         Args:
             img_bgr: Input image in BGR format (OpenCV convention).
@@ -237,9 +242,9 @@ class OrtYoloDetector:
             dict with keys: bot_finger, bot_toe, up_finger, up_toe, scale, id.
             Each value is a list of detection dicts with 'conf' and 'corners' (np.ndarray(4,2)).
             Scale detections also have 'obb_wh'.
-            bot_finger/bot_toe corners are in original image space.
-            up_finger/up_toe corners are in FLIPPED image space (y-flipped) so utils.py
-            can crop them directly from flipped_bgr for dlib prediction.
+            Coordinates are in the original image space.
+            up_finger/up_toe corners from the flipped pass are in FLIPPED image coordinates
+            (consistent with existing utils.py expectations).
         """
         h_img, w_img = img_bgr.shape[:2]
 
@@ -263,12 +268,14 @@ class OrtYoloDetector:
         # Preprocess
         tensor, scale, x_pad, y_pad = self._preprocess(img_bgr)
 
-        # Batch normal + vertically flipped into a single inference call [2, 3, H, W]
-        flipped_tensor = tensor[:, :, ::-1, :].copy()  # flip rows in-place before stacking
-        batch = np.concatenate([tensor, flipped_tensor], axis=0)
-        batch_output = self.session.run([self.output_name], {self.input_name: batch})[0]
-        normal_boxes = self._nms_and_top_one(self._parse_detections(batch_output[0:1], conf_threshold))
-        flipped_boxes = self._nms_and_top_one(self._parse_detections(batch_output[1:2], conf_threshold))
+        # --- Pass 1: Normal inference ---
+        output = self.session.run([self.output_name], {self.input_name: tensor})[0]
+        normal_boxes = self._nms_and_top_one(self._parse_detections(output, conf_threshold))
+
+        # --- Pass 2: Flipped inference ---
+        flipped_tensor = self._flip_tensor_vertically(tensor)
+        output_flipped = self.session.run([self.output_name], {self.input_name: flipped_tensor})[0]
+        flipped_boxes = self._nms_and_top_one(self._parse_detections(output_flipped, conf_threshold))
 
         # --- Build detections dict ---
         detections = {
@@ -294,14 +301,22 @@ class OrtYoloDetector:
             return corners_orig
 
         def _model_to_flipped_original_corners(box):
-            """Convert model-space box (from flipped pass) to flipped original image corners."""
+            """Convert model-space box (from flipped pass) to flipped original image corners.
+
+            Returns corners in the FLIPPED image coordinate space (not un-flipped).
+            This matches what utils.py expects: it processes up_finger/up_toe
+            on the flipped image directly.
+            """
             corners_model = self._get_obb_corners(
                 box["x"], box["y"], box["w"], box["h"], box["angle"]
             )
+            # Model space -> downsampled flipped image space
             corners_ds = np.zeros_like(corners_model)
             corners_ds[:, 0] = (corners_model[:, 0] - x_pad) / scale
             corners_ds[:, 1] = (corners_model[:, 1] - y_pad) / scale
-            return corners_ds * inv_scale
+            # Downsampled -> original (still in flipped coordinate space)
+            corners_orig = corners_ds * inv_scale
+            return corners_orig
 
         # Process normal pass detections
         for box in normal_boxes:
@@ -333,7 +348,7 @@ class OrtYoloDetector:
             elif cls_name == "id":
                 detections["id"].append(det)
 
-        # Process flipped pass: bot_finger -> up_finger, bot_toe -> up_toe
+        # Process flipped pass detections: bot_finger -> up_finger, bot_toe -> up_toe
         for box in flipped_boxes:
             cls_name = CLASS_NAMES.get(box["class_id"], "unknown")
             if cls_name == "bot_finger":
@@ -342,6 +357,7 @@ class OrtYoloDetector:
             elif cls_name == "bot_toe":
                 corners = _model_to_flipped_original_corners(box)
                 detections["up_toe"].append({"conf": box["conf"], "corners": corners})
+            # Ignore ruler, id, up_finger, up_toe from flipped pass
 
         # Keep only best (highest conf) per category
         for category in detections:
