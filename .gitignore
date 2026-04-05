@@ -85,3 +85,18 @@ monitoring/web.yml
 
 # Local experiments / training artifacts
 Experiment/
+
+# Electron build and runtime
+electron/dist/
+electron/dist-arm64/
+electron/build-temp/
+electron/release/
+electron/sessions/
+electron/outputs/
+electron/upload/
+electron/tps_download/
+electron/image_download/
+electron/invert_image/
+electron/color_constrasted/
+electron/node_modules/
+electron/frontend/
