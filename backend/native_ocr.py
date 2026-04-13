@@ -3,11 +3,14 @@ Platform-native OCR: Apple Vision (macOS), WinRT (Windows), or Tesseract (Linux)
 Drop-in replacement for easyocr in id_extractor.py — avoids torch when possible.
 """
 
+import logging
 import platform
 import shutil
 import numpy as np
 import cv2
 import re
+
+_logger = logging.getLogger(__name__)
 
 
 def _create_reader():
@@ -18,9 +21,23 @@ def _create_reader():
     elif system == "Windows":
         return _WindowsReader()
     elif system == "Linux":
-        return _LinuxTesseractReader()
+        try:
+            return _LinuxTesseractReader()
+        except ImportError:
+            _logger.warning(
+                "Linux: tesseract not available (install apt package tesseract-ocr). "
+                "ID OCR will return no text until it is installed."
+            )
+            return _LinuxTesseractPlaceholderReader()
     else:
         raise ImportError(f"No native OCR available for {system}. Install easyocr as fallback.")
+
+
+class _LinuxTesseractPlaceholderReader:
+    """No-op OCR when tesseract is missing; avoids loading EasyOCR/torch on small servers."""
+
+    def readtext(self, image, detail=1, allowlist=None):
+        return []
 
 
 class _MacOSReader:
