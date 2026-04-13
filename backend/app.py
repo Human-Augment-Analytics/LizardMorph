@@ -1,14 +1,25 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Server-side ID OCR loads EasyOCR/torch and can OOM low-RAM hosts; set ENABLE_ID_OCR=false to skip.
+ENABLE_ID_OCR = os.getenv("ENABLE_ID_OCR", "true").lower() in ("1", "true", "yes")
+id_extractor = None
+if ENABLE_ID_OCR:
+    try:
+        import id_extractor as _id_extractor_mod
+
+        id_extractor = _id_extractor_mod
+    except ImportError:
+        id_extractor = None
+
 import utils
 import visual_individual_performance
 import xray_preprocessing
 from export_handler import ExportHandler
 from session_manager import SessionManager
-try:
-    import id_extractor
-except ImportError:
-    id_extractor = None  # native OCR and easyocr both unavailable
 
-import os
 import sys
 import hmac
 import hashlib
@@ -20,7 +31,6 @@ from base64 import b64encode
 import time
 import logging
 import shutil
-from dotenv import load_dotenv
 import psutil
 import threading
 import time
@@ -34,8 +44,7 @@ except Exception:  # pragma: no cover
     generate_latest = None
     CONTENT_TYPE_LATEST = "text/plain"
 
-# Load ENV variables
-load_dotenv()
+# Load ENV variables (dotenv already applied at module start for ENABLE_ID_OCR / id_extractor)
 frontend_dir = os.getenv("FRONTEND_DIR", "../frontend/dist")
 session_dir = os.getenv("SESSION_DIR", "sessions")
 
@@ -105,6 +114,10 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+logger.info(
+    "ID OCR (extract_id): %s",
+    "enabled" if id_extractor is not None else "disabled (ENABLE_ID_OCR=false or import failed)",
+)
 logger.info(f"Default predictor file: {predictor_file}")
 logger.info(f"Dorsal predictor file: {DORSAL_PREDICTOR_FILE}")
 logger.info(f"Lateral predictor file: {LATERAL_PREDICTOR_FILE}")

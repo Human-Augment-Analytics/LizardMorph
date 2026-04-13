@@ -194,11 +194,24 @@ export class ApiService {
       body: formData,
     });
 
+    const bodyText = await res.text();
     if (!res.ok) {
-      const errorResult = await res.json();
-      throw new Error(errorResult.error ?? "Failed to extract ID");
+      let message = `extract_id failed (${res.status})`;
+      try {
+        const errJson = JSON.parse(bodyText) as { error?: string };
+        if (errJson?.error) message = errJson.error;
+      } catch {
+        if (bodyText.trim() && !bodyText.trim().startsWith("<")) {
+          message = bodyText.trim().slice(0, 200);
+        }
+      }
+      throw new Error(message);
     }
-    return res.json();
+    try {
+      return JSON.parse(bodyText) as ExtractIdResult;
+    } catch {
+      throw new Error("Invalid JSON from extract_id");
+    }
   }
 
   static async listPredictors(): Promise<PredictorMeta[]> {
