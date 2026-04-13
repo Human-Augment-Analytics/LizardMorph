@@ -16,5 +16,6 @@ ultralytics
 torch
 torchvision
 easyocr
-onnxruntime  # Use onnxruntime-silicon on Apple Silicon for CoreML GPU support
+pytesseract  # Linux /extract_id OCR via system tesseract (no torch); apt install tesseract-ocr
+onnxruntime  # Use onnxruntime-silicon on Apple Silicon; onnxruntime-openvino on Intel for OpenVINO EP
 openvino

@@ -104,7 +104,7 @@ def crop_from_yolo_box(image, x_center, y_center, box_width, box_height, enhance
     return crop
 
 def detect_digits(image, conf_threshold=0.5):
-    """Run EasyOCR on the image to extract digits."""
+    """Run OCR (native Tesseract/Vision/WinRT, else EasyOCR) on the image to extract digits."""
     reader = _get_reader()
 
     best_text = ""
