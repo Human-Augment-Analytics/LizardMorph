@@ -1,9 +1,10 @@
 """
-Platform-native OCR using Apple Vision (macOS) or WinRT OCR (Windows).
-Drop-in replacement for easyocr in id_extractor.py — no torch dependency.
+Platform-native OCR: Apple Vision (macOS), WinRT (Windows), or Tesseract (Linux).
+Drop-in replacement for easyocr in id_extractor.py — avoids torch when possible.
 """
 
 import platform
+import shutil
 import numpy as np
 import cv2
 import re
@@ -16,6 +17,8 @@ def _create_reader():
         return _MacOSReader()
     elif system == "Windows":
         return _WindowsReader()
+    elif system == "Linux":
+        return _LinuxTesseractReader()
     else:
         raise ImportError(f"No native OCR available for {system}. Install easyocr as fallback.")
 
@@ -157,3 +160,55 @@ class _WindowsReader:
             results.append((bbox, text, conf))
 
         return results
+
+
+class _LinuxTesseractReader:
+    """OCR using the tesseract binary (no torch). Requires `tesseract` on PATH."""
+
+    def __init__(self):
+        if not shutil.which("tesseract"):
+            raise ImportError("tesseract binary not found; install e.g. apt install tesseract-ocr")
+        import pytesseract
+
+        pytesseract.get_tesseract_version()
+
+    def readtext(self, image, detail=1, allowlist=None):
+        """Match easyocr readtext: list of (bbox, text, confidence)."""
+        import pytesseract
+        from pytesseract import Output
+
+        if image is None or image.size == 0:
+            return []
+
+        if len(image.shape) == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image
+        if gray.dtype != np.uint8:
+            gray = np.clip(gray, 0, 255).astype(np.uint8)
+
+        config = "--oem 3 --psm 7"
+        if allowlist:
+            config += f" -c tessedit_char_whitelist={allowlist}"
+
+        text = pytesseract.image_to_string(gray, config=config).strip()
+        if not text:
+            return []
+
+        data = pytesseract.image_to_data(gray, config=config, output_type=Output.DICT)
+        confs = []
+        for i, w in enumerate(data.get("text", [])):
+            w = (w or "").strip()
+            if not w:
+                continue
+            try:
+                c = int(data["conf"][i])
+            except (ValueError, IndexError, KeyError):
+                continue
+            if c >= 0:
+                confs.append(c / 100.0)
+        conf = sum(confs) / len(confs) if confs else 0.75
+
+        h, w = gray.shape[:2]
+        bbox = [[0, 0], [w, 0], [w, h], [0, h]]
+        return [(bbox, text, float(conf))]
