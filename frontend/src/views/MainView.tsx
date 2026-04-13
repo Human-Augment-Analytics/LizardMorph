@@ -20,6 +20,7 @@ import { getMainViewStyles } from "./MainView.style";
 import { ThemeContext } from "../contexts/ThemeContext";
 import { SVGViewer } from "../components/SVGViewer";
 import { ApiService } from "../services/ApiService";
+import { extractIdFromImageUrl } from "../services/IdOcrService";
 import { ExportService } from "../services/ExportService";
 import { FreePredictorPanel } from "../components/FreePredictorPanel";
 import type { PredictorMeta } from "../services/ApiService";
@@ -462,21 +463,31 @@ export class MainView extends Component<MainProps, MainState> {
           // Extract ID for toepad view type (only for the first/current image)
           if (this.props.selectedViewType === "toepads") {
             try {
-              // Find the ID bounding box from client-side YOLO detection
               const idBox = processedImage.boundingBoxes?.find(
                 (b) => b.label?.toLowerCase() === "id"
               );
-              const idResult = await ApiService.extractId(
-                result.name,
-                idBox ? { left: idBox.left, top: idBox.top, width: idBox.width, height: idBox.height } : undefined
-              );
+              const idBoxPx = idBox
+                ? { left: idBox.left, top: idBox.top, width: idBox.width, height: idBox.height }
+                : undefined;
+
+              // Prefer in-browser Tesseract on the ID crop (no server RAM / no tesseract apt).
+              let idResult = idBoxPx
+                ? await extractIdFromImageUrl(processedImage.imageSets.original, idBoxPx)
+                : { success: false as const, error: "no_id_box" };
+
+              if ((!idResult.success || !idResult.id) && idBoxPx) {
+                idResult = await ApiService.extractId(result.name, idBoxPx);
+              }
+              if ((!idResult.success || !idResult.id) && !idBoxPx) {
+                idResult = await ApiService.extractId(result.name, undefined);
+              }
+
               if (idResult.success && idResult.id) {
                 console.log("Extracted ID:", idResult.id, "confidence:", idResult.confidence);
 
                 const confidence = idResult.confidence ?? 0;
                 const extractedId = idResult.id;
 
-                // Store the extracted ID (UI will show overwrite option if it differs)
                 this.setState({
                   extractedId: extractedId,
                   extractedIdConfidence: confidence,
@@ -484,7 +495,6 @@ export class MainView extends Component<MainProps, MainState> {
               }
             } catch (idErr) {
               console.warn("Failed to extract ID:", idErr);
-              // Don't fail the whole upload if ID extraction fails
             }
           }
         } catch (err) {
