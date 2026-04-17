@@ -43,6 +43,13 @@ backend/curl_*.txt
 backend/bus.jpg
 backend/landmark_comparison.jpg
 
+# Runtime uploads (server)
+backend/uploads/
+backend/uploads
+
+# Runtime logs (server)
+*.log
+
 # Debug / scratch scripts (stay in backend root, not committed)
 backend/debug_*.py
 
@@ -76,3 +83,23 @@ monitoring/web.yml
 .claude
 !.env.example
 !model-api/.env.example
+
+.worktrees/
+
+# Local experiments / training artifacts
+Experiment/
+
+# Electron build and runtime
+electron/dist/
+electron/dist-arm64/
+electron/build-temp/
+electron/release/
+electron/sessions/
+electron/outputs/
+electron/upload/
+electron/tps_download/
+electron/image_download/
+electron/invert_image/
+electron/color_constrasted/
+electron/node_modules/
+electron/frontend/

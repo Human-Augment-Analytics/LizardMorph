@@ -16,10 +16,14 @@ import { ImageVersionControls } from "../components/ImageVersionControls";
 import { HistoryPanel } from "../components/HistoryPanel";
 import { MeasurementsAndScalePanel } from "../components/MeasurementsAndScalePanel";
 import { SessionInfo } from "../components/SessionInfo";
-import { MainViewStyles } from "./MainView.style";
+import { getMainViewStyles } from "./MainView.style";
+import { ThemeContext } from "../contexts/ThemeContext";
 import { SVGViewer } from "../components/SVGViewer";
 import { ApiService } from "../services/ApiService";
+import { extractIdFromImageUrl } from "../services/IdOcrService";
 import { ExportService } from "../services/ExportService";
+import { FreePredictorPanel } from "../components/FreePredictorPanel";
+import type { PredictorMeta } from "../services/ApiService";
 
 interface MainState {
   currentImageIndex: number;
@@ -57,13 +61,21 @@ interface MainState {
   currentBoundingBoxes: BoundingBox[];
   extractedId: string | null;
   extractedIdConfidence: number | null;
+  availablePredictors: PredictorMeta[];
+  freePredictorId: string | null;
+  predictorsLoading: boolean;
+  predictorsError: string | null;
+  isFreePredictorPanelOpen: boolean;
 }
 
 interface MainProps {
   selectedViewType: LizardViewType;
+  onNavigateHome?: () => void;
 }
 
 export class MainView extends Component<MainProps, MainState> {
+  static contextType = ThemeContext;
+  declare context: React.ContextType<typeof ThemeContext>;
   readonly svgRef = createRef<SVGSVGElement>();
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
   state: MainState = {
@@ -92,8 +104,8 @@ export class MainView extends Component<MainProps, MainState> {
     lizardCount: 0,
     zoomTransform: d3.zoomIdentity,
     scaleSettings: {
-      pointAId: 17,
-      pointBId: 18,
+      pointAId: 0,
+      pointBId: 1,
       value: 10,
       units: "mm",
     },
@@ -108,6 +120,11 @@ export class MainView extends Component<MainProps, MainState> {
     currentBoundingBoxes: [],
     extractedId: null,
     extractedIdConfidence: null,
+    availablePredictors: [],
+    freePredictorId: null,
+    predictorsLoading: false,
+    predictorsError: null,
+    isFreePredictorPanelOpen: this.props.selectedViewType === "free",
   };
   componentDidMount(): void {
     this.initializeApp();
@@ -117,10 +134,6 @@ export class MainView extends Component<MainProps, MainState> {
     if (this.intervalId) {
       clearInterval(this.intervalId);
     }
-    // Clean up history on component unmount
-    this.clearHistory();
-    // Remove beforeunload event listener
-    window.removeEventListener("beforeunload", this.handleBeforeUnload);
   }
   private async initializeApp(): Promise<void> {
     try {
@@ -133,9 +146,15 @@ export class MainView extends Component<MainProps, MainState> {
       this.setState({ sessionReady: true });
       console.log("Session initialized successfully");
 
-      // Now proceed with normal initialization
+      if (this.props.selectedViewType === "free") {
+        await this.refreshPredictors();
+      }
+
+      console.log("Initialized view type:", this.props.selectedViewType);
+      
+      // Removed setupBeforeUnloadHandler(); to ensure session persists across refreshes
       this.fetchUploadedFiles();
-      this.setupBeforeUnloadHandler();
+      this.countUniqueImages();
     } catch (error) {
       console.error("Failed to initialize app:", error);
       // Show error to user or handle gracefully
@@ -153,18 +172,15 @@ export class MainView extends Component<MainProps, MainState> {
 
   // Effect to count unique images in upload folder
   componentDidUpdate(prevProps: MainProps, prevState: MainState): void {
-    // Filter history when viewType changes
-    if (prevProps.selectedViewType !== this.props.selectedViewType) {
-      this.setState((currentState) => ({
-        uploadHistory: currentState.uploadHistory.filter(
-          item => item.viewType === this.props.selectedViewType || !item.viewType
-        ),
-        // Also filter images to only show those for current viewType
-        images: currentState.images.filter((_img, idx) => {
-          const historyItem = currentState.uploadHistory.find(h => h.index === idx);
-          return historyItem?.viewType === this.props.selectedViewType || !historyItem?.viewType;
-        }),
-      }));
+    // If view type changed, we might want to auto-select the first image for the new view
+    // but we'll handle that in a separate initialization/fetch logic or just let the user click.
+    // The key is to STOP destructive filtering here.
+
+    if (
+      prevProps.selectedViewType !== this.props.selectedViewType &&
+      this.props.selectedViewType === "free"
+    ) {
+      this.refreshPredictors();
     }
     
     if (prevState.images !== this.state.images) {
@@ -182,7 +198,6 @@ export class MainView extends Component<MainProps, MainState> {
       this.state.currentImageURL &&
       this.state.imageWidth &&
       this.state.imageHeight &&
-      this.state.originalScatterData.length > 0 &&
       (prevState.currentImageURL !== this.state.currentImageURL ||
         prevState.imageWidth !== this.state.imageWidth ||
         prevState.imageHeight !== this.state.imageHeight ||
@@ -191,6 +206,90 @@ export class MainView extends Component<MainProps, MainState> {
       this.renderSVG();
     }
   }
+
+  private readonly refreshPredictors = async (): Promise<void> => {
+    try {
+      this.setState({ predictorsLoading: true, predictorsError: null });
+      const predictors = await ApiService.listPredictors();
+      this.setState((prev) => {
+        const stillValid =
+          prev.freePredictorId &&
+          predictors.some((p) => p.id === prev.freePredictorId);
+        return {
+          availablePredictors: predictors,
+          freePredictorId: stillValid ? prev.freePredictorId : null,
+        };
+      });
+    } catch (e) {
+      this.setState({
+        predictorsError: e instanceof Error ? e.message : "Failed to load predictors",
+      });
+    } finally {
+      this.setState({ predictorsLoading: false });
+    }
+  };
+
+  private readonly handleUploadFreePredictor = async (file: File): Promise<void> => {
+    try {
+      this.setState({ predictorsLoading: true, predictorsError: null });
+      const meta = await ApiService.uploadPredictor(file);
+      const predictors = await ApiService.listPredictors();
+      this.setState({
+        availablePredictors: predictors,
+        freePredictorId: meta.id,
+      });
+    } catch (e) {
+      this.setState({
+        predictorsError: e instanceof Error ? e.message : "Failed to upload predictor",
+      });
+    } finally {
+      this.setState({ predictorsLoading: false });
+    }
+  };
+
+  private readonly handleDeleteSelectedFreePredictor = async (): Promise<void> => {
+    const id = this.state.freePredictorId;
+    if (!id) return;
+    const ok = window.confirm("Delete the selected predictor? This cannot be undone.");
+    if (!ok) return;
+    try {
+      this.setState({ predictorsLoading: true, predictorsError: null });
+      await ApiService.deletePredictor(id);
+      const predictors = await ApiService.listPredictors();
+      this.setState({ availablePredictors: predictors, freePredictorId: null });
+    } catch (e) {
+      this.setState({
+        predictorsError: e instanceof Error ? e.message : "Failed to delete predictor",
+      });
+    } finally {
+      this.setState({ predictorsLoading: false });
+    }
+  };
+
+  private readonly handleFreeAutoplace = async (): Promise<void> => {
+    const filename = this.state.imageFilename;
+    const predictorId = this.state.freePredictorId;
+    if (!filename || !predictorId) return;
+
+    try {
+      this.setState({ dataLoading: true, dataError: null });
+      const result = await ApiService.freeAutoplace(filename, predictorId);
+      const coords = (result.coords ?? []) as Point[];
+      this.setState({
+        scatterData: coords,
+        originalScatterData: JSON.parse(JSON.stringify(coords)),
+        needsScaling: true,
+        selectedPoint: null,
+        currentBoundingBoxes: result.bounding_boxes || [],
+      });
+    } catch (e) {
+      this.setState({
+        dataError: e instanceof Error ? e : new Error("Auto-place failed"),
+      });
+    } finally {
+      this.setState({ dataLoading: false });
+    }
+  };
   private readonly countUniqueImages = (): void => {
     this.setState((prevState) => {
       const uniqueImages = new Set(prevState.images.map((img) => img.name));
@@ -364,14 +463,31 @@ export class MainView extends Component<MainProps, MainState> {
           // Extract ID for toepad view type (only for the first/current image)
           if (this.props.selectedViewType === "toepads") {
             try {
-              const idResult = await ApiService.extractId(result.name);
+              const idBox = processedImage.boundingBoxes?.find(
+                (b) => b.label?.toLowerCase() === "id"
+              );
+              const idBoxPx = idBox
+                ? { left: idBox.left, top: idBox.top, width: idBox.width, height: idBox.height }
+                : undefined;
+
+              // Prefer in-browser Tesseract on the ID crop (no server RAM / no tesseract apt).
+              let idResult = idBoxPx
+                ? await extractIdFromImageUrl(processedImage.imageSets.original, idBoxPx)
+                : { success: false as const, error: "no_id_box" };
+
+              if ((!idResult.success || !idResult.id) && idBoxPx) {
+                idResult = await ApiService.extractId(result.name, idBoxPx);
+              }
+              if ((!idResult.success || !idResult.id) && !idBoxPx) {
+                idResult = await ApiService.extractId(result.name, undefined);
+              }
+
               if (idResult.success && idResult.id) {
                 console.log("Extracted ID:", idResult.id, "confidence:", idResult.confidence);
 
                 const confidence = idResult.confidence ?? 0;
                 const extractedId = idResult.id;
 
-                // Store the extracted ID (UI will show overwrite option if it differs)
                 this.setState({
                   extractedId: extractedId,
                   extractedIdConfidence: confidence,
@@ -379,7 +495,6 @@ export class MainView extends Component<MainProps, MainState> {
               }
             } catch (idErr) {
               console.warn("Failed to extract ID:", idErr);
-              // Don't fail the whole upload if ID extraction fails
             }
           }
         } catch (err) {
@@ -451,8 +566,7 @@ export class MainView extends Component<MainProps, MainState> {
     if (
       this.state.currentImageURL &&
       this.state.imageWidth &&
-      this.state.imageHeight &&
-      this.state.originalScatterData.length > 0
+      this.state.imageHeight
     ) {
       console.log(
         "Rendering SVG with image dimensions:",
@@ -485,12 +599,12 @@ export class MainView extends Component<MainProps, MainState> {
         // Only calculate scale once per image load
         const scaleX = d3
           .scaleLinear()
-          .domain([0.5, this.state.imageWidth + 0.5])
+          .domain([0, this.state.imageWidth])
           .range([0, width]);
 
         const scaleY = d3
           .scaleLinear()
-          .domain([0.5, this.state.imageHeight + 0.5])
+          .domain([0, this.state.imageHeight])
           .range([0, height]);
 
         // Store scales in refs (simulated with state for this conversion)
@@ -830,19 +944,19 @@ export class MainView extends Component<MainProps, MainState> {
     try {
       const files = await ApiService.fetchUploadedFiles();
 
-      // Create history entries for files that aren't in current upload history
+      // Create history entries for files
       const currentFileNames = new Set(
         this.state.uploadHistory.map((item) => item.name)
       );
       const newHistory = [...this.state.uploadHistory];
 
-      files.forEach((file: string) => {
-        if (!currentFileNames.has(file)) {
+      files.forEach((fileObj) => {
+        if (!currentFileNames.has(fileObj.filename)) {
           newHistory.push({
-            name: file,
+            name: fileObj.filename,
             timestamp: "From uploads folder",
             index: -1, // Will be set when loaded
-            viewType: this.props.selectedViewType,
+            viewType: fileObj.view_type === "toepad" ? "toepads" : fileObj.view_type,
           });
         }
       });
@@ -851,11 +965,19 @@ export class MainView extends Component<MainProps, MainState> {
         this.setState({ uploadHistory: newHistory });
       }
 
-      // Update lizard count to include ALL files in the upload folder
+      // Update lizard count
       this.setState({ lizardCount: files.length });
+
+      // AUTO-LOAD: If no image is currently selected, try to load the first image for the CURRENT view
+      if (!this.state.imageFilename && newHistory.length > 0) {
+        const firstInView = newHistory.find(h => h.viewType === this.props.selectedViewType);
+        if (firstInView) {
+          console.log("Auto-loading first image for current view:", firstInView.name);
+          this.loadImageFromUploads(firstInView.name);
+        }
+      }
     } catch (error) {
       console.log("Error fetching upload directory files:", error);
-      // Even if fetch fails, count unique images in the current session
       this.countUniqueImages();
     }
   };
@@ -982,32 +1104,21 @@ export class MainView extends Component<MainProps, MainState> {
     this.setState({ toepadPredictorType: type });
   };
 
-  // Add cleanup functionality to clear history when the app closes, including beforeunload event handler
-  private readonly setupBeforeUnloadHandler = (): void => {
-    window.addEventListener("beforeunload", this.handleBeforeUnload);
-    window.addEventListener("unload", this.handleBeforeUnload);
-  };
-  private readonly handleBeforeUnload = async (): Promise<void> => {
-    try {
-      // Clear session history before page closes
-      await this.clearHistory();
-    } catch (error) {
-      console.error("Failed to clear session on page close:", error);
-    }
-  };
-
+  // Automatically called on clearBtn click from header
   private readonly clearHistory = async (): Promise<void> => {
     try {
       await ApiService.clearHistory();
-      console.log("Session history cleared");
     } catch (error) {
       console.error("Failed to clear history:", error);
     }
   };
+
   render() {
+    const { resolved: theme, preference: themePreference, setPreference: setThemePref } = this.context;
+    const mainStyles = getMainViewStyles(theme);
     return (
-      <div style={MainViewStyles.container}>
-        {this.state.sessionReady && <SessionInfo />}
+      <div style={mainStyles.container}>
+        {this.state.sessionReady && <SessionInfo onNavigateHome={this.props.onNavigateHome} theme={theme} themePreference={themePreference} onThemeChange={setThemePref} />}
         <Header
           lizardCount={this.state.lizardCount}
           loading={this.state.loading}
@@ -1017,34 +1128,70 @@ export class MainView extends Component<MainProps, MainState> {
           onUpload={this.handleUpload}
           onExportAll={this.handleScatterData}
           onClearHistory={this.handleClearHistory}
-          onBackToSelection={() => window.location.href = '/'}
+          onBackToSelection={() => {
+            if (this.props.onNavigateHome) {
+              this.props.onNavigateHome();
+            } else {
+              window.location.href = "/";
+            }
+          }}
           onOpenMeasurementsModal={this.handleOpenMeasurementsAndScaleModal}
           toepadPredictorType={this.state.toepadPredictorType}
           onToepadPredictorTypeChange={this.handleToepadPredictorTypeChange}
+          theme={theme}
         />
-        <div style={MainViewStyles.mainContentArea}>
+        <div style={mainStyles.mainContentArea}>
           {" "}
           <HistoryPanel
             uploadHistory={this.state.uploadHistory.filter(
-              item => item.viewType === this.props.selectedViewType || !item.viewType
+              item => item.viewType === this.props.selectedViewType
             )}
             currentImageIndex={this.state.currentImageIndex}
             uploadProgress={this.state.uploadProgress}
             onSelectImage={this.changeCurrentImage}
             onLoadFromUploads={this.loadImageFromUploads}
+            theme={theme}
           />
-          <div style={MainViewStyles.svgContainer}>
+          <div style={mainStyles.svgContainer}>
             {" "}
             <NavigationControls
-              currentImageIndex={this.state.currentImageIndex}
-              totalImages={this.state.images.length}
+              currentImageIndex={(() => {
+                const filtered = this.state.images.filter((img) => {
+                  const historyItem = this.state.uploadHistory.find(h => h.name === img.name);
+                  return historyItem?.viewType === this.props.selectedViewType;
+                });
+                return filtered.findIndex(img => img.name === this.state.imageFilename);
+              })()}
+              totalImages={this.state.images.filter((img) => {
+                const historyItem = this.state.uploadHistory.find(h => h.name === img.name);
+                return historyItem?.viewType === this.props.selectedViewType;
+              }).length}
               loading={this.state.loading}
-              onPrevious={() =>
-                this.changeCurrentImage(this.state.currentImageIndex - 1)
-              }
-              onNext={() =>
-                this.changeCurrentImage(this.state.currentImageIndex + 1)
-              }
+              onPrevious={() => {
+                const filtered = this.state.images.filter((img) => {
+                  const historyItem = this.state.uploadHistory.find(h => h.name === img.name);
+                  return historyItem?.viewType === this.props.selectedViewType;
+                });
+                const filteredIdx = filtered.findIndex(img => img.name === this.state.imageFilename);
+                if (filteredIdx > 0) {
+                  const prevImg = filtered[filteredIdx - 1];
+                  const absoluteIdx = this.state.images.findIndex(img => img.name === prevImg.name);
+                  this.changeCurrentImage(absoluteIdx);
+                }
+              }}
+              onNext={() => {
+                const filtered = this.state.images.filter((img) => {
+                  const historyItem = this.state.uploadHistory.find(h => h.name === img.name);
+                  return historyItem?.viewType === this.props.selectedViewType;
+                });
+                const filteredIdx = filtered.findIndex(img => img.name === this.state.imageFilename);
+                if (filteredIdx >= 0 && filteredIdx < filtered.length - 1) {
+                  const nextImg = filtered[filteredIdx + 1];
+                  const absoluteIdx = this.state.images.findIndex(img => img.name === nextImg.name);
+                  this.changeCurrentImage(absoluteIdx);
+                }
+              }}
+              theme={theme}
             />
             <ImageVersionControls
               dataFetched={this.state.dataFetched}
@@ -1060,7 +1207,69 @@ export class MainView extends Component<MainProps, MainState> {
               isEditMode={this.state.isEditMode}
               onToggleEditMode={this.handleToggleEditMode}
               onResetZoom={this.handleResetZoom}
+              theme={theme}
             />
+            {this.props.selectedViewType === "free" && (
+              <div
+                style={{
+                  marginTop: 12,
+                  border: `1px solid ${theme === "dark" ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.10)"}`,
+                  borderRadius: 12,
+                  overflow: "hidden",
+                  background: theme === "dark" ? "rgba(30,42,58,0.85)" : "rgba(255,255,255,0.85)",
+                }}
+              >
+                <button
+                  onClick={() =>
+                    this.setState((prev) => ({
+                      isFreePredictorPanelOpen: !prev.isFreePredictorPanelOpen,
+                    }))
+                  }
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    padding: "10px 12px",
+                    background: theme === "dark" ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)",
+                    border: "none",
+                    cursor: "pointer",
+                    fontWeight: 800,
+                    color: theme === "dark" ? "#e0e0e0" : "#111",
+                  }}
+                  title="Toggle predictor panel"
+                >
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span>Predictor</span>
+                    <span style={{ fontWeight: 700, fontSize: 12, color: theme === "dark" ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.55)" }}>
+                      (Free mode)
+                    </span>
+                  </span>
+                  <span style={{ fontSize: 12, color: theme === "dark" ? "rgba(255,255,255,0.65)" : "rgba(0,0,0,0.65)" }}>
+                    {this.state.isFreePredictorPanelOpen ? "Hide" : "Show"}
+                  </span>
+                </button>
+
+                {this.state.isFreePredictorPanelOpen && (
+                  <div style={{ padding: "0 0 12px 0" }}>
+                    <FreePredictorPanel
+                      predictors={this.state.availablePredictors}
+                      selectedPredictorId={this.state.freePredictorId}
+                      predictorsLoading={this.state.predictorsLoading}
+                      error={this.state.predictorsError}
+                      hasCurrentImage={Boolean(this.state.imageFilename)}
+                      onRefresh={this.refreshPredictors}
+                      onSelectPredictorId={(id) => this.setState({ freePredictorId: id })}
+                      onUploadPredictor={this.handleUploadFreePredictor}
+                      onDeleteSelected={this.handleDeleteSelectedFreePredictor}
+                      onAutoplace={this.handleFreeAutoplace}
+                      theme={theme}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
             {/* Display extracted ID for toepad view */}
             {this.props.selectedViewType === "toepads" && this.state.extractedId && (() => {
               const filenameWithoutExt = this.state.imageFilename?.replace(/\.[^/.]+$/, "") ?? "";
@@ -1139,6 +1348,7 @@ export class MainView extends Component<MainProps, MainState> {
               height: "100%",
             }}>
               <SVGViewer
+                selectedViewType={this.props.selectedViewType}
                 dataFetched={this.state.dataFetched}
                 loading={this.state.loading}
                 dataLoading={this.state.dataLoading}
@@ -1164,6 +1374,7 @@ export class MainView extends Component<MainProps, MainState> {
                 isModalOpen={this.state.isMeasurementsAndScaleModalOpen}
                 boundingBoxes={this.state.currentBoundingBoxes}
                 fitToContainerWidth={this.props.selectedViewType === "toepads"}
+                theme={theme}
               />
             </div>
           </div>
@@ -1178,6 +1389,7 @@ export class MainView extends Component<MainProps, MainState> {
             isModal={true}
             onClose={this.handleCloseMeasurementsAndScaleModal}
             viewType={this.props.selectedViewType}
+            theme={theme}
           />
         )}
       </div>

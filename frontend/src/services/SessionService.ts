@@ -1,6 +1,13 @@
 // Session management service for handling session lifecycle and storage
-import { API_URL } from "./config";
+import { API_URL, getApiUrl } from "./config";
 import { CookieUtils } from "./CookieUtils";
+
+async function apiUrl(): Promise<string> {
+  if (window.electronAPI?.isElectron) {
+    return getApiUrl();
+  }
+  return API_URL;
+}
 
 interface SessionInfo {
   success: boolean;
@@ -26,7 +33,7 @@ export class SessionService {
     this.sessionId = this.getStoredSessionId();
     console.log(
       `Using ${
-        this.useCookies ? "cookies" : "sessionStorage"
+        this.useCookies ? "cookies" : "localStorage"
       } for session persistence`
     );
   }
@@ -39,35 +46,19 @@ export class SessionService {
     const cachedTimestamp = this.getStoredTimestamp();
 
     if (cachedSessionId && cachedTimestamp) {
-      const timestamp = parseInt(cachedTimestamp, 10);
-      const now = Date.now();
-
-      // Check if cached session is still within the cache duration
-      if (now - timestamp < this.SESSION_CACHE_DURATION) {
-        this.sessionId = cachedSessionId;
-        console.log(
-          `Reusing cached session: ${cachedSessionId.substring(0, 8)} (${
-            this.useCookies ? "from cookies" : "from sessionStorage"
-          })`
-        );
-        return cachedSessionId;
-      }
-
-      // Cache expired, validate with server
+      // Always validate with server (backend may have restarted, losing in-memory sessions)
       try {
         const isValid = await this.validateSession(cachedSessionId);
         if (isValid) {
           this.sessionId = cachedSessionId;
-          // Update timestamp
           this.updateStoredTimestamp();
           console.log(
             `Reusing validated session: ${cachedSessionId.substring(0, 8)} (${
-              this.useCookies ? "from cookies" : "from sessionStorage"
+              this.useCookies ? "from cookies" : "from localStorage"
             })`
           );
           return cachedSessionId;
         } else {
-          // Session is invalid, clear it and start new one
           console.log("Cached session is invalid, starting new session");
           this.clearSession();
         }
@@ -89,7 +80,8 @@ export class SessionService {
    */
   static async startNewSession(): Promise<string> {
     try {
-      const response = await fetch(`${API_URL}/session/start`, {
+      const base = await apiUrl();
+      const response = await fetch(`${base}/session/start`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -107,7 +99,7 @@ export class SessionService {
         this.storeSession(data.session_id);
         console.log(
           `Started new session: ${data.session_id.substring(0, 8)} (stored in ${
-            this.useCookies ? "cookies" : "sessionStorage"
+            this.useCookies ? "cookies" : "localStorage"
           })`
         );
         return data.session_id;
@@ -149,7 +141,8 @@ export class SessionService {
       throw new Error("No active session");
     }
 
-    const response = await fetch(`${API_URL}/session/info`, {
+    const base = await apiUrl();
+    const response = await fetch(`${base}/session/info`, {
       method: "GET",
       headers: {
         ...this.getSessionHeaders(),
@@ -176,7 +169,8 @@ export class SessionService {
    */
   static async validateSession(sessionId: string): Promise<boolean> {
     try {
-      const response = await fetch(`${API_URL}/session/info`, {
+      const base = await apiUrl();
+      const response = await fetch(`${base}/session/info`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -222,8 +216,8 @@ export class SessionService {
   /**
    * Get the current storage strategy being used
    */
-  static getStorageType(): "cookies" | "sessionStorage" {
-    return this.useCookies ? "cookies" : "sessionStorage";
+  static getStorageType(): "cookies" | "localStorage" {
+    return this.useCookies ? "cookies" : "localStorage";
   }
 
   /**
@@ -240,7 +234,7 @@ export class SessionService {
     if (this.useCookies) {
       return CookieUtils.getCookie(this.SESSION_KEY);
     }
-    return sessionStorage.getItem(this.SESSION_KEY);
+    return localStorage.getItem(this.SESSION_KEY);
   }
 
   /**
@@ -250,7 +244,7 @@ export class SessionService {
     if (this.useCookies) {
       return CookieUtils.getCookie(this.SESSION_TIMESTAMP_KEY);
     }
-    return sessionStorage.getItem(this.SESSION_TIMESTAMP_KEY);
+    return localStorage.getItem(this.SESSION_TIMESTAMP_KEY);
   }
 
   /**
@@ -269,8 +263,8 @@ export class SessionService {
         this.COOKIE_EXPIRY_DAYS
       );
     } else {
-      sessionStorage.setItem(this.SESSION_KEY, sessionId);
-      sessionStorage.setItem(this.SESSION_TIMESTAMP_KEY, Date.now().toString());
+      localStorage.setItem(this.SESSION_KEY, sessionId);
+      localStorage.setItem(this.SESSION_TIMESTAMP_KEY, Date.now().toString());
     }
   }
 
@@ -286,7 +280,7 @@ export class SessionService {
         this.COOKIE_EXPIRY_DAYS
       );
     } else {
-      sessionStorage.setItem(this.SESSION_TIMESTAMP_KEY, now);
+      localStorage.setItem(this.SESSION_TIMESTAMP_KEY, now);
     }
   }
 
@@ -298,8 +292,8 @@ export class SessionService {
       CookieUtils.deleteCookie(this.SESSION_KEY);
       CookieUtils.deleteCookie(this.SESSION_TIMESTAMP_KEY);
     } else {
-      sessionStorage.removeItem(this.SESSION_KEY);
-      sessionStorage.removeItem(this.SESSION_TIMESTAMP_KEY);
+      localStorage.removeItem(this.SESSION_KEY);
+      localStorage.removeItem(this.SESSION_TIMESTAMP_KEY);
     }
   }
 }

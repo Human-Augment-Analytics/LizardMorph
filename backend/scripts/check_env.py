@@ -2,10 +2,10 @@
 check_env.py
 ------------
 Verify that all required Python packages and modules are importable.
-Run this after setting up the conda environment to confirm everything is installed.
+Run this after setting up the virtual environment to confirm everything is installed.
 
 Usage:
-    conda run -n lizard python scripts/check_env.py
+    cd backend && uv run python scripts/check_env.py
 """
 import sys
 

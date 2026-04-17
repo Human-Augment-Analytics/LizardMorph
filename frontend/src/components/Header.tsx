@@ -1,5 +1,7 @@
 import React, { Component } from "react";
-import { HeaderStyles } from "./Header.style";
+import { getHeaderStyles } from "./Header.style";
+import type { ResolvedTheme } from "../contexts/ThemeContext";
+import lizard_logo from "../../public/lizard.svg";
 
 interface HeaderProps {
   lizardCount: number;
@@ -14,6 +16,7 @@ interface HeaderProps {
   onOpenMeasurementsModal?: () => void;
   toepadPredictorType?: string;
   onToepadPredictorTypeChange?: (type: string) => void;
+  theme: ResolvedTheme;
 }
 
 interface HeaderState {
@@ -44,46 +47,63 @@ export class Header extends Component<HeaderProps, HeaderState> {
       onExportAll,
       onClearHistory,
       onOpenMeasurementsModal,
+      selectedViewType,
+      theme,
     } = this.props;
 
+    const styles = getHeaderStyles(theme);
     const { isMenuOpen } = this.state;
+    const isFree = selectedViewType === "free";
+    const uploadLabel = loading
+      ? "Uploading..."
+      : isFree
+        ? "Upload Images"
+        : "Upload X-Ray Images";
 
     return (
-      <div style={HeaderStyles.header}>
-        <div style={HeaderStyles.infoBox}>
-          <div style={HeaderStyles.infoBoxContent}>
-            <p style={HeaderStyles.infoBoxParagraph}>
+      <div style={styles.header}>
+        <div style={styles.infoBox}>
+          <div style={styles.infoBoxContent}>
+            <p style={styles.infoBoxParagraph}>
               Made with ❤️ by the Human Augmented Analytics Group (HAAG)
             </p>
-            <p style={HeaderStyles.infoBoxParagraph}>
+            <p style={styles.infoBoxParagraph}>
               In Partnership with Dr. Stroud
             </p>
-            <p style={HeaderStyles.infoBoxItalic}>
+            <p style={styles.infoBoxItalic}>
               Georgia Institute of Technology
             </p>
-            <a
-              href="https://github.com/Human-Augment-Analytics/Lizard-CV-Web-App"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={HeaderStyles.infoBoxLink}
-            >
-              View on GitHub
-            </a>
-            <div style={HeaderStyles.lizardCount}>
+            <div style={styles.infoBoxLinkRow}>
+              <a
+                href="https://github.com/Human-Augment-Analytics/Lizard-CV-Web-App"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={styles.infoBoxLink}
+              >
+                View on GitHub
+              </a>
+              <span
+                style={styles.appVersion}
+                title={`Build ${__BUILD_VERSION__}`}
+              >
+                {__APP_VERSION__}
+              </span>
+            </div>
+            <div style={styles.lizardCount}>
               <strong>Number of Lizards Analyzed: {lizardCount}</strong>
             </div>
           </div>
         </div>
-        <div style={HeaderStyles.mainContent}>
-          <div style={HeaderStyles.buttonContainer}>
+        <div style={styles.mainContent}>
+          <div style={styles.buttonContainer}>
             <label
               htmlFor="file-upload"
               style={{
-                ...HeaderStyles.uploadButton,
-                ...(loading ? HeaderStyles.uploadButtonDisabled : {}),
+                ...styles.uploadButton,
+                ...(loading ? styles.uploadButtonDisabled : {}),
               }}
             >
-              {loading ? "Uploading..." : "Upload X-Ray Images"}
+              {uploadLabel}
             </label>
             <input
               id="file-upload"
@@ -98,31 +118,31 @@ export class Header extends Component<HeaderProps, HeaderState> {
               onClick={onExportAll}
               disabled={!dataFetched || loading}
               style={{
-                ...HeaderStyles.exportButton,
+                ...styles.exportButton,
                 ...(!dataFetched || loading
-                  ? HeaderStyles.exportButtonDisabled
+                  ? styles.exportButtonDisabled
                   : {}),
               }}
             >
               Export All Data
             </button>
 
-            <div style={HeaderStyles.dropdownContainer}>
+            <div style={styles.dropdownContainer}>
               <button
                 onClick={this.toggleMenu}
-                style={HeaderStyles.dropdownButton}
+                style={styles.dropdownButton}
               >
                 More...
               </button>
               {isMenuOpen && (
-                <div style={HeaderStyles.dropdownContent}>
+                <div style={styles.dropdownContent}>
                   <button
                     onClick={onClearHistory}
                     disabled={loading}
                     style={{
-                      ...HeaderStyles.clearHistoryButton,
+                      ...styles.clearHistoryButton,
                       ...(loading
-                        ? HeaderStyles.clearHistoryButtonDisabled
+                        ? styles.clearHistoryButtonDisabled
                         : {}),
                     }}
                   >
@@ -133,9 +153,9 @@ export class Header extends Component<HeaderProps, HeaderState> {
                       onClick={onOpenMeasurementsModal}
                       disabled={!dataFetched || loading}
                       style={{
-                        ...HeaderStyles.measurementsButton,
+                        ...styles.measurementsButton,
                         ...(!dataFetched || loading
-                          ? HeaderStyles.measurementsButtonDisabled
+                          ? styles.measurementsButtonDisabled
                           : {}),
                       }}
                     >
@@ -149,11 +169,9 @@ export class Header extends Component<HeaderProps, HeaderState> {
 
           <div
             style={{
-              ...HeaderStyles.titleContainer,
-              cursor: "pointer",
+              ...styles.titleContainer,
               flexDirection: "column" as const,
             }}
-            onClick={this.props.onBackToSelection}
           >
             <div
               style={{
@@ -164,31 +182,42 @@ export class Header extends Component<HeaderProps, HeaderState> {
             >
               <div
                 style={{
-                  ...HeaderStyles.logo,
-                  fontSize: "40px",
+                  ...styles.logo,
                   marginRight: "12px",
+                  display: "flex",
+                  alignItems: "center",
                 }}
               >
-                {this.props.selectedViewType === "lateral" ? "🦖" : this.props.selectedViewType === "toepads" ? "🦶" : "🦎"}
+                <img
+                  src={lizard_logo}
+                  alt="LizardMorph Logo"
+                  style={{
+                    height: "40px",
+                    width: "40px",
+                    objectFit: "contain",
+                  }}
+                />
               </div>
-              <h2 style={HeaderStyles.title}>
-                Lizard Anolis X-Ray Auto-Annotator
+              <h2 style={styles.title}>
+                {isFree
+                  ? "Free Mode — Manual Landmarking"
+                  : "Lizard Anolis X-Ray Auto-Annotator"}
               </h2>
             </div>
-            <p style={HeaderStyles.viewType}>
+            <p style={styles.viewType}>
               View Type:{" "}
-              {this.props.selectedViewType
-                ? this.props.selectedViewType.charAt(0).toUpperCase() +
-                  this.props.selectedViewType.slice(1)
+              {selectedViewType
+                ? selectedViewType.charAt(0).toUpperCase() +
+                  selectedViewType.slice(1)
                 : ""}
             </p>
           </div>
 
-          <div style={HeaderStyles.rightSpacer}></div>
+          <div style={styles.rightSpacer}></div>
         </div>
 
         {dataError && (
-          <span style={HeaderStyles.errorMessage}>
+          <span style={styles.errorMessage}>
             Error: {dataError.message}
           </span>
         )}

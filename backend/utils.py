@@ -6,18 +6,30 @@ import re
 import glob
 import ntpath
 
-# Not part of the standard library
+import os
+import shutil
+import random
 import numpy as np
-import pandas as pd
 import cv2
 try:
     import dlib
 except ImportError:
     dlib = None
     print("Warning: dlib not found, some features will be unavailable")
-import os
-import shutil
-import random
+
+
+# Dorsal landmark reorder mapping.
+# The dlib predictor (dorsal_predictor_clahe_best.dat) outputs 34 parts in its
+# own internal order.  The reference dorsal annotations use a different order
+# (1‑34, 0‑indexed below).  This array maps each reference position to the dlib
+# part index that should fill it.
+#   reference_landmark[i] = dlib_part[ DORSAL_LANDMARK_ORDER[i] ]
+DORSAL_LANDMARK_ORDER = [
+    0, 1, 12, 23, 28, 29, 30, 31, 32, 33,   # ref 1‑10
+    2, 3, 4, 5, 6, 7, 8, 9, 10, 11,          # ref 11‑20
+    13, 14, 15, 16, 17, 18, 19, 20, 21, 22,  # ref 21‑30
+    24, 25, 26, 27,                            # ref 31‑34
+]
 
 
 # Tools for predicting objects and shapes in new images
@@ -211,9 +223,9 @@ def predictions_to_xml(
             box = create_box(img.shape)
             part_length = range(0, shape.num_parts)
             
-            for item, i in enumerate(sorted(part_length, key=str)):
-                x = np.median([landmark[item][0] for landmark in landmarks])
-                y = np.median([landmark[item][1] for landmark in landmarks])
+            for idx, i in enumerate(sorted(part_length, key=int)):
+                x = np.median([landmark[idx][0] for landmark in landmarks])
+                y = np.median([landmark[idx][1] for landmark in landmarks])
                 if ignore is not None:
                     if i not in ignore:
                         part = create_part(x, y, i)
@@ -222,7 +234,7 @@ def predictions_to_xml(
                     part = create_part(x, y, i)
                     box.append(part)
 
-                pos = np.array(landmarks)[:, item]
+                pos = np.array(landmarks)[:, idx]
                 pos_x, pos_y = (
                     pos[:, 0],
                     pos[:, 1],
@@ -240,11 +252,37 @@ def predictions_to_xml(
             image_e.set("error", str(error))
             images_e.append(image_e)
         
-    images_e[:] = sorted(
-            images_e, key=lambda child: (child.tag, float(child.get("error"))), reverse=True
-    )
-
     pretty_xml(root, output)
+
+
+def detect_scale_bar(img_bgr):
+    """Tiered heuristic for scale bar detection."""
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY) if len(img_bgr.shape) == 3 else img_bgr
+    for thresh_val, min_aspect, min_height, min_area in [
+        (240, 5, 150, 500), (220, 4, 120, 400), (200, 3, 100, 200), (180, 2.5, 80, 100)
+    ]:
+        _, thresh = cv2.threshold(gray, thresh_val, 255, cv2.THRESH_BINARY)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        candidates = []
+        for c in contours:
+            x, y, w, h = cv2.boundingRect(c)
+            aspect = h / max(w, 1)
+            area = cv2.contourArea(c)
+            if aspect > min_aspect and h > min_height and area > min_area:
+                candidates.append((x, y, w, h, area))
+        if candidates:
+            candidates.sort(key=lambda c: c[4], reverse=True)
+            x, y, w, h, _ = candidates[0]
+            pad_x, pad_y = int(w * 0.25), int(h * 0.25)
+            # Clip to image boundaries
+            img_h, img_w = img_bgr.shape[:2]
+            return (
+                max(0, x - pad_x),
+                max(0, y - pad_y),
+                min(img_w - (x - pad_x), w + 2 * pad_x),
+                min(img_h - (y - pad_y), h + 2 * pad_y)
+            )
+    return None
 
 def predictions_to_xml_single(predictor_name: str, image_path: str, output: str):
     """Generates dlib format xml file for a single image."""
@@ -254,17 +292,24 @@ def predictions_to_xml_single(predictor_name: str, image_path: str, output: str)
 
     image_e = ET.Element('image')
     image_e.set('file', str(image_path))
-    
+
     img = cv2.imread(image_path)
+
+    # Apply CLAHE on the luminance channel to match training preprocessing
+    img_yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    img_yuv[:, :, 0] = clahe.apply(img_yuv[:, :, 0])
+    img = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
+
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = cv2.filter2D(img, -1, kernel)
     img = cv2.bilateralFilter(img, 9, 41, 21)
-    
+
     scales = [0.25, 0.5, 1]
     w = img.shape[1]
     h = img.shape[0]
     landmarks = []
-    
+
     for scale in scales:
         image = cv2.resize(img, (0, 0), fx=scale, fy=scale)
         rect = dlib.rectangle(1, 1, int(w * scale) - 1, int(h * scale) - 1)
@@ -272,12 +317,99 @@ def predictions_to_xml_single(predictor_name: str, image_path: str, output: str)
         landmarks.append(shape_to_np(shape) / scale)
 
     box = create_box(img.shape)
-    part_length = range(0, shape.num_parts)
-    
-    for item, i in enumerate(sorted(part_length, key=str)):
-        x = np.median([landmark[item][0] for landmark in landmarks])
-        y = np.median([landmark[item][1] for landmark in landmarks])
-        part = create_part(x, y, i)
+    num_parts = shape.num_parts
+
+    # Reorder landmarks if this is a 34-landmark dorsal predictor
+    if num_parts == len(DORSAL_LANDMARK_ORDER):
+        order = DORSAL_LANDMARK_ORDER
+    else:
+        order = list(range(num_parts))
+
+    for ref_idx, dlib_idx in enumerate(order):
+        x = np.median([landmark[dlib_idx][0] for landmark in landmarks])
+        y = np.median([landmark[dlib_idx][1] for landmark in landmarks])
+        part = create_part(x, y, ref_idx)
+        box.append(part)
+
+    box[:] = sorted(box, key=lambda child: (child.tag, float(child.get("name"))))
+    image_e.append(box)
+    images_e.append(image_e)
+    pretty_xml(root, output)
+
+
+def predictions_to_xml_dorsal_hybrid(
+    image_path: str,
+    output: str,
+    body_predictor_path: str,
+    scale_predictor_path: str,
+    cached_dlib_predictors: dict = None
+):
+    """
+    Generates dlib format XML for dorsal view using the 'Hybrid Safe' configuration.
+    Uses a global body model (34 pts) and a specialized scale model (2 pts) for better accuracy.
+    """
+    # Load predictors
+    if cached_dlib_predictors and "dorsal" in cached_dlib_predictors:
+        body_pred = cached_dlib_predictors["dorsal"]
+    else:
+        body_pred = dlib.shape_predictor(body_predictor_path)
+
+    if cached_dlib_predictors and "scale" in cached_dlib_predictors:
+        scale_pred = cached_dlib_predictors["scale"]
+    else:
+        scale_pred = dlib.shape_predictor(scale_predictor_path)
+
+    # Initial image load
+    img_bgr = cv2.imread(image_path)
+    if img_bgr is None:
+        raise ValueError(f"Failed to load image: {image_path}")
+    h, w = img_bgr.shape[:2]
+
+    # Preprocessing (CLAHE)
+    img_yuv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2YUV)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    img_yuv[:, :, 0] = clahe.apply(img_yuv[:, :, 0])
+    img_prepped_bgr = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
+    img_prepped_rgb = cv2.cvtColor(img_prepped_bgr, cv2.COLOR_BGR2RGB)
+
+    # Scale Bar Detection (heuristic on original/raw BGR image)
+    scale_bbox = detect_scale_bar(img_bgr)
+
+    # 1. Body Prediction (baseline 34 pts on full image)
+    full_rect = dlib.rectangle(1, 1, w - 1, h - 1)
+    body_shape = body_pred(img_prepped_rgb, full_rect)
+    final_lms = shape_to_np(body_shape)
+
+    # 2. Scale Refinement (2 pts on crop)
+    if scale_bbox:
+        l, t, bw, bh = scale_bbox
+        scale_rect = dlib.rectangle(int(l), int(t), int(l + bw), int(t + bh))
+        scale_shape = scale_pred(img_prepped_rgb, scale_rect)
+        scale_lms = shape_to_np(scale_shape)
+        # Replace landmarks 0 and 1 in the 34-point set
+        if len(scale_lms) >= 2 and len(final_lms) >= 2:
+            final_lms[0] = scale_lms[0]
+            final_lms[1] = scale_lms[1]
+            print(f"Scale refinement applied for {os.path.basename(image_path)}")
+    else:
+        print(f"No scale bar detected for {os.path.basename(image_path)}, using global baseline.")
+
+    # Convert to standard XML format
+    root, images_e = initialize_xml()
+    image_e = ET.Element('image')
+    image_e.set('file', str(image_path))
+    box = create_box(img_bgr.shape)
+
+    # Reorder according to DORSAL_LANDMARK_ORDER
+    # The 'final_lms' are already in dlib internal order (0-33)
+    if len(final_lms) == len(DORSAL_LANDMARK_ORDER):
+        order = DORSAL_LANDMARK_ORDER
+    else:
+        order = list(range(len(final_lms)))
+
+    for ref_idx, dlib_idx in enumerate(order):
+        x, y = final_lms[dlib_idx]
+        part = create_part(x, y, ref_idx)
         box.append(part)
 
     box[:] = sorted(box, key=lambda child: (child.tag, float(child.get("name"))))
@@ -290,7 +422,7 @@ def predictions_to_xml_single_with_detector(predictor_name: str, image_path: str
     """
     Generates dlib format xml file for a single image using dlib fhog object detector for bounding box detection.
     This follows the approach from visualize_predictions.py.
-    
+
     Parameters:
     ----------
         predictor_name (str): Path to the shape predictor file
@@ -304,8 +436,15 @@ def predictions_to_xml_single_with_detector(predictor_name: str, image_path: str
 
     image_e = ET.Element('image')
     image_e.set('file', str(image_path))
-    
+
     img = cv2.imread(image_path)
+
+    # Apply CLAHE on the luminance channel to match training preprocessing
+    img_yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    img_yuv[:, :, 0] = clahe.apply(img_yuv[:, :, 0])
+    img = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
+
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = cv2.filter2D(img, -1, kernel)
     img = cv2.bilateralFilter(img, 9, 41, 21)
@@ -339,12 +478,18 @@ def predictions_to_xml_single_with_detector(predictor_name: str, image_path: str
         landmarks.append(shape_to_np(shape) / scale)
 
     box = create_box(img.shape)
-    part_length = range(0, shape.num_parts)
-    
-    for item, i in enumerate(sorted(part_length, key=str)):
-        x = np.median([landmark[item][0] for landmark in landmarks])
-        y = np.median([landmark[item][1] for landmark in landmarks])
-        part = create_part(x, y, i)
+    num_parts = shape.num_parts
+
+    # Reorder landmarks if this is a 34-landmark dorsal predictor
+    if num_parts == len(DORSAL_LANDMARK_ORDER):
+        order = DORSAL_LANDMARK_ORDER
+    else:
+        order = list(range(num_parts))
+
+    for ref_idx, dlib_idx in enumerate(order):
+        x = np.median([landmark[dlib_idx][0] for landmark in landmarks])
+        y = np.median([landmark[dlib_idx][1] for landmark in landmarks])
+        part = create_part(x, y, ref_idx)
         box.append(part)
 
     box[:] = sorted(box, key=lambda child: (child.tag, float(child.get("name"))))
@@ -372,7 +517,7 @@ def shape_to_np(shape):
 
     length = range(0, shape.num_parts)
 
-    for i in sorted(length, key=str):
+    for i in sorted(length, key=int):
         coords[i] = [shape.part(i).x, shape.part(i).y]
 
     # return the list of (x, y)-coordinates
@@ -648,7 +793,7 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
     and each detection is processed with its corresponding predictor.
     
     For scale bars: Uses YOLO only (no ml-morph/dlib predictor). Creates two landmarks by removing
-    1mm from the left and right edges of the YOLO bounding box.
+    0mm from the left and 1mm from the right edges of the YOLO bounding box (asymmetrical padding).
     
     For all toe/finger detections: The image region is cropped to the YOLO bounding box
     before running the dlib predictor, then coordinates are transformed back.
@@ -663,14 +808,12 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
         finger_predictor_path (str): Path to the finger dlib shape predictor file (.dat)
         conf_threshold (float): Confidence threshold for YOLO detections
         padding_ratio (float): Padding ratio for bounding boxes when using cropped predictors (default: 0.3 = 30%)
-        scale_bar_length_mm (float): Length of the scale bar in mm (default: 10.0). Used to calculate 1mm offset.
+        scale_bar_length_mm (float): Length of the scale bar in mm (default: 10.0). Used to calculate padding offsets.
         target_predictor_type (str): Optional filter to only process specific type ('toe', 'finger', 'scale'). 
                                      If None, processes all detections. If specified, only processes that type.
         cached_yolo_model: Optional pre-loaded YOLO model to avoid reloading
         cached_dlib_predictors (dict): Optional pre-loaded dlib predictors dict with keys like 'toe', 'finger'
     """
-    from ultralytics import YOLO
-    
     # Use cached predictors if provided, otherwise load from paths
     predictors = {}
 
@@ -722,9 +865,11 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
     print(f"{'='*60}")
 
     # Use cached YOLO model if provided, otherwise load from path
+    obj_count = 0
     model = cached_yolo_model
     if model is None and yolo_model_path and os.path.exists(yolo_model_path):
         print(f"Loading YOLO model from: {yolo_model_path}")
+        from ultralytics import YOLO
         model = YOLO(yolo_model_path, task="obb")
 
     if model is not None:
@@ -761,6 +906,83 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                 res = results[0]
                 names = res.names
 
+            def _iou_aabb(a_corners, b_corners):
+                """Axis-aligned bounding box IoU between two sets of OBB corners."""
+                ax, ay, aw, ah = cv2.boundingRect(a_corners.astype(np.int32))
+                bx, by, bw, bh = cv2.boundingRect(b_corners.astype(np.int32))
+                ix1 = max(ax, bx)
+                iy1 = max(ay, by)
+                ix2 = min(ax + aw, bx + bw)
+                iy2 = min(ay + ah, by + bh)
+                if ix2 <= ix1 or iy2 <= iy1:
+                    return 0.0
+                inter = (ix2 - ix1) * (iy2 - iy1)
+                return inter / (aw * ah + bw * bh - inter)
+
+            def _are_adjacent_rulers(a_corners, b_corners, gap_ratio=0.5):
+                """Check if two ruler OBBs are adjacent fragments of the same ruler.
+                Returns True if the gap between their AABBs is small relative to their size."""
+                ax, ay, aw, ah = cv2.boundingRect(a_corners.astype(np.int32))
+                bx, by, bw, bh = cv2.boundingRect(b_corners.astype(np.int32))
+                # Gap along x and y axes (negative means overlap)
+                gap_x = max(0, max(ax, bx) - min(ax + aw, bx + bw))
+                gap_y = max(0, max(ay, by) - min(ay + ah, by + bh))
+                # Use the shorter dimension (ruler width) as the reference for gap tolerance
+                short_a = min(aw, ah)
+                short_b = min(bw, bh)
+                ref = max(short_a, short_b)
+                if ref == 0:
+                    return False
+                # Adjacent if gap is small relative to the ruler's short dimension
+                # and they overlap along the perpendicular axis
+                if aw > ah:  # horizontal ruler
+                    return gap_x < ref * gap_ratio and gap_y < ref
+                else:  # vertical ruler
+                    return gap_y < ref * gap_ratio and gap_x < ref
+
+            def _merge_ruler_detections(det_list):
+                """Merge adjacent ruler fragments into a single detection.
+                Returns a single merged detection with corners from the convex hull."""
+                if len(det_list) <= 1:
+                    return det_list
+                det_list.sort(key=lambda x: x['conf'], reverse=True)
+                merged = [det_list[0]]
+                for det in det_list[1:]:
+                    did_merge = False
+                    for i, m in enumerate(merged):
+                        if _iou_aabb(det['corners'], m['corners']) > 0.1 or \
+                           _are_adjacent_rulers(det['corners'], m['corners']):
+                            # Merge: combine all corner points and fit a minimum-area OBB
+                            all_pts = np.vstack([m['corners'], det['corners']])
+                            rect = cv2.minAreaRect(all_pts.astype(np.float32))
+                            new_corners = cv2.boxPoints(rect).astype(np.float32)
+                            w, h = rect[1]
+                            merged[i] = {
+                                'conf': max(m['conf'], det['conf']),
+                                'corners': new_corners,
+                                'obb_wh': (w, h),
+                            }
+                            did_merge = True
+                            break
+                    if not did_merge:
+                        merged.append(det)
+                return merged
+
+            def _nms_best(det_list, iou_threshold=0.3, is_ruler=False):
+                """NMS then top-1: suppress overlapping detections, return the highest-confidence survivor.
+                For ruler class, merge adjacent fragments before NMS."""
+                if not det_list:
+                    return None
+                if is_ruler:
+                    det_list = _merge_ruler_detections(det_list)
+                det_list.sort(key=lambda x: x['conf'], reverse=True)
+                survivors = []
+                for det in det_list:
+                    if any(_iou_aabb(det['corners'], s['corners']) > iou_threshold for s in survivors):
+                        continue
+                    survivors.append(det)
+                return survivors[0] if survivors else None
+
             def _get_padded_crop(img_bgr, corners_orig):
                 """Crop padded bbox from full-res image, return (crop_rgb, x_off, y_off)."""
                 x, y, bw, bh = cv2.boundingRect(corners_orig.astype(np.int32))
@@ -788,8 +1010,8 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     points.append((float(p.x + x_off), float(p.y + y_off)))
                 return np.array(points, dtype=float)
 
-            def _generate_landmark_xml(landmarks_global):
-                """Generate XML box element from landmark coordinates."""
+            def _generate_landmark_xml(landmarks_global, label=None, box_idx=0):
+                """Generate XML box element from landmark coordinates with unique IDs."""
                 min_lx, min_ly = np.min(landmarks_global, axis=0)
                 max_lx, max_ly = np.max(landmarks_global, axis=0)
                 bbox_w = max_lx - min_lx
@@ -798,18 +1020,22 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                 box_xml = ET.Element('box')
                 box_xml.set('top', str(int(min_ly)))
                 box_xml.set('left', str(int(min_lx)))
-                box_xml.set('width', str(int(bbox_w)))
-                box_xml.set('height', str(int(bbox_h)))
+                box_xml.set('width', str(max(1, int(bbox_w))))
+                box_xml.set('height', str(max(1, int(bbox_h))))
+                if label:
+                    box_xml.set('label', label)
 
                 for pt_i, point in enumerate(landmarks_global):
                     part = ET.SubElement(box_xml, 'part')
-                    part.set('name', str(pt_i))
+                    # Use unique ID per box to prevent D3 key collisions in UI
+                    part.set('name', str(box_idx * 100 + pt_i))
                     part.set('x', str(int(point[0])))
                     part.set('y', str(int(point[1])))
                 return box_xml
 
             # --- Collect all detections first ---
-            detections = {'bot_finger': [], 'bot_toe': [], 'up_finger': [], 'up_toe': [], 'scale': [], 'id': []}
+            # Categorize detections
+            detections = {'scale': [], 'bot_finger': [], 'bot_toe': [], 'up_finger': [], 'up_toe': [], 'id': []}
 
             if _is_ort:
                 # ORT path: detector handles preprocessing, dual-pass, and NMS internally
@@ -831,19 +1057,18 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                         corners = corners_small * inv_scale
 
                         if 'ruler' in cls_name.lower() or 'scale' in cls_name.lower():
-                            detections['scale'].append({'conf': det_conf, 'corners': corners, 'obb_wh': tuple(res.obb.xywhr[idx].tolist()[2:4])})
+                            wh_small = res.obb.xywhr[idx].tolist()[2:4]
+                            detections['scale'].append({'conf': det_conf, 'corners': corners, 'obb_wh': (wh_small[0] * inv_scale, wh_small[1] * inv_scale)})
                         elif 'bot_finger' in cls_name.lower():
                             detections['bot_finger'].append({'conf': det_conf, 'corners': corners})
                         elif 'bot_toe' in cls_name.lower():
                             detections['bot_toe'].append({'conf': det_conf, 'corners': corners})
                         elif 'up_finger' in cls_name.lower():
-                            corners_flipped = np.copy(corners)
-                            corners_flipped[:, 1] = h_img - 1 - corners_flipped[:, 1]
-                            detections['up_finger'].append({'conf': det_conf, 'corners': corners_flipped})
+                            # Standard pass: corners are already in original image space, no flip needed
+                            detections['up_finger'].append({'conf': det_conf, 'corners': corners})
                         elif 'up_toe' in cls_name.lower():
-                            corners_flipped = np.copy(corners)
-                            corners_flipped[:, 1] = h_img - 1 - corners_flipped[:, 1]
-                            detections['up_toe'].append({'conf': det_conf, 'corners': corners_flipped})
+                            # Standard pass: corners are already in original image space, no flip needed
+                            detections['up_toe'].append({'conf': det_conf, 'corners': corners})
                         elif cls_name.lower() == 'id':
                             detections['id'].append({'conf': det_conf, 'corners': corners})
                         elif cls_id == 0:
@@ -884,12 +1109,12 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
             for category, det_list in detections.items():
                 if not det_list:
                     continue
-                
-                # Sort by confidence (descending) and take top 1
-                det_list.sort(key=lambda x: x['conf'], reverse=True)
-                best_det = det_list[0]
-                
-                print(f"Processing best {category} (conf={best_det['conf']:.3f})")
+
+                best_det = _nms_best(det_list, is_ruler=(category == 'scale'))
+                if best_det is None:
+                    continue
+
+                print(f"Processing best {category} (conf={best_det['conf']:.3f}, {len(det_list)} candidates)")
 
                 if category == 'scale':
                     # Process scale bar
@@ -902,15 +1127,18 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     box_xml = ET.Element("box")
                     box_xml.set("top", str(int(detected_rect.top())))
                     box_xml.set("left", str(int(detected_rect.left())))
-                    box_xml.set("width", str(int(detected_rect.width())))
-                    box_xml.set("height", str(int(detected_rect.height())))
+                    box_xml.set("width", str(max(1, int(detected_rect.width()))))
+                    box_xml.set("height", str(max(1, int(detected_rect.height()))))
+                    box_xml.set("label", "ruler")
                     
                     obb_wh = best_det['obb_wh']
-                    ruler_pixel_width = max(obb_wh[0], obb_wh[1]) * inv_scale
+                    ruler_pixel_width = max(obb_wh[0], obb_wh[1])
 
-                    total_length_mm = scale_bar_length_mm + 2.0
+                    # Physical ruler is 1.55mm longer than the marked scale bar (0.55mm left, 1mm right)
+                    total_length_mm = scale_bar_length_mm + 1.55
                     pixels_per_mm = ruler_pixel_width / total_length_mm
-                    offset_pixels = pixels_per_mm * 1.0
+                    left_offset_pixels = pixels_per_mm * 0.55
+                    right_offset_pixels = pixels_per_mm * 1.0
 
                     # OBB corners are (4, 2). Find the short edges to get the long axis endpoints.
                     corners = best_det['corners']
@@ -931,12 +1159,12 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     length = np.linalg.norm(vec)
                     direction = vec / length if length > 0 else np.array([1.0, 0.0])
 
-                    pt1 = mid1 + direction * offset_pixels
-                    pt2 = mid2 - direction * offset_pixels
+                    pt1 = mid1 + direction * left_offset_pixels
+                    pt2 = mid2 - direction * right_offset_pixels
 
-                    # Use IDs 17 and 18 for scale bar to avoid conflicting with toe/finger landmarks (0-16)
-                    part0 = create_part(float(pt1[0]), float(pt1[1]), 17)
-                    part1 = create_part(float(pt2[0]), float(pt2[1]), 18)
+                    # Use IDs 0 and 1 for scale bar (visualized as 1 and 2 in the UI).
+                    part0 = create_part(float(pt1[0]), float(pt1[1]), 0)
+                    part1 = create_part(float(pt2[0]), float(pt2[1]), 1)
                     box_xml.append(part0)
                     box_xml.append(part1)
                     image_e.append(box_xml)
@@ -949,8 +1177,8 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     box_xml = ET.Element("box")
                     box_xml.set("top", str(int(detected_rect.top())))
                     box_xml.set("left", str(int(detected_rect.left())))
-                    box_xml.set("width", str(int(detected_rect.width())))
-                    box_xml.set("height", str(int(detected_rect.height())))
+                    box_xml.set("width", str(max(1, int(detected_rect.width()))))
+                    box_xml.set("height", str(max(1, int(detected_rect.height()))))
                     box_xml.set("label", "id")
                     image_e.append(box_xml)
                     obj_count += 1
@@ -960,7 +1188,7 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                      print(f"DEBUG {category}: predictors={list(predictors.keys())}, curr_predictor={'FOUND' if curr_predictor else 'NONE'}")
                      if curr_predictor:
                           landmarks_global = _predict_on_crop(curr_predictor, img_raw_bgr, best_det['corners'])
-                          image_e.append(_generate_landmark_xml(landmarks_global))
+                          image_e.append(_generate_landmark_xml(landmarks_global, label=category, box_idx=obj_count))
                           obj_count += 1
                      else:
                           print(f"WARNING: No predictor for {category}, SKIPPING!")
@@ -969,10 +1197,11 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                     # Load flipped image if not already loaded
                     if flipped_bgr is None:
                         flipped_bgr = cv2.flip(img_raw_bgr, 0)
-                    
+
                     curr_predictor = predictors.get('finger') if 'finger' in category else predictors.get('toe')
                     if curr_predictor:
-                         # Crop from flipped full-res image
+                         # Both ORT and Ultralytics flip-pass return up_finger/up_toe corners
+                         # already in flipped image space — use them directly.
                          crop_rgb, x_off, y_off = _get_padded_crop(flipped_bgr, best_det['corners'])
                          crop_h, crop_w = crop_rgb.shape[:2]
                          rect = dlib.rectangle(0, 0, crop_w, crop_h)
@@ -985,7 +1214,7 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                              points.append((float(p.x + x_off), float(h_img - 1 - (p.y + y_off))))
                          
                          landmarks_global = np.array(points, dtype=float)
-                         image_e.append(_generate_landmark_xml(landmarks_global))
+                         image_e.append(_generate_landmark_xml(landmarks_global, label=category, box_idx=obj_count))
                          obj_count += 1
 
             print(f"\nTotal detections: {obj_count}")
@@ -1040,6 +1269,7 @@ def dlib_xml_to_pandas(xml_file: str, parse=False):
     ----------
         df(dataframe): returns a pandas dataframe containing the data in the xml_file.
     """
+    import pandas as pd
     tree = ET.parse(xml_file)
     root = tree.getroot()
     landmark_list = []
@@ -1068,7 +1298,7 @@ def dlib_xml_to_pandas(xml_file: str, parse=False):
                             "Y" + parts.attrib["name"]: float(parts.attrib["y"]),
                         }
 
-                    landmark_list.append(data)
+                        landmark_list.append(data)
     dataset = pd.DataFrame(landmark_list)
     if dataset.empty or "id" not in dataset.columns:
         basename = ntpath.splitext(xml_file)[0]
@@ -1109,7 +1339,7 @@ def dlib_xml_to_tps(xml_file: str):
                             data = [
                                 float(parts.attrib["x"]),
                                 float(boxes.attrib["height"])
-                                + 2
+                                + 1
                                 - float(parts.attrib["y"]),
                             ]
                         wr.writerows([data])
@@ -1421,6 +1651,75 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
     obj_count = 0
     padding_ratio = 0.3
 
+    def _iou_aabb(a_corners, b_corners):
+        """Axis-aligned bounding box IoU between two sets of OBB corners."""
+        ax, ay, aw, ah = cv2.boundingRect(a_corners.astype(np.int32))
+        bx, by, bw, bh = cv2.boundingRect(b_corners.astype(np.int32))
+        ix1 = max(ax, bx)
+        iy1 = max(ay, by)
+        ix2 = min(ax + aw, bx + bw)
+        iy2 = min(ay + ah, by + bh)
+        if ix2 <= ix1 or iy2 <= iy1:
+            return 0.0
+        inter = (ix2 - ix1) * (iy2 - iy1)
+        return inter / (aw * ah + bw * bh - inter)
+
+    def _are_adjacent_rulers(a_corners, b_corners, gap_ratio=0.5):
+        """Check if two ruler OBBs are adjacent fragments of the same ruler."""
+        ax, ay, aw, ah = cv2.boundingRect(a_corners.astype(np.int32))
+        bx, by, bw, bh = cv2.boundingRect(b_corners.astype(np.int32))
+        gap_x = max(0, max(ax, bx) - min(ax + aw, bx + bw))
+        gap_y = max(0, max(ay, by) - min(ay + ah, by + bh))
+        short_a = min(aw, ah)
+        short_b = min(bw, bh)
+        ref = max(short_a, short_b)
+        if ref == 0:
+            return False
+        if aw > ah:
+            return gap_x < ref * gap_ratio and gap_y < ref
+        else:
+            return gap_y < ref * gap_ratio and gap_x < ref
+
+    def _merge_ruler_detections(det_list):
+        """Merge adjacent ruler fragments into a single detection."""
+        if len(det_list) <= 1:
+            return det_list
+        det_list.sort(key=lambda x: x['conf'], reverse=True)
+        merged = [det_list[0]]
+        for det in det_list[1:]:
+            did_merge = False
+            for i, m in enumerate(merged):
+                if _iou_aabb(det['corners'], m['corners']) > 0.1 or \
+                   _are_adjacent_rulers(det['corners'], m['corners']):
+                    all_pts = np.vstack([m['corners'], det['corners']])
+                    rect = cv2.minAreaRect(all_pts.astype(np.float32))
+                    new_corners = cv2.boxPoints(rect).astype(np.float32)
+                    w, h = rect[1]
+                    merged[i] = {
+                        'conf': max(m['conf'], det['conf']),
+                        'corners': new_corners,
+                        'obb_wh': (w, h),
+                    }
+                    did_merge = True
+                    break
+            if not did_merge:
+                merged.append(det)
+        return merged
+
+    def _nms_best(det_list, iou_threshold=0.3, is_ruler=False):
+        """NMS then top-1, with ruler fragment merging."""
+        if not det_list:
+            return None
+        if is_ruler:
+            det_list = _merge_ruler_detections(det_list)
+        det_list.sort(key=lambda x: x['conf'], reverse=True)
+        survivors = []
+        for det in det_list:
+            if any(_iou_aabb(det['corners'], s['corners']) > iou_threshold for s in survivors):
+                continue
+            survivors.append(det)
+        return survivors[0] if survivors else None
+
     def _get_padded_crop(img_bgr, corners_orig):
         """Crop padded bbox from full-res image, return (crop_rgb, x_off, y_off)."""
         x, y, bw, bh = cv2.boundingRect(corners_orig.astype(np.int32))
@@ -1448,8 +1747,8 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
             points.append((float(p.x + x_off), float(p.y + y_off)))
         return np.array(points, dtype=float)
 
-    def _generate_landmark_xml(landmarks_global):
-        """Generate XML box element from landmark coordinates."""
+    def _generate_landmark_xml(landmarks_global, label=None, box_idx=0):
+        """Generate XML box element from landmark coordinates with unique IDs."""
         min_lx, min_ly = np.min(landmarks_global, axis=0)
         max_lx, max_ly = np.max(landmarks_global, axis=0)
         bbox_w = max_lx - min_lx
@@ -1460,10 +1759,13 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
         box_xml.set('left', str(int(min_lx)))
         box_xml.set('width', str(int(bbox_w)))
         box_xml.set('height', str(int(bbox_h)))
+        if label:
+            box_xml.set('label', label)
 
         for pt_i, point in enumerate(landmarks_global):
             part = ET.SubElement(box_xml, 'part')
-            part.set('name', str(pt_i))
+            # Use unique ID per box to prevent D3 key collisions in UI
+            part.set('name', str(box_idx * 100 + pt_i))
             part.set('x', str(int(point[0])))
             part.set('y', str(int(point[1])))
         return box_xml
@@ -1475,7 +1777,7 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
         bounding_boxes.sort(key=lambda x: x.get('confidence', 0), reverse=True)
         
     # Categorize best boxes
-    detections = {'bot_finger': [], 'bot_toe': [], 'up_finger': [], 'up_toe': [], 'scale': [], 'id': []}
+    detections = {'scale': [], 'bot_finger': [], 'bot_toe': [], 'up_finger': [], 'up_toe': [], 'id': []}
     
     for box in bounding_boxes:
         label = box.get('label', '').lower()
@@ -1506,8 +1808,10 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
     for category, det_list in detections.items():
         if not det_list:
             continue
-            
-        best_det = det_list[0]
+
+        best_det = _nms_best(det_list, is_ruler=(category == 'scale'))
+        if best_det is None:
+            continue
         try:
             if category == 'scale':
                 corners = best_det['corners']
@@ -1519,14 +1823,17 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                 box_xml = ET.Element("box")
                 box_xml.set("top", str(int(detected_rect.top())))
                 box_xml.set("left", str(int(detected_rect.left())))
-                box_xml.set("width", str(int(detected_rect.width())))
-                box_xml.set("height", str(int(detected_rect.height())))
+                box_xml.set("width", str(max(1, int(detected_rect.width()))))
+                box_xml.set("height", str(max(1, int(detected_rect.height()))))
+                box_xml.set("label", "ruler")
                 
                 obb_wh = best_det['obb_wh']
                 ruler_pixel_width = max(obb_wh[0], obb_wh[1])
-                total_length_mm = scale_bar_length_mm + 2.0
+                # Physical ruler is 1.55mm longer than the marked scale bar (0.55mm left, 1mm right)
+                total_length_mm = scale_bar_length_mm + 1.55
                 pixels_per_mm = ruler_pixel_width / total_length_mm
-                offset_pixels = pixels_per_mm * 1.0
+                left_offset_pixels = pixels_per_mm * 0.55
+                right_offset_pixels = pixels_per_mm * 1.0
 
                 dist01 = np.linalg.norm(corners[0] - corners[1])
                 dist12 = np.linalg.norm(corners[1] - corners[2])
@@ -1545,11 +1852,12 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                 length = np.linalg.norm(vec)
                 direction = vec / length if length > 0 else np.array([1.0, 0.0])
 
-                pt1 = mid1 + direction * offset_pixels
-                pt2 = mid2 - direction * offset_pixels
+                pt1 = mid1 + direction * left_offset_pixels
+                pt2 = mid2 - direction * right_offset_pixels
 
-                part0 = create_part(float(pt1[0]), float(pt1[1]), 17)
-                part1 = create_part(float(pt2[0]), float(pt2[1]), 18)
+                # Use IDs 0 and 1 for scale bar (visualized as 1 and 2 in the UI).
+                part0 = create_part(float(pt1[0]), float(pt1[1]), 0)
+                part1 = create_part(float(pt2[0]), float(pt2[1]), 1)
                 box_xml.append(part0)
                 box_xml.append(part1)
                 image_e.append(box_xml)
@@ -1562,8 +1870,8 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                 box_xml = ET.Element("box")
                 box_xml.set("top", str(int(detected_rect.top())))
                 box_xml.set("left", str(int(detected_rect.left())))
-                box_xml.set("width", str(int(detected_rect.width())))
-                box_xml.set("height", str(int(detected_rect.height())))
+                box_xml.set("width", str(max(1, int(detected_rect.width()))))
+                box_xml.set("height", str(max(1, int(detected_rect.height()))))
                 box_xml.set("label", "id")
                 image_e.append(box_xml)
                 obj_count += 1
@@ -1572,7 +1880,7 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                 curr_predictor = predictors.get('finger') if 'finger' in category else predictors.get('toe')
                 if curr_predictor:
                      landmarks_global = _predict_on_crop(curr_predictor, img_raw_bgr, best_det['corners'])
-                     image_e.append(_generate_landmark_xml(landmarks_global))
+                     image_e.append(_generate_landmark_xml(landmarks_global, label=category, box_idx=obj_count))
                      obj_count += 1
 
             elif category in ['up_finger', 'up_toe']:
@@ -1596,7 +1904,7 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                          points.append((float(p.x + x_off), float(h_img - 1 - (p.y + y_off))))
                      
                      landmarks_global = np.array(points, dtype=float)
-                     image_e.append(_generate_landmark_xml(landmarks_global))
+                     image_e.append(_generate_landmark_xml(landmarks_global, label=category, box_idx=obj_count))
                      obj_count += 1
 
         except Exception as e:

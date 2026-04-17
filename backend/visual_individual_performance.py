@@ -1,13 +1,15 @@
 import xml.etree.ElementTree as ET
 import numpy as np
-import matplotlib.pyplot as plt
+# matplotlib.pyplot lazy-loaded inside functions
 import cv2
 import os
 import glob
 from PIL import Image, ImageEnhance
 
-# Use a non-GUI backend
-plt.switch_backend('Agg')
+def _init_matplotlib():
+    import matplotlib.pyplot as plt
+    plt.switch_backend('Agg')
+    return plt
 
 def parse_xml_for_frontend(file_path):
     tree = ET.parse(file_path)
@@ -122,6 +124,7 @@ def read_tps_file(file_path):
 
 def create_image(tps_file_path, output_folder):
     """Create annotated images based on TPS file data."""
+    plt = _init_matplotlib()
     plot_data = read_tps_file(tps_file_path)
     output_image_paths = []
     
@@ -160,8 +163,13 @@ def create_image(tps_file_path, output_folder):
             
             print(f"Plotting {len(x_coords)} points")
             
+            # TPS stores Y with 0 at the bottom (math convention), but the image
+            # extent above has Y increasing downward (0.5 at top). Flip Y so
+            # landmarks are plotted in the correct position.
+            y_coords_img = [height_pixels - y for y in y_coords]
+            
             # Plot points
-            ax.scatter(x_coords, y_coords, s=50, color='red', marker='o', edgecolors='black')
+            ax.scatter(x_coords, y_coords_img, s=50, color='red', marker='o', edgecolors='black')
             
             # Add point labels - Commented out as per user request ("numbers blocking view")
             # for j, (x, y) in enumerate(zip(x_coords, y_coords)):
@@ -170,11 +178,15 @@ def create_image(tps_file_path, output_folder):
             
             # Save the image
             output_basename = os.path.splitext(os.path.basename(image_name))[0]
-            output_path = os.path.join(output_folder, f"annotated_{output_basename}.jpg")
+            output_path = os.path.join(output_folder, f"annotated_{output_basename}.png")
             
             print(f"Saving annotated image to: {output_path}")
             
-            fig.savefig(output_path, bbox_inches='tight', pad_inches=0, dpi=dpi)
+            # Set transparency
+            fig.patch.set_facecolor('none')
+            ax.patch.set_facecolor('none')
+            
+            fig.savefig(output_path, bbox_inches='tight', pad_inches=0, dpi=dpi, transparent=True)
             plt.close(fig)
             
             output_image_paths.append(output_path)
