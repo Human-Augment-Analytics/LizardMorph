@@ -1,10 +1,25 @@
 import cv2
-import easyocr
 import numpy as np
 import re
 import math
 
-reader = easyocr.Reader(["en"], gpu=False)
+_reader = None
+
+
+def _get_reader():
+    """Lazy init: EasyOCR/torch is heavy; only load when OCR actually runs."""
+    global _reader
+    if _reader is not None:
+        return _reader
+    try:
+        from native_ocr import _create_reader
+
+        _reader = _create_reader()
+    except Exception:
+        import easyocr
+
+        _reader = easyocr.Reader(["en"], gpu=False)
+    return _reader
 
 def crop_from_yolo_box(image, x_center, y_center, box_width, box_height, enhance=True, target_size=(128, 64)):
     """Convert YOLO coords to pixel coords and crop image with padding."""
@@ -89,8 +104,9 @@ def crop_from_yolo_box(image, x_center, y_center, box_width, box_height, enhance
     return crop
 
 def detect_digits(image, conf_threshold=0.5):
-    """Run EasyOCR on the image to extract digits."""
-    
+    """Run OCR (native Tesseract/Vision/WinRT, else EasyOCR) on the image to extract digits."""
+    reader = _get_reader()
+
     best_text = ""
     best_conf = 0.0
     

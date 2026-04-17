@@ -1,0 +1,212 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v1.0.1)'
+        required: true
+
+# Upload models as a GitHub release asset named "models.tar.gz" on a release
+# tagged "models" before running this workflow. The archive should contain:
+#   models/lizard-x-ray/dorsal_predictor_clahe_best.dat
+#   models/lizard-x-ray/lateral_predictor_auto.dat
+#   models/lizard-toe-pad/yolo_obb_6class_h7.onnx
+#   models/lizard-toe-pad/toe_predictor_obb.dat
+#   models/lizard-toe-pad/finger_predictor_obb.dat
+#   models/lizard-toe-pad/lizard_scale.dat
+
+permissions:
+  contents: write
+
+jobs:
+  build-mac:
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            python-arch: arm64
+          - arch: x64
+            python-arch: x64
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.python-arch }}
+
+      - name: Install system dependencies
+        run: brew install cmake
+
+      - name: Download model files
+        run: |
+          gh release download models -p "models.tar.gz" -D /tmp
+          tar xzf /tmp/models.tar.gz
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Python dependencies for PyInstaller
+        run: |
+          pip install pyinstaller
+          pip install flask==2.2.3 flask-cors==3.0.10 werkzeug==2.2.2
+          pip install numpy pandas opencv-python pillow
+          pip install dlib
+          pip install onnxruntime
+          pip install pydicom python-dotenv
+          pip install prometheus-client psutil
+          pip install matplotlib
+          pip install pyobjc-framework-Vision pyobjc-framework-Quartz pyobjc
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build frontend
+        env:
+          VITE_RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
+        run: |
+          cd frontend
+          npm ci
+          VITE_BASE_URL="./" npm run build
+
+      - name: Copy frontend to Electron
+        run: |
+          rm -rf electron/frontend
+          cp -r frontend/dist electron/frontend
+
+      - name: Build Python backend
+        run: |
+          cd electron
+          python -m PyInstaller pyinstaller.spec \
+            --distpath "$PWD/dist" \
+            --workpath "$PWD/build-temp" \
+            --clean -y
+        env:
+          PYTHON_PATH: python
+
+      - name: Package Electron app
+        run: |
+          cd electron
+          npm ci
+          npx electron-builder --mac --${{ matrix.arch }} --publish never
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmg-${{ matrix.arch }}
+          path: electron/release/*.dmg
+
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download model files
+        shell: bash
+        run: |
+          gh release download models -p "models.tar.gz" -D /tmp
+          tar xzf /tmp/models.tar.gz
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Python dependencies for PyInstaller
+        run: |
+          pip install pyinstaller
+          pip install flask==2.2.3 flask-cors==3.0.10 werkzeug==2.2.2
+          pip install numpy pandas opencv-python pillow
+          pip install cmake
+          pip install dlib
+          pip install onnxruntime
+          pip install pydicom python-dotenv
+          pip install prometheus-client psutil
+          pip install matplotlib
+          pip install winocr
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build frontend
+        env:
+          VITE_RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
+        run: |
+          cd frontend
+          npm ci
+          $env:VITE_BASE_URL = "./"
+          npm run build
+
+      - name: Copy frontend to Electron
+        run: |
+          Remove-Item -Recurse -Force electron\frontend -ErrorAction SilentlyContinue
+          Copy-Item -Recurse frontend\dist electron\frontend
+
+      - name: Build Python backend
+        run: |
+          cd electron
+          python -m PyInstaller pyinstaller.spec `
+            --distpath "$PWD\dist" `
+            --workpath "$PWD\build-temp" `
+            --clean -y
+
+      - name: Package Electron app
+        run: |
+          cd electron
+          npm ci
+          npx electron-builder --win --publish never
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: exe-win
+          path: electron/release/*.exe
+
+  create-release:
+    needs: [build-mac, build-win]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f | sort
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || github.event.inputs.version }}
+          name: LizardMorph ${{ github.ref_name || github.event.inputs.version }}
+          draft: true
+          files: |
+            artifacts/dmg-arm64/*.dmg
+            artifacts/dmg-x64/*.dmg
+            artifacts/exe-win/*.exe
+          body: |
+            ## Downloads
+
+            | Platform | File | Notes |
+            |----------|------|-------|
+            | macOS (Apple Silicon) | `LizardMorph-*-arm64.dmg` | M1/M2/M3/M4 Macs |
+            | macOS (Intel) | `LizardMorph-*-x64.dmg` | 2015–2020 Intel Macs |
+            | Windows | `LizardMorph.Setup.*.exe` | Windows 10+ |
+
+            ### macOS: Which download do I need?
+            - Click  → **About This Mac**
+            - If you see **Apple M1/M2/M3/M4** → download the **arm64** DMG
+            - If you see **Intel** → download the **x64** DMG

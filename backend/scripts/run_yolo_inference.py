@@ -4,10 +4,10 @@ run_yolo_inference.py
 Run YOLO OBB inference on a single image and print all detections.
 
 Usage:
-    conda run -n lizard python scripts/run_yolo_inference.py <image_path> [--model <model_path>]
+    uv run python scripts/run_yolo_inference.py <image_path> [--model <model_path>]
 
 Example:
-    conda run -n lizard python scripts/run_yolo_inference.py /path/to/1001.jpg
+    uv run python scripts/run_yolo_inference.py /path/to/1001.jpg
 """
 import sys
 import argparse

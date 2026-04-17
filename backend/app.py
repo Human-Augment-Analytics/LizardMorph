@@ -1,12 +1,26 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Server-side ID OCR loads EasyOCR/torch and can OOM low-RAM hosts; set ENABLE_ID_OCR=false to skip.
+ENABLE_ID_OCR = os.getenv("ENABLE_ID_OCR", "true").lower() in ("1", "true", "yes")
+id_extractor = None
+if ENABLE_ID_OCR:
+    try:
+        import id_extractor as _id_extractor_mod
+
+        id_extractor = _id_extractor_mod
+    except ImportError:
+        id_extractor = None
+
 import utils
 import visual_individual_performance
 import xray_preprocessing
 from export_handler import ExportHandler
-from export_handler import ExportHandler
 from session_manager import SessionManager
-import id_extractor
 
-import os
+import sys
 import hmac
 import hashlib
 import subprocess
@@ -17,24 +31,52 @@ from base64 import b64encode
 import time
 import logging
 import shutil
-from dotenv import load_dotenv
 import psutil
 import threading
 import time
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+import predictor_library
 
-# Load ENV variables
-load_dotenv()
+# prometheus_client is optional in some environments (e.g. minimal installs, tests)
+try:
+    from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+except Exception:  # pragma: no cover
+    Counter = Histogram = Gauge = None
+    generate_latest = None
+    CONTENT_TYPE_LATEST = "text/plain"
+
+# Load ENV variables (dotenv already applied at module start for ENABLE_ID_OCR / id_extractor)
 frontend_dir = os.getenv("FRONTEND_DIR", "../frontend/dist")
 session_dir = os.getenv("SESSION_DIR", "sessions")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# PyInstaller sets sys.frozen and sys._MEIPASS when running as a bundle
+if getattr(sys, 'frozen', False):
+    BASE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def get_model_path(relative_path):
+    if relative_path is None:
+        return None
+    if getattr(sys, 'frozen', False):
+        # In frozen mode, models are bundled relative to _MEIPASS
+        # Strip leading ../ since paths like "../models/..." need to become "models/..."
+        import re
+        clean = re.sub(r'^(\.\./)+', '', relative_path)
+        clean = re.sub(r'^\./', '', clean)
+        return os.path.join(BASE_DIR, clean)
     return os.path.abspath(os.path.join(BASE_DIR, relative_path))
 
+# Global predictor library (Free mode)
+PREDICTOR_LIBRARY_DIR = get_model_path(
+    os.getenv("PREDICTOR_LIBRARY_DIR", "../models/custom_predictors")
+)
+PREDICTOR_LIBRARY_INDEX = os.path.join(PREDICTOR_LIBRARY_DIR, "predictors.json")
+PREDICTOR_LIBRARY_FILES = os.path.join(PREDICTOR_LIBRARY_DIR, "files")
+PREDICTOR_MAX_BYTES = int(os.getenv("PREDICTOR_MAX_BYTES", str(100 * 1024 * 1024)))
+
 # Model files for different view types
-DORSAL_PREDICTOR_FILE = get_model_path(os.getenv("DORSAL_PREDICTOR_FILE", "../models/lizard-x-ray/better_predictor_auto.dat"))
+DORSAL_PREDICTOR_FILE = get_model_path(os.getenv("DORSAL_PREDICTOR_FILE", "../models/lizard-x-ray/dorsal_predictor_clahe_best.dat"))
+SCALE_PREDICTOR_FILE = get_model_path(os.getenv("SCALE_PREDICTOR_FILE", "../models/lizard-x-ray/scale_predictor_clahe.dat"))
 LATERAL_PREDICTOR_FILE = get_model_path(os.getenv("LATERAL_PREDICTOR_FILE", "../models/lizard-x-ray/lateral_predictor_auto.dat"))
 TOEPADS_PREDICTOR_FILE = get_model_path(os.getenv("TOEPADS_PREDICTOR_FILE", "./toepads_predictor_auto.dat"))
 CUSTOM_PREDICTOR_FILE = get_model_path(os.getenv("CUSTOM_PREDICTOR_FILE", "./custom_predictor_auto.dat"))
@@ -56,7 +98,7 @@ ID_EXTRACTOR_MODEL = get_model_path(os.getenv("ID_EXTRACTOR_MODEL", "../models/l
 
 
 # Default predictor file (fallback)
-predictor_file = get_model_path(os.getenv("PREDICTOR_FILE", "../models/lizard-x-ray/better_predictor_auto.dat"))
+predictor_file = get_model_path(os.getenv("PREDICTOR_FILE", "../models/lizard-x-ray/dorsal_predictor_clahe_best.dat"))
 
 # Webhook configuration
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "your-webhook-secret-here")
@@ -64,11 +106,18 @@ REPO_NAME = os.getenv("REPO_NAME", "LizardMorph")
 MAIN_BRANCH = os.getenv("MAIN_BRANCH", "main")
 VERIFY_SIGNATURE = os.getenv("VERIFY_SIGNATURE", "true").lower() == "true"
 
+# Allowed image extensions
+valid_extensions = [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif"]
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+logger.info(
+    "ID OCR (extract_id): %s",
+    "enabled" if id_extractor is not None else "disabled (ENABLE_ID_OCR=false or import failed)",
+)
 logger.info(f"Default predictor file: {predictor_file}")
 logger.info(f"Dorsal predictor file: {DORSAL_PREDICTOR_FILE}")
 logger.info(f"Lateral predictor file: {LATERAL_PREDICTOR_FILE}")
@@ -90,7 +139,8 @@ def get_cached_yolo_model():
     """Get cached YOLO model, loading it on first call.
 
     Uses OrtYoloDetector (INT8 quantized) if USE_ORT_QUANTIZED=true,
-    otherwise falls back to Ultralytics YOLO.
+    falls back to OrtYoloDetector with the standard model if ultralytics
+    is not available (e.g. in packaged Electron builds).
     """
     global _cached_yolo_model
     if _cached_yolo_model is None:
@@ -105,13 +155,19 @@ def get_cached_yolo_model():
                     _cached_yolo_model = OrtYoloDetector(int8_path)
                     logger.info("ORT INT8 model loaded and cached")
                 else:
-                    logger.warning(f"INT8 model not found at {int8_path}, falling back to Ultralytics")
+                    logger.warning(f"INT8 model not found at {int8_path}, falling back")
                     use_ort = False
             if not use_ort:
-                from ultralytics import YOLO
-                logger.info(f"Loading YOLO model: {TOEPAD_YOLO_MODEL}")
-                _cached_yolo_model = YOLO(TOEPAD_YOLO_MODEL, task="obb")
-                logger.info("YOLO model loaded and cached")
+                try:
+                    from ultralytics import YOLO
+                    logger.info(f"Loading YOLO model: {TOEPAD_YOLO_MODEL}")
+                    _cached_yolo_model = YOLO(TOEPAD_YOLO_MODEL, task="obb")
+                    logger.info("YOLO model loaded and cached")
+                except ImportError:
+                    from ort_inference import OrtYoloDetector
+                    logger.info(f"ultralytics not available, using ORT: {TOEPAD_YOLO_MODEL}")
+                    _cached_yolo_model = OrtYoloDetector(TOEPAD_YOLO_MODEL)
+                    logger.info("ORT YOLO model loaded and cached")
     return _cached_yolo_model
 
 _cached_id_model = None
@@ -136,13 +192,18 @@ def get_cached_dlib_predictors():
     if not _cached_dlib_predictors:
         try:
             import dlib
+            if DORSAL_PREDICTOR_FILE and os.path.exists(DORSAL_PREDICTOR_FILE):
+                logger.info(f"Loading dorsal predictor: {DORSAL_PREDICTOR_FILE}")
+                _cached_dlib_predictors['dorsal'] = dlib.shape_predictor(DORSAL_PREDICTOR_FILE)
+            if SCALE_PREDICTOR_FILE and os.path.exists(SCALE_PREDICTOR_FILE):
+                logger.info(f"Loading scale predictor: {SCALE_PREDICTOR_FILE}")
+                _cached_dlib_predictors['scale'] = dlib.shape_predictor(SCALE_PREDICTOR_FILE)
             if TOEPAD_TOE_PREDICTOR and os.path.exists(TOEPAD_TOE_PREDICTOR):
                 logger.info(f"Loading toe predictor: {TOEPAD_TOE_PREDICTOR}")
                 _cached_dlib_predictors['toe'] = dlib.shape_predictor(TOEPAD_TOE_PREDICTOR)
             if TOEPAD_FINGER_PREDICTOR and os.path.exists(TOEPAD_FINGER_PREDICTOR):
                 logger.info(f"Loading finger predictor: {TOEPAD_FINGER_PREDICTOR}")
                 _cached_dlib_predictors['finger'] = dlib.shape_predictor(TOEPAD_FINGER_PREDICTOR)
-            # Scale bars use YOLO only, no dlib predictor needed
             logger.info(f"Dlib predictors loaded and cached: {list(_cached_dlib_predictors.keys())}")
         except ImportError:
             logger.warning("dlib not installed, skipping predictor caching")
@@ -293,12 +354,15 @@ for folder in [
 export_handler = ExportHandler(OUTPUTS_FOLDER)
 session_manager = SessionManager(SESSIONS_FOLDER)
 
-# Initialize Prometheus metrics
-REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP requests', ['method', 'endpoint', 'status'])
-REQUEST_LATENCY = Histogram('http_request_duration_seconds', 'HTTP request latency', ['method', 'endpoint'])
-CPU_USAGE = Gauge('cpu_usage_percent', 'CPU usage percentage')
-MEMORY_USAGE = Gauge('memory_usage_percent', 'Memory usage percentage')
-DISK_USAGE = Gauge('disk_usage_percent', 'Disk usage percentage')
+# Initialize Prometheus metrics (no-op if prometheus_client missing)
+if Counter and Histogram and Gauge:
+    REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP requests', ['method', 'endpoint', 'status'])
+    REQUEST_LATENCY = Histogram('http_request_duration_seconds', 'HTTP request latency', ['method', 'endpoint'])
+    CPU_USAGE = Gauge('cpu_usage_percent', 'CPU usage percentage')
+    MEMORY_USAGE = Gauge('memory_usage_percent', 'Memory usage percentage')
+    DISK_USAGE = Gauge('disk_usage_percent', 'Disk usage percentage')
+else:
+    REQUEST_COUNT = REQUEST_LATENCY = CPU_USAGE = MEMORY_USAGE = DISK_USAGE = None
 
 # Background thread to update system metrics with memory optimization
 def update_system_metrics():
@@ -309,9 +373,12 @@ def update_system_metrics():
             memory = psutil.virtual_memory()
             disk = psutil.disk_usage('/')
             
-            CPU_USAGE.set(cpu_percent)
-            MEMORY_USAGE.set(memory.percent)
-            DISK_USAGE.set(disk.percent)
+            if CPU_USAGE:
+                CPU_USAGE.set(cpu_percent)
+            if MEMORY_USAGE:
+                MEMORY_USAGE.set(memory.percent)
+            if DISK_USAGE:
+                DISK_USAGE.set(disk.percent)
             
             # Force garbage collection after metrics update
             import gc
@@ -321,18 +388,28 @@ def update_system_metrics():
             print(f"Error updating system metrics: {e}")
         time.sleep(30)  # Reduced frequency to save memory
 
-# Start system metrics collection
-metrics_thread = threading.Thread(target=update_system_metrics, daemon=True)
-metrics_thread.start()
+# Start system metrics collection only if Prometheus is enabled
+if CPU_USAGE or MEMORY_USAGE or DISK_USAGE:
+    metrics_thread = threading.Thread(target=update_system_metrics, daemon=True)
+    metrics_thread.start()
+
+# Health check endpoint (used by Electron to detect backend readiness)
+@app.route("/health", methods=["GET"])
+def health_check():
+    return {"status": "ok"}, 200
 
 # Prometheus metrics endpoint
 @app.route('/metrics')
 def metrics():
+    if not generate_latest:
+        return jsonify({"success": False, "error": "prometheus_client not installed"}), 501
     return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
 
 # System metrics endpoint
 @app.route('/system/metrics')
 def system_metrics():
+    if not generate_latest:
+        return jsonify({"success": False, "error": "prometheus_client not installed"}), 501
     return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
 
 # Decorator to track metrics for all endpoints
@@ -343,11 +420,14 @@ def track_metrics(f):
         try:
             response = f(*args, **kwargs)
             status = response[1] if isinstance(response, tuple) else 200
-            REQUEST_COUNT.labels(method=request.method, endpoint=request.endpoint, status=status).inc()
-            REQUEST_LATENCY.labels(method=request.method, endpoint=request.endpoint).observe(time.time() - start_time)
+            if REQUEST_COUNT:
+                REQUEST_COUNT.labels(method=request.method, endpoint=request.endpoint, status=status).inc()
+            if REQUEST_LATENCY:
+                REQUEST_LATENCY.labels(method=request.method, endpoint=request.endpoint).observe(time.time() - start_time)
             return response
         except Exception as e:
-            REQUEST_COUNT.labels(method=request.method, endpoint=request.endpoint, status=500).inc()
+            if REQUEST_COUNT:
+                REQUEST_COUNT.labels(method=request.method, endpoint=request.endpoint, status=500).inc()
             raise e
     wrapper.__name__ = f.__name__
     return wrapper
@@ -521,6 +601,154 @@ def get_view_type_config(view_type):
     return predictor_file, detector_file, yolo_model
 
 
+@app.route("/predictors", methods=["GET"])
+@cross_origin()
+@track_metrics
+def list_predictors():
+    try:
+        predictors = predictor_library.list_predictors(PREDICTOR_LIBRARY_INDEX)
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "predictors": [
+                        {
+                            "id": p.id,
+                            "display_name": p.display_name,
+                            "stored_filename": p.stored_filename,
+                            "uploaded_at": p.uploaded_at,
+                            "size_bytes": p.size_bytes,
+                            "num_parts": p.num_parts,
+                        }
+                        for p in predictors
+                    ],
+                }
+            ),
+            200,
+        )
+    except Exception as e:
+        logger.error(f"Error listing predictors: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/predictors", methods=["POST"])
+@cross_origin()
+@track_metrics
+def upload_predictor():
+    try:
+        f = request.files.get("predictor")
+        if f is None:
+            return jsonify({"success": False, "error": "Missing file field 'predictor'"}), 400
+
+        predictor_library.ensure_dir(PREDICTOR_LIBRARY_DIR)
+        predictor_library.ensure_dir(PREDICTOR_LIBRARY_FILES)
+
+        file_bytes = f.read() or b""
+        meta = predictor_library.add_predictor(
+            index_path=PREDICTOR_LIBRARY_INDEX,
+            files_dir=PREDICTOR_LIBRARY_FILES,
+            original_filename=f.filename,
+            file_bytes=file_bytes,
+            max_bytes=PREDICTOR_MAX_BYTES,
+            validate_with_dlib=not app.config.get("TESTING", False),
+        )
+
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "predictor": {
+                        "id": meta.id,
+                        "display_name": meta.display_name,
+                        "stored_filename": meta.stored_filename,
+                        "uploaded_at": meta.uploaded_at,
+                        "size_bytes": meta.size_bytes,
+                        "num_parts": meta.num_parts,
+                    },
+                }
+            ),
+            200,
+        )
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 422
+    except Exception as e:
+        logger.error(f"Error uploading predictor: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/predictors/<predictor_id>", methods=["DELETE"])
+@cross_origin()
+@track_metrics
+def delete_predictor(predictor_id):
+    try:
+        predictor_library.ensure_dir(PREDICTOR_LIBRARY_DIR)
+        predictor_library.ensure_dir(PREDICTOR_LIBRARY_FILES)
+        ok = predictor_library.delete_predictor(
+            index_path=PREDICTOR_LIBRARY_INDEX,
+            files_dir=PREDICTOR_LIBRARY_FILES,
+            predictor_id=predictor_id,
+        )
+        if not ok:
+            return jsonify({"success": False, "error": "Predictor not found"}), 404
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        logger.error(f"Error deleting predictor: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/free_autoplace", methods=["POST"])
+@cross_origin()
+@track_metrics
+def free_autoplace():
+    """
+    Free mode explicit auto-landmarking using a globally stored .dat predictor.
+
+    This overwrites any existing XML for the given filename in the current session.
+    """
+    try:
+        filename = request.args.get("filename")
+        if not filename:
+            return jsonify({"error": "filename parameter is required"}), 400
+
+        body = request.get_json(silent=True) or {}
+        predictor_id = body.get("predictor_id") or request.args.get("predictor_id")
+        if not predictor_id:
+            return jsonify({"error": "predictor_id is required"}), 400
+
+        # Get session-specific folders
+        session_id = get_session_id()
+        session_data = get_session_folders(session_id)
+
+        safe_name = os.path.basename(filename)
+        image_path = os.path.join(session_data["upload_folder"], safe_name)
+        if not os.path.exists(image_path):
+            return jsonify({"error": f"File {safe_name} not found in session uploads folder"}), 404
+
+        meta = predictor_library.get_predictor(PREDICTOR_LIBRARY_INDEX, predictor_id)
+        if meta is None:
+            return jsonify({"error": "Predictor not found"}), 404
+
+        predictor_path = predictor_library.resolve_predictor_path(PREDICTOR_LIBRARY_FILES, meta)
+        if not os.path.exists(predictor_path):
+            return jsonify({"error": "Predictor file missing on server"}), 404
+
+        xml_path = os.path.join(session_data["outputs_folder"], f"output_{safe_name}.xml")
+
+        # Always overwrite XML
+        utils.predictions_to_xml_single(predictor_path, image_path, xml_path)
+        utils.dlib_xml_to_pandas(xml_path)
+        utils.dlib_xml_to_tps(xml_path)
+
+        data = visual_individual_performance.parse_xml_for_frontend(xml_path)
+        data["name"] = safe_name
+        data["session_id"] = session_id
+        data["view_type"] = "free"
+        return jsonify(data), 200
+    except Exception as e:
+        logger.error(f"Error in free_autoplace: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 def cleanup_on_startup():
     """
     Optional cleanup function that can be called on app startup
@@ -675,7 +903,8 @@ def upload():
             else:  # default to toe
                 predictor_file_path = TOEPAD_TOE_PREDICTOR
         
-        logger.info(f"Processing images with view type: {view_type}, predictor: {predictor_file_path}, detector: {detector_file_path}, YOLO: {yolo_model_path}")
+        skip_prediction = request.form.get("skip_prediction", "false").lower() == "true"
+        logger.info(f"Processing images with view type: {view_type}, predictor: {predictor_file_path}, detector: {detector_file_path}, YOLO: {yolo_model_path}, skip_prediction: {skip_prediction}")
 
         client_annotations_raw = request.form.get("client_annotations")
         client_annotations_dict = {}
@@ -704,6 +933,9 @@ def upload():
                 )
 
                 image.save(image_path)
+                
+                # Update session metadata with view type for this image
+                session_manager.update_image_view_type(session_id, unique_name, view_type)
 
                 # Process images with memory cleanup
                 try:
@@ -712,11 +944,43 @@ def upload():
                         image_path, inverted_path
                     )
 
+                    # Free mode: skip ML prediction, return empty coords
+                    if skip_prediction:
+                        # Create minimal XML for export compatibility
+                        xml_output_path = os.path.join(
+                            session_data["outputs_folder"], f"output_{unique_name}.xml"
+                        )
+                        import cv2 as _cv2
+                        _img = _cv2.imread(image_path)
+                        _h, _w = _img.shape[:2] if _img is not None else (0, 0)
+                        _xml = f'''<?xml version="1.0" ?>
+<dataset>
+   <name/>
+   <comment/>
+   <images>
+      <image file="{image_path}">
+         <box top="1" left="1" width="{_w}" height="{_h}"/>
+      </image>
+   </images>
+</dataset>'''
+                        with open(xml_output_path, 'w') as _f:
+                            _f.write(_xml)
+
+                        all_data.append({
+                            "name": unique_name,
+                            "coords": [],
+                            "bounding_boxes": [],
+                            "session_id": session_id,
+                            "view_type": view_type,
+                        })
+                        logger.info(f"Free mode: skipped prediction for {unique_name}")
+                        continue
+
                     # Generate the prediction XML in the session outputs folder
                     xml_output_path = os.path.join(
                         session_data["outputs_folder"], f"output_{unique_name}.xml"
                     )
-                    
+
                     client_ann = client_annotations_dict.get(image.filename)
                     if client_ann:
                         logger.info(f"Using client-provided ONNX Web annotations for {unique_name}")
@@ -763,6 +1027,15 @@ def upload():
                             cached_dlib_predictors=get_cached_dlib_predictors()
                         )
                         logger.info(f"YOLO processing completed for {unique_name}")
+                    elif view_type.lower() == "dorsal":
+                        logger.info(f"Using Hybrid Best-Performance prediction for dorsal view")
+                        utils.predictions_to_xml_dorsal_hybrid(
+                            image_path,
+                            xml_output_path,
+                            DORSAL_PREDICTOR_FILE,
+                            SCALE_PREDICTOR_FILE,
+                            cached_dlib_predictors=get_cached_dlib_predictors()
+                        )
                     elif detector_file_path and os.path.exists(detector_file_path):
                         utils.predictions_to_xml_single_with_detector(
                             predictor_file_path, image_path, xml_output_path, detector_file_path
@@ -915,6 +1188,52 @@ def get_input_image():
     except Exception as e:
         logger.error(f"Error getting image: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/image_file", methods=["GET"])
+@cross_origin()
+@track_metrics
+def serve_image_file():
+    """Serve the raw image file for the requested version (original, inverted, or color_contrasted)."""
+    image_filename = request.args.get("image_filename")
+    image_type = request.args.get("type", "original") # original, inverted, color_contrasted
+    
+    if not image_filename:
+        return jsonify({"error": "image_filename query parameter is required"}), 400
+
+    try:
+        # Use explicit session_id from query params since HTTP GET from <image> tag lacks custom headers
+        session_id = request.args.get("session_id")
+        if not session_id:
+            session_id = get_session_id()
+            
+        session_data = get_session_folders(session_id)
+
+        # Map type to the correct session folder and filename prefix
+        if image_type == "color_contrasted":
+            folder = session_data["processed_folder"]
+            # The backend prefix usually stored in "image1" locally: processed_
+            filename_to_serve = f"processed_{image_filename}"
+        elif image_type == "inverted":
+            folder = session_data["inverted_folder"] 
+            # The backend prefix usually stored in "image2" locally: inverted_
+            filename_to_serve = f"inverted_{image_filename}"
+        else: # original
+            folder = session_data["upload_folder"]
+            # "image3", no prefix
+            filename_to_serve = image_filename
+
+        file_path = os.path.join(folder, filename_to_serve)
+        if not os.path.exists(file_path):
+             logger.warning(f"Image not found at {file_path}")
+             return jsonify({"error": f"Image {filename_to_serve} not found in {image_type} folder"}), 404
+
+        return send_from_directory(folder, filename_to_serve)
+
+    except Exception as e:
+        logger.error(f"Error serving image file: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 
 
 @app.route("/endpoint", methods=["POST"])
@@ -1096,21 +1415,22 @@ def list_uploads():
         if not os.path.exists(upload_folder):
             return jsonify([]), 200
 
-        # Get all files from the session upload folder with common image extensions
-        valid_extensions = {".jpg", ".jpeg", ".png", ".tif", ".bmp"}
-        files = []
+        # Get session metadata to associate view types with files
+        metadata = session_manager.get_metadata(session_id)
+        image_views = metadata.get("image_views", {})
 
-        for filename in os.listdir(upload_folder):
+        results = []
+        for filename in sorted(os.listdir(upload_folder)):
             if os.path.isfile(os.path.join(upload_folder, filename)):
-                # Check if the file has a valid image extension
                 _, ext = os.path.splitext(filename)
                 if ext.lower() in valid_extensions:
-                    files.append(filename)
+                    view_type = image_views.get(filename, "dorsal")  # Default to dorsal if unknown
+                    results.append({"filename": filename, "view_type": view_type})
 
         logger.info(
-            f"Found {len(files)} files in session upload folder for session: {session_id[:8]}"
+            f"Found {len(results)} files in session upload folder for session: {session_id[:8]}"
         )
-        return jsonify(files), 200
+        return jsonify(results), 200
     except Exception as e:
         logger.error(f"Error listing session upload directory: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -1145,6 +1465,10 @@ def process_existing():
         session_data = get_session_folders(session_id)
 
         image_path = os.path.join(session_data["upload_folder"], filename)
+        
+        # Update session metadata with view type for this image (in case it wasn't set during upload)
+        session_manager.update_image_view_type(session_id, filename, view_type)
+        
         if not os.path.exists(image_path):
             return (
                 jsonify(
@@ -1187,6 +1511,15 @@ def process_existing():
                     finger_predictor_path=TOEPAD_FINGER_PREDICTOR,
                     target_predictor_type=toepad_predictor_type,
                     cached_yolo_model=get_cached_yolo_model(),
+                    cached_dlib_predictors=get_cached_dlib_predictors()
+                )
+            elif view_type.lower() == "dorsal":
+                logger.info(f"Using Hybrid Best-Performance prediction for dorsal view (existing image)")
+                utils.predictions_to_xml_dorsal_hybrid(
+                    image_path,
+                    xml_path,
+                    DORSAL_PREDICTOR_FILE,
+                    SCALE_PREDICTOR_FILE,
                     cached_dlib_predictors=get_cached_dlib_predictors()
                 )
             elif detector_file_path and os.path.exists(detector_file_path):
@@ -1665,134 +1998,79 @@ def verify_webhook_signature(payload, signature):
     return hmac.compare_digest(signature, expected_signature)
 
 
+DEPLOY_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "deploy.sh")
+DEPLOY_LOG_PATH = "/var/log/lizardmorph/deploy.log"
+
+
 @app.route("/webhook", methods=["POST"])
 @cross_origin()
 @track_metrics
 def github_webhook():
-    """GitHub webhook endpoint for auto-deployment"""
+    """GitHub webhook endpoint for auto-deployment.
+
+    Receives push events from GitHub, verifies the signature, and launches
+    deploy.sh in a fully detached process (new session) so it survives
+    the backend restart that happens at the end of the deploy.
+    """
     try:
-        # Get the raw payload
         payload = request.get_data()
-        
-        # Verify webhook signature if enabled
+
         if VERIFY_SIGNATURE:
             signature = request.headers.get('X-Hub-Signature-256', '')
             if not verify_webhook_signature(payload, signature):
                 logger.warning("Invalid webhook signature")
                 return jsonify({"error": "Invalid signature"}), 401
-        
-        # Parse JSON payload
+
         data = request.get_json()
-        
-        # Check if this is a push to main branch
-        if (data.get('ref') == f'refs/heads/{MAIN_BRANCH}' and 
-            data.get('repository', {}).get('name') == REPO_NAME):
-            
-            logger.info(f"Push to {MAIN_BRANCH} branch detected, triggering deployment...")
-            
-            # Trigger deployment in a separate thread to avoid blocking
-            def deploy_async():
-                try:
-                    logger.info("Starting deployment process...")
-                    
-                    # Change to repository directory
-                    repo_path = "/var/www/LizardMorph"
-                    os.chdir(repo_path)
-                    
-                    # Stash any uncommitted changes
-                    if subprocess.run(["git", "diff-index", "--quiet", "HEAD", "--"], capture_output=True).returncode != 0:
-                        logger.info("Stashing uncommitted changes...")
-                        subprocess.run(["git", "stash", "push", "-m", f"Auto-deploy stash {time.time()}"], check=True)
-                    
-                    # Fetch latest changes
-                    logger.info("Fetching latest changes...")
-                    subprocess.run(["git", "fetch", "origin"], check=True)
-                    
-                    # Check if main has new commits
-                    current_branch = subprocess.run(["git", "branch", "--show-current"], capture_output=True, text=True).stdout.strip()
-                    main_commits = subprocess.run(["git", "log", "--oneline", f"{current_branch}..origin/main"], capture_output=True, text=True).stdout.strip()
-                    
-                    if not main_commits:
-                        logger.info("No new commits on main branch")
-                        return
-                    
-                    logger.info(f"Found new commits on main branch")
-                    
-                    # Pull latest changes
-                    logger.info("Pulling latest changes from main branch...")
-                    subprocess.run(["git", "pull", "origin", "main"], check=True)
-                    logger.info("Successfully updated to latest main")
-                    
-                    # Rebuild frontend if it exists
-                    frontend_path = os.path.join(repo_path, "frontend")
-                    if os.path.exists(frontend_path) and os.path.exists(os.path.join(frontend_path, "package.json")):
-                        logger.info("Rebuilding frontend...")
-                        os.chdir(frontend_path)
-                        subprocess.run(["npm", "install", "--production"], check=True)
-                        subprocess.run(["npm", "run", "build"], check=True)
-                        logger.info("Frontend build completed")
-                        os.chdir(repo_path)
-                    
-                    # Restart backend service
-                    logger.info("Restarting backend service...")
-                    try:
-                        # Try systemctl first (if service exists)
-                        subprocess.run(["systemctl", "restart", "lizardmorph-backend"], check=True)
-                        logger.info("Backend service restarted via systemctl")
-                    except subprocess.CalledProcessError:
-                        # Fallback: restart the process manually
-                        logger.info("Systemctl failed, restarting backend manually...")
-                        # Kill existing gunicorn processes
-                        subprocess.run(["pkill", "-f", "gunicorn.*app:app"], check=False)
-                        # Start new backend process
-                        backend_dir = os.path.join(repo_path, "backend")
-                        os.chdir(backend_dir)
-                        subprocess.Popen([
-                            "gunicorn", "-c", "../gunicorn.conf.py", "app:app"
-                        ], cwd=backend_dir)
-                        logger.info("Backend service restarted manually")
-                        os.chdir(repo_path)
-                    
-                    # Reload nginx
-                    logger.info("Reloading nginx...")
-                    subprocess.run(["nginx", "-s", "reload"], check=True)
-                    logger.info("Nginx reloaded")
-                    
-                    logger.info("Deployment completed successfully!")
-                    
-                except subprocess.CalledProcessError as e:
-                    logger.error(f"Deployment failed: {e}")
-                except Exception as e:
-                    logger.error(f"Deployment error: {str(e)}")
-            
-            # Start deployment in background thread
-            thread = threading.Thread(target=deploy_async)
-            thread.daemon = True
-            thread.start()
-            
+
+        if (data.get('ref') == f'refs/heads/{MAIN_BRANCH}' and
+                data.get('repository', {}).get('name') == REPO_NAME):
+
+            logger.info(f"Push to {MAIN_BRANCH} detected — launching deploy.sh")
+
+            if not os.path.isfile(DEPLOY_SCRIPT):
+                logger.error(f"Deploy script not found: {DEPLOY_SCRIPT}")
+                return jsonify({"error": "Deploy script missing"}), 500
+
+            os.makedirs(os.path.dirname(DEPLOY_LOG_PATH), exist_ok=True)
+            log_fd = open(DEPLOY_LOG_PATH, "a")
+            subprocess.Popen(
+                [DEPLOY_SCRIPT],
+                stdout=log_fd,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                close_fds=True,
+            )
+            logger.info("deploy.sh launched (detached)")
             return jsonify({"status": "success", "message": "Deployment triggered"}), 200
-            
-        else:
-            logger.info(f"Push event received but not to {MAIN_BRANCH} branch, ignoring")
-            return jsonify({"status": "ignored", "message": "Not a push to main branch"}), 200
-            
+
+        logger.info(f"Push event ignored (not {MAIN_BRANCH} branch)")
+        return jsonify({"status": "ignored", "message": "Not a push to main branch"}), 200
+
     except Exception as e:
-        logger.error(f"Error processing webhook: {str(e)}", exc_info=True)
+        logger.error(f"Webhook error: {str(e)}", exc_info=True)
         return jsonify({"error": f"Webhook processing error: {str(e)}"}), 500
 
 @app.route("/extract_id", methods=["POST"])
 @cross_origin()
 @track_metrics
 def extract_id():
-    """Extract ID from image using YOLO and EasyOCR."""
+    """Extract ID from image using OCR on a bounding box region.
+
+    Accepts either:
+    - id_box: JSON with {left, top, width, height} in pixel coords (from client-side YOLO)
+    - Falls back to server-side YOLO (requires ultralytics) if no id_box provided
+    """
+    if id_extractor is None:
+        return jsonify({"error": "OCR not available"}), 501
     image_filename = request.form.get("image_filename")
     if not image_filename:
         return jsonify({"error": "image_filename is required"}), 400
-    
+
     try:
         session_id = get_session_id()
         session_data = get_session_folders(session_id)
-        
+
         # Look for image in session folders
         image_path = None
         for folder_key in ["upload_folder", "processed_folder"]:
@@ -1801,124 +2079,126 @@ def extract_id():
                 if os.path.exists(potential_path):
                     image_path = potential_path
                     break
-                    
+
         # If not found, check outputs folder which has subdirectories
         if not image_path and "outputs_folder" in session_data and session_data["outputs_folder"]:
             outputs_dir = session_data["outputs_folder"]
-            # Walk through subdirectories to find the image
             for root, dirs, files in os.walk(outputs_dir):
                 if image_filename in files:
                     image_path = os.path.join(root, image_filename)
                     break
-        
+
         if not image_path:
-             # Try absolute path if provided (for testing primarily)
              if os.path.exists(image_filename):
                  image_path = image_filename
              else:
                  return jsonify({"error": f"Image not found: {image_filename}"}), 404
 
-        # Use cached ID Extractor model
-        model = get_cached_id_model()
-        if model is None:
-            return jsonify({"error": "ID Extractor model not found or failed to load"}), 500
-        
-        # Run inference
-        # Use CPU device explicitly
-        results = model(image_path, conf=0.25, device='cpu', verbose=False)
-        
+        # Check if client provided an ID bounding box (from client-side YOLO)
+        id_box_json = request.form.get("id_box")
+
+        if id_box_json:
+            # Client provided the ID box — use it directly (no server-side YOLO needed)
+            import cv2
+            id_box = json.loads(id_box_json)
+            img = cv2.imread(image_path)
+            if img is None:
+                return jsonify({"error": "Failed to load image"}), 500
+
+            img_h, img_w = img.shape[:2]
+            # Convert pixel coords to normalized coords for id_extractor
+            x_c = (id_box["left"] + id_box["width"] / 2) / img_w
+            y_c = (id_box["top"] + id_box["height"] / 2) / img_h
+            w_norm = id_box["width"] / img_w
+            h_norm = id_box["height"] / img_h
+
+            logger.info(f"Using client-provided ID box: pixel=({id_box['left']}, {id_box['top']}, {id_box['width']}, {id_box['height']}), normalized=({x_c:.3f}, {y_c:.3f}, {w_norm:.3f}, {h_norm:.3f})")
+            extraction_result = id_extractor.extract_id_from_image(image_path, (x_c, y_c, w_norm, h_norm))
+            logger.info(f"Extractor result: {extraction_result}")
+
+            if 'error' not in extraction_result and extraction_result.get('id'):
+                return jsonify({
+                    "success": True,
+                    "id": extraction_result['id'],
+                    "confidence": extraction_result['confidence']
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": "No ID found in the provided bounding box"
+                }), 404
+
+        # Fallback: use server-side YOLO via OrtYoloDetector (no ultralytics needed)
+        import cv2
+        yolo_model = get_cached_yolo_model()
+        if yolo_model is None:
+            return jsonify({"error": "No ID box provided and YOLO model not available"}), 501
+
+        img = cv2.imread(image_path)
+        if img is None:
+            return jsonify({"error": "Failed to load image"}), 500
+
+        img_h, img_w = img.shape[:2]
+
+        # OrtYoloDetector returns dict with 'id' key containing list of detections
+        if hasattr(yolo_model, 'detect'):
+            # OrtYoloDetector
+            detections = yolo_model.detect(img)
+            id_dets = detections.get("id", [])
+        else:
+            # Ultralytics YOLO fallback
+            results = yolo_model(image_path, conf=0.25, device='cpu', verbose=False)
+            id_dets = []
+            for result in results:
+                if hasattr(result, 'obb') and result.obb is not None:
+                    class_names = yolo_model.names
+                    id_class_id = next((k for k, v in class_names.items() if v.lower() == 'id'), 5)
+                    for det_idx in range(len(result.obb)):
+                        if int(result.obb.cls[det_idx].item()) == id_class_id:
+                            obb = result.obb.xywhr[det_idx].cpu().numpy()
+                            orig_h, orig_w = result.orig_shape
+                            id_dets.append({
+                                "corners": None,
+                                "x_c": obb[0] / orig_w,
+                                "y_c": obb[1] / orig_h,
+                                "w_norm": obb[2] / orig_w,
+                                "h_norm": obb[3] / orig_h,
+                                "conf": float(result.obb.conf[det_idx].item()),
+                            })
+
         best_id_candidate = None
         best_conf = 0.0
 
-        class_names = model.names
-        
-        # Find ID class by name or ID
-        id_class_id = None
-        for class_id, class_name in class_names.items():
-            if class_name.lower() == 'id':
-                id_class_id = class_id
-                break
-        
-        # Fallback: assume class ID 5 is 'id' (6-class model) or class 3 (legacy 4-class model)
-        if id_class_id is None:
-            if 5 in class_names:
-                id_class_id = 5
-            elif 3 in class_names:
-                id_class_id = 3
-        
-        logger.info(f"ID class detection configured: id_class_id={id_class_id}, class_names={class_names}")
-        
-        for idx, result in enumerate(results):
-             logger.info(f"YOLO Inference result {idx}: has_boxes={result.boxes is not None}, has_obb={result.obb is not None if hasattr(result, 'obb') else False}")
-             
-             if hasattr(result, 'obb') and result.obb is not None and len(result.obb) > 0:
-                for det_idx in range(len(result.obb)):
-                    box_class_id = int(result.obb.cls[det_idx].item())
-                    box_conf = float(result.obb.conf[det_idx].item())
-                    logger.info(f"  OBB Det {det_idx}: class={box_class_id} ({class_names.get(box_class_id, 'unknown')}), conf={box_conf:.3f}")
-                    
-                    # Filter for ID class boxes only
-                    if id_class_id is not None and box_class_id != id_class_id:
-                        continue
-                        
-                    logger.info(f"  -> Found ID candidate text box (OBB)!")
-                    
-                    # Get normalized coordinates for cropping logic
-                    obb_features = result.obb.xywhr[det_idx].cpu().numpy()
-                    x_c_unnorm, y_c_unnorm, w_unnorm, h_unnorm = obb_features[0], obb_features[1], obb_features[2], obb_features[3]
-                    
-                    orig_h, orig_w = result.orig_shape
-                    # Normalize manually
-                    x_c = x_c_unnorm / orig_w
-                    y_c = y_c_unnorm / orig_h
-                    w_norm = w_unnorm / orig_w
-                    h_norm = h_unnorm / orig_h
-                    
-                    logger.info(f"  -> Cropping coords normalized: xywh=({x_c:.3f}, {y_c:.3f}, {w_norm:.3f}, {h_norm:.3f})")
-                    extraction_result = id_extractor.extract_id_from_image(image_path, (x_c, y_c, w_norm, h_norm))
-                    logger.info(f"  -> Extractor result: {extraction_result}")
-                    
-                    if 'error' not in extraction_result and extraction_result.get('id'):
-                        # Simple logic: prefer higher confidence
-                        if extraction_result['confidence'] > best_conf:
-                            best_conf = extraction_result['confidence']
-                            best_id_candidate = extraction_result['id']
-             
-             elif result.boxes is not None and len(result.boxes) > 0:
-                for det_idx, box in enumerate(result.boxes):
-                    box_class_id = int(box.cls[0].cpu().numpy())
-                    box_conf = float(box.conf[0].cpu().numpy())
-                    logger.info(f"  Box Det {det_idx}: class={box_class_id} ({class_names.get(box_class_id, 'unknown')}), conf={box_conf:.3f}")
-                    
-                    # Filter for ID class boxes only
-                    if id_class_id is not None and box_class_id != id_class_id:
-                        continue
-                        
-                    logger.info(f"  -> Found ID candidate text box!")
-                    
-                    # Get normalized coordinates for cropping logic
-                    # xywhn returns normalized x_center, y_center, width, height
-                    x_c, y_c, w_norm, h_norm = box.xywhn[0].cpu().numpy()
-                    
-                    logger.info(f"  -> Cropping coords normalized: xywh=({x_c:.3f}, {y_c:.3f}, {w_norm:.3f}, {h_norm:.3f})")
-                    extraction_result = id_extractor.extract_id_from_image(image_path, (x_c, y_c, w_norm, h_norm))
-                    logger.info(f"  -> Extractor result: {extraction_result}")
-                    
-                    if 'error' not in extraction_result and extraction_result.get('id'):
-                        # Simple logic: prefer higher confidence
-                        if extraction_result['confidence'] > best_conf:
-                            best_conf = extraction_result['confidence']
-                            best_id_candidate = extraction_result['id']
-                            
+        for det in id_dets:
+            # Get normalized center/size from ORT corners or pre-computed values
+            if "x_c" in det:
+                x_c, y_c, w_norm, h_norm = det["x_c"], det["y_c"], det["w_norm"], det["h_norm"]
+            else:
+                corners = det["corners"]
+                # Compute bounding box from corners
+                min_x = float(corners[:, 0].min())
+                max_x = float(corners[:, 0].max())
+                min_y = float(corners[:, 1].min())
+                max_y = float(corners[:, 1].max())
+                x_c = ((min_x + max_x) / 2) / img_w
+                y_c = ((min_y + max_y) / 2) / img_h
+                w_norm = (max_x - min_x) / img_w
+                h_norm = (max_y - min_y) / img_h
+
+            logger.info(f"Server-side ID detection: normalized=({x_c:.3f}, {y_c:.3f}, {w_norm:.3f}, {h_norm:.3f})")
+            extraction_result = id_extractor.extract_id_from_image(image_path, (x_c, y_c, w_norm, h_norm))
+            if 'error' not in extraction_result and extraction_result.get('id'):
+                if extraction_result['confidence'] > best_conf:
+                    best_conf = extraction_result['confidence']
+                    best_id_candidate = extraction_result['id']
+
         if best_id_candidate:
-             logger.info(f"SUCCESS: best_id_candidate={best_id_candidate}")
              return jsonify({
                  "success": True,
                  "id": best_id_candidate,
                  "confidence": best_conf
              })
         else:
-            logger.warning("FAILED: No ID found in image after examining all YOLO OBB detections.")
             return jsonify({
                 "success": False,
                 "error": "No ID found in image"

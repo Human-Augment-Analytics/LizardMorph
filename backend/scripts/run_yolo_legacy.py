@@ -1,11 +1,11 @@
 """
 run_yolo_legacy.py
 ------------------
-Run the legacy (non-OBB) YOLO bounding-box model on an image.
-Useful for comparing the old model's detections against the new OBB model.
+Run YOLO inference on a single image using the *legacy* bounding-box model (used for ID extraction).
+This uses standard YOLOv8, not YOLOv8-OBB.
 
 Usage:
-    conda run -n lizard python scripts/run_yolo_legacy.py <image_path> [--model <model_path>]
+    uv run python scripts/run_yolo_legacy.py <image_path> [--model <model_path>]
 """
 import argparse
 import warnings

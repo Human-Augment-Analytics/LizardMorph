@@ -1,6 +1,7 @@
 import { Component } from "react";
-import { HistoryPanelStyles } from "./HistoryPanel.style";
+import { getHistoryPanelStyles } from "./HistoryPanel.style";
 import type { UploadHistoryItem } from "../models/UploadHistoryItem";
+import type { ResolvedTheme } from "../contexts/ThemeContext";
 
 interface HistoryPanelProps {
   uploadHistory: UploadHistoryItem[];
@@ -8,6 +9,7 @@ interface HistoryPanelProps {
   uploadProgress: { [key: string]: number };
   onSelectImage: (index: number) => void;
   onLoadFromUploads: (filename: string) => void;
+  theme: ResolvedTheme;
 }
 
 export class HistoryPanel extends Component<HistoryPanelProps> {
@@ -18,15 +20,17 @@ export class HistoryPanel extends Component<HistoryPanelProps> {
       uploadProgress,
       onSelectImage,
       onLoadFromUploads,
+      theme,
     } = this.props;
+    const styles = getHistoryPanelStyles(theme);
     return (
-      <div style={HistoryPanelStyles.historyContainer}>
+      <div style={styles.historyContainer}>
         <h3>History</h3>
-        <div style={HistoryPanelStyles.historyTableContainer}>
-          <table style={HistoryPanelStyles.historyTable}>
+        <div style={styles.historyTableContainer}>
+          <table style={styles.historyTable}>
             <thead>
-              <tr style={HistoryPanelStyles.historyTableHeader}>
-                <th style={HistoryPanelStyles.historyTableHeaderCell}>
+              <tr style={styles.historyTableHeader}>
+                <th style={styles.historyTableHeaderCell}>
                   Image Name
                 </th>
               </tr>
@@ -36,7 +40,7 @@ export class HistoryPanel extends Component<HistoryPanelProps> {
                 uploadHistory.map((item, idx) => {
                   const isUploading = uploadProgress[item.name] !== undefined;
                   const progress = uploadProgress[item.name] || 0;
-                  
+
                   return (
                     <tr
                       key={`${item.name}-${idx}`}
@@ -46,41 +50,41 @@ export class HistoryPanel extends Component<HistoryPanelProps> {
                           : onLoadFromUploads(item.name)
                       }
                       style={{
-                        ...HistoryPanelStyles.historyTableRow,
+                        ...styles.historyTableRow,
                         ...(item.index === currentImageIndex
-                          ? HistoryPanelStyles.historyTableRowSelected
+                          ? styles.historyTableRowSelected
                           : {}),
                       }}
                     >
                       <td
                         style={{
-                          ...HistoryPanelStyles.historyTableCell,
+                          ...styles.historyTableCell,
                           ...(item.index === currentImageIndex
-                            ? HistoryPanelStyles.historyTableCellSelected
+                            ? styles.historyTableCellSelected
                             : {}),
                         }}
                       >
                         {item.name}
-                        <div style={{ fontSize: "0.8em", color: "#666" }}>
+                        <div style={{ fontSize: "0.8em", color: theme === "dark" ? "#8899aa" : "#666" }}>
                           {item.timestamp}
                         </div>
                         {isUploading && (
-                          <div style={HistoryPanelStyles.progressContainer}>
+                          <div style={styles.progressContainer}>
                             {progress === -1 ? (
                               <div style={{ color: "red", fontSize: "0.8em" }}>
                                 Error processing image
                               </div>
                             ) : (
                               <>
-                                <div style={HistoryPanelStyles.progressBar}>
-                                  <div 
+                                <div style={styles.progressBar}>
+                                  <div
                                     style={{
-                                      ...HistoryPanelStyles.progressFill,
+                                      ...styles.progressFill,
                                       width: `${progress}%`,
                                     }}
                                   />
                                 </div>
-                                <span style={HistoryPanelStyles.progressText}>
+                                <span style={styles.progressText}>
                                   {progress}%
                                 </span>
                               </>
@@ -93,7 +97,7 @@ export class HistoryPanel extends Component<HistoryPanelProps> {
                 })
               ) : (
                 <tr>
-                  <td style={HistoryPanelStyles.historyTableEmptyCell}>
+                  <td style={styles.historyTableEmptyCell}>
                     No images in history
                   </td>
                 </tr>

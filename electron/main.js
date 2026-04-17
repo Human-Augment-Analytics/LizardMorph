@@ -1,0 +1,150 @@
+const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { autoUpdater } = require("electron-updater");
+const path = require("path");
+const fs = require("fs");
+const { startBackend, stopBackend } = require("./python-backend");
+
+// File logger — writes to ~/Library/Logs/LizardMorph/main.log
+const logDir = path.join(app.getPath("home"), "Library", "Logs", "LizardMorph");
+fs.mkdirSync(logDir, { recursive: true });
+const logFile = path.join(logDir, "main.log");
+const logStream = fs.createWriteStream(logFile, { flags: "a" });
+
+function log(msg) {
+  const line = `[${new Date().toISOString()}] ${msg}`;
+  console.log(line);
+  logStream.write(line + "\n");
+}
+
+let mainWindow;
+let backendProc;
+let backendPort;
+let backendLogs = [];
+
+const isDev = !app.isPackaged;
+log(`App starting. isDev=${isDev}, isPackaged=${app.isPackaged}`);
+
+async function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      // Allow fetch() for WASM files when loading from file:// protocol
+      allowFileAccessFromFileURLs: !isDev,
+      // Disable web security in packaged build so data: URIs work in SVG <image> elements
+      // when loaded from file:// protocol (needed for base64 image display)
+      webSecurity: isDev,
+    },
+    icon: path.join(__dirname, "icons", "icon.png"),
+  });
+
+  mainWindow.loadURL(
+    "data:text/html,<html><body style='display:flex;justify-content:center;align-items:center;height:100vh;font-family:system-ui;background:%23f5f5f5'><div style='text-align:center'><h1>LizardMorph</h1><p>Starting backend server...</p></div></body></html>"
+  );
+
+  try {
+    log(`Starting backend (isDev=${isDev})...`);
+    const backend = await startBackend(isDev, log);
+    backendProc = backend.proc;
+    backendPort = backend.port;
+    backendLogs = backend.logs;
+    log(`Backend ready on port ${backendPort}`);
+
+    backendProc.on("exit", (code) => {
+      if (code !== 0 && code !== null && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.loadURL(
+          `data:text/html,<html><body style='padding:40px;font-family:system-ui'>` +
+          `<h1>Backend Crashed</h1>` +
+          `<p>The backend process exited with code ${code}.</p>` +
+          `<p>Please restart LizardMorph.</p>` +
+          `</body></html>`
+        );
+      }
+    });
+
+    ipcMain.handle("get-backend-port", () => backendPort);
+
+    if (isDev) {
+      mainWindow.loadURL("http://localhost:5173");
+    } else {
+      const frontendPath = path.join(__dirname, "frontend", "index.html");
+      log(`Loading frontend from: ${frontendPath}`);
+      mainWindow.loadFile(frontendPath).catch((err) => {
+        log(`Frontend load error: ${err.message}`);
+      });
+      // Cmd+Option+I opens devtools
+    }
+
+    mainWindow.webContents.on("console-message", (event, level, message) => {
+      log(`[renderer] ${message}`);
+    });
+  } catch (err) {
+    log(`Startup error: ${err.message}`);
+    log(`Backend logs: ${backendLogs.join(" | ")}`);
+    const logs = backendLogs.join("\n").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    mainWindow.loadURL(
+      `data:text/html,<html><body style='padding:40px;font-family:system-ui'><h1>Startup Error</h1><pre>${err.message}</pre><h2>Backend Logs</h2><pre style='max-height:400px;overflow:auto;background:%23f0f0f0;padding:10px'>${logs || "No output captured"}</pre></body></html>`
+    );
+  }
+}
+
+app.whenReady().then(() => {
+  createWindow();
+  if (!isDev) {
+    autoUpdater.checkForUpdatesAndNotify();
+  }
+});
+
+// Auto-updater events
+autoUpdater.on("update-available", () => {
+  log("Update available.");
+});
+
+autoUpdater.on("update-not-available", () => {
+  log("Update not available.");
+});
+
+autoUpdater.on("error", (err) => {
+  log(`Error in auto-updater: ${err.message}`);
+});
+
+autoUpdater.on("download-progress", (progressObj) => {
+  let log_message = "Download speed: " + progressObj.bytesPerSecond;
+  log_message = log_message + " - Downloaded " + progressObj.percent + "%";
+  log_message = log_message + " (" + progressObj.transferred + "/" + progressObj.total + ")";
+  log(log_message);
+});
+
+autoUpdater.on("update-downloaded", (info) => {
+  log("Update downloaded.");
+  dialog
+    .showMessageBox({
+      type: "info",
+      title: "Update Ready",
+      message: "A new version of LizardMorph has been downloaded. Restart the application to apply the updates.",
+      buttons: ["Restart", "Later"],
+    })
+    .then((result) => {
+      if (result.response === 0) {
+        autoUpdater.quitAndInstall();
+      }
+    });
+});
+
+app.on("activate", () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  }
+});
+
+app.on("window-all-closed", () => {
+  stopBackend(backendProc);
+  app.quit();
+});
+
+app.on("before-quit", () => {
+  stopBackend(backendProc);
+});

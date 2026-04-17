@@ -1,0 +1,8 @@
+# Allow yloh30 to restart lizardmorph-backend and reload nginx without password
+# Install: sudo cp /var/www/LizardMorph/systemd/lizardmorph-deploy.sudoers /etc/sudoers.d/lizardmorph-deploy
+# Verify: sudo visudo -cf /etc/sudoers.d/lizardmorph-deploy
+yloh30 ALL=(root) NOPASSWD: /bin/systemctl restart lizardmorph-backend
+yloh30 ALL=(root) NOPASSWD: /bin/systemctl start lizardmorph-backend
+yloh30 ALL=(root) NOPASSWD: /bin/systemctl stop lizardmorph-backend
+yloh30 ALL=(root) NOPASSWD: /bin/systemctl status lizardmorph-backend
+yloh30 ALL=(root) NOPASSWD: /usr/sbin/nginx -s reload
