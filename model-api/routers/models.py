@@ -41,29 +41,52 @@ def get_latest_model():
     if not production_version:
         raise HTTPException(status_code=404, detail="No model in Production stage")
 
-    # 2. Fetch latest GitHub Release
+    # 2. Get the run and read the github_release_tag
+    run = client.get_run(production_version.run_id)
+    release_tag = run.data.tags.get("github_release_tag")
+    if not release_tag:
+        raise HTTPException(
+            status_code=404,
+            detail="github_release_tag not set on the Production model's run",
+        )
+
+    # 3. Fetch the specific GitHub Release by tag
     gh_headers = {
         "Authorization": f"Bearer {config.GITHUB_TOKEN}",
         "Accept": "application/vnd.github+json",
     }
-    release_url = f"https://api.github.com/repos/{config.GITHUB_REPO}/releases/latest"
+    release_url = (
+        f"https://api.github.com/repos/{config.GITHUB_REPO}"
+        f"/releases/tags/{release_tag}"
+    )
     resp = httpx.get(release_url, headers=gh_headers)
     resp.raise_for_status()
     release = resp.json()
 
-    assets_by_name = {a["name"]: a["browser_download_url"] for a in release.get("assets", [])}
+    assets_by_name = {a["name"]: a for a in release.get("assets", [])}
 
-    # 3. Download metadata.json from release
-    metadata_url = assets_by_name.get("metadata.json")
-    if not metadata_url:
-        raise HTTPException(status_code=404, detail="metadata.json not found in latest release")
+    # 4. Download metadata.json from release via API (works for private repos)
+    metadata_asset = assets_by_name.get("metadata.json")
+    if not metadata_asset:
+        raise HTTPException(status_code=404, detail="metadata.json not found in release")
 
-    meta_resp = httpx.get(metadata_url, headers=gh_headers)
+    asset_download_url = metadata_asset["url"]
+    meta_resp = httpx.get(
+        asset_download_url,
+        headers={**gh_headers, "Accept": "application/octet-stream"},
+        follow_redirects=True,
+    )
     meta_resp.raise_for_status()
     meta = meta_resp.json()
 
-    # 4. Build response with asset download URLs
+    # 5. Build response with asset download URLs (use browser_download_url)
     asset_filenames = meta.get("assets", {})
+
+    def _asset_url(key: str) -> str:
+        filename = asset_filenames.get(key, "")
+        asset = assets_by_name.get(filename)
+        return asset["browser_download_url"] if asset else ""
+
     return LatestModelResponse(
         version=meta["version"],
         trained=meta["trained"],
@@ -75,8 +98,8 @@ def get_latest_model():
         training=TrainingInfo(**meta["training"]),
         metrics=MetricsInfo(**meta["metrics"]),
         assets=AssetUrls(
-            fp16=assets_by_name.get(asset_filenames.get("fp16", ""), ""),
-            fp32=assets_by_name.get(asset_filenames.get("fp32", ""), ""),
-            pt=assets_by_name.get(asset_filenames.get("pt", ""), ""),
+            fp16=_asset_url("fp16"),
+            fp32=_asset_url("fp32"),
+            pt=_asset_url("pt"),
         ),
     )
