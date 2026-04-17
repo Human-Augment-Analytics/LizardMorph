@@ -9,11 +9,12 @@ from main import app
 client = TestClient(app)
 
 
-def make_model_version(name, version, stage):
+def make_model_version(name, version, stage, run_id="run-abc123"):
     mv = MagicMock()
     mv.name = name
     mv.version = version
     mv.current_stage = stage
+    mv.run_id = run_id
     return mv
 
 
@@ -58,34 +59,44 @@ MOCK_METADATA = {
 }
 
 MOCK_RELEASE = {
-    "tag_name": "v1.0.0-obb",
+    "tag_name": "model/v1.0.0-obb",
     "assets": [
-        {"name": "best_fp16.onnx", "browser_download_url": "https://github.com/org/repo/releases/download/v1.0.0-obb/best_fp16.onnx"},
-        {"name": "best_fp32.onnx", "browser_download_url": "https://github.com/org/repo/releases/download/v1.0.0-obb/best_fp32.onnx"},
-        {"name": "best.pt",        "browser_download_url": "https://github.com/org/repo/releases/download/v1.0.0-obb/best.pt"},
-        {"name": "metadata.json",  "browser_download_url": "https://github.com/org/repo/releases/download/v1.0.0-obb/metadata.json"},
+        {"name": "best_fp16.onnx", "id": 1001, "url": "https://api.github.com/repos/org/repo/releases/assets/1001", "browser_download_url": "https://github.com/org/repo/releases/download/model/v1.0.0-obb/best_fp16.onnx"},
+        {"name": "best_fp32.onnx", "id": 1002, "url": "https://api.github.com/repos/org/repo/releases/assets/1002", "browser_download_url": "https://github.com/org/repo/releases/download/model/v1.0.0-obb/best_fp32.onnx"},
+        {"name": "best.pt",        "id": 1003, "url": "https://api.github.com/repos/org/repo/releases/assets/1003", "browser_download_url": "https://github.com/org/repo/releases/download/model/v1.0.0-obb/best.pt"},
+        {"name": "metadata.json",  "id": 1004, "url": "https://api.github.com/repos/org/repo/releases/assets/1004", "browser_download_url": "https://github.com/org/repo/releases/download/model/v1.0.0-obb/metadata.json"},
     ],
 }
+
+
+def make_mock_run(tags=None):
+    run = MagicMock()
+    run.data.tags = tags or {}
+    return run
 
 
 def mock_httpx_get(url, **kwargs):
     resp = MagicMock()
     resp.raise_for_status = MagicMock()
-    if "releases/latest" in url:
+    if "releases/tags/" in url:
         resp.json.return_value = MOCK_RELEASE
+    elif "releases/assets/" in url:
+        resp.json.return_value = MOCK_METADATA
     else:
         resp.json.return_value = MOCK_METADATA
     return resp
 
 
 def test_latest_model():
-    mv = make_model_version("H8_obb_botonly", "3", "Production")
+    mv = make_model_version("H8_obb_botonly", "3", "Production", run_id="run-abc123")
+    mock_run = make_mock_run(tags={"github_release_tag": "model/v1.0.0-obb"})
     with patch("mlflow.MlflowClient") as MockClient, \
          patch("httpx.get", side_effect=mock_httpx_get):
         MockClient.return_value.search_registered_models.return_value = [
             make_registered_model("H8_obb_botonly", [mv])
         ]
         MockClient.return_value.get_latest_versions.return_value = [mv]
+        MockClient.return_value.get_run.return_value = mock_run
         response = client.get("/model/latest")
     assert response.status_code == 200
     data = response.json()
@@ -107,12 +118,27 @@ def test_latest_model_no_production():
     assert "Production" in response.json()["detail"]
 
 
+def test_latest_model_no_release_tag():
+    mv = make_model_version("H8_obb_botonly", "3", "Production", run_id="run-abc123")
+    mock_run = make_mock_run(tags={})  # no github_release_tag
+    with patch("mlflow.MlflowClient") as MockClient:
+        MockClient.return_value.search_registered_models.return_value = [
+            make_registered_model("H8_obb_botonly", [mv])
+        ]
+        MockClient.return_value.get_latest_versions.return_value = [mv]
+        MockClient.return_value.get_run.return_value = mock_run
+        response = client.get("/model/latest")
+    assert response.status_code == 404
+    assert "github_release_tag" in response.json()["detail"]
+
+
 def test_latest_model_no_metadata_asset():
-    mv = make_model_version("H8_obb_botonly", "3", "Production")
+    mv = make_model_version("H8_obb_botonly", "3", "Production", run_id="run-abc123")
+    mock_run = make_mock_run(tags={"github_release_tag": "model/v1.0.0-obb"})
     release_no_metadata = {
-        "tag_name": "v1.0.0-obb",
+        "tag_name": "model/v1.0.0-obb",
         "assets": [
-            {"name": "best_fp16.onnx", "browser_download_url": "https://github.com/org/repo/releases/download/v1.0.0-obb/best_fp16.onnx"},
+            {"name": "best_fp16.onnx", "id": 1001, "url": "https://api.github.com/repos/org/repo/releases/assets/1001", "browser_download_url": "https://github.com/org/repo/releases/download/model/v1.0.0-obb/best_fp16.onnx"},
         ],
     }
     def mock_get_no_meta(url, **kwargs):
@@ -127,6 +153,7 @@ def test_latest_model_no_metadata_asset():
             make_registered_model("H8_obb_botonly", [mv])
         ]
         MockClient.return_value.get_latest_versions.return_value = [mv]
+        MockClient.return_value.get_run.return_value = mock_run
         response = client.get("/model/latest")
     assert response.status_code == 404
     assert "metadata.json" in response.json()["detail"]
