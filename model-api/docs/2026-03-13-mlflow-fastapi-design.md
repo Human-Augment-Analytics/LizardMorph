@@ -1,11 +1,11 @@
-# MLflow + FastAPI Read-Only Service Design
+# MLflow + FastAPI Model Registry Service Design
 
 **Date**: 2026-03-13
 **Status**: Approved
 
 ## Overview
 
-A standalone FastAPI service that wraps MLflow's tracking server, exposing a clean read-only API for experiment history and latest production model info. Runs alongside the existing Flask backend and MLflow server via Docker Compose.
+A standalone FastAPI service that wraps MLflow's tracking server, exposing a clean API for experiment history, model registry metadata, and controlled model promotion. Runs alongside the existing Flask backend and MLflow server via Docker Compose.
 
 ## Architecture
 
@@ -45,15 +45,16 @@ No manual URL configuration required. `GITHUB_TOKEN` is used for authentication 
 
 ## API Endpoints
 
-All endpoints are read-only, no authentication required. CORS allows all origins (`*`).
+Read endpoints require no authentication. Promotion is a write operation and should be kept behind trusted network access until an admin token is added. CORS allows all origins (`*`) in the current local/dev setup.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Service health check (FastAPI + MLflow reachability) |
 | `GET` | `/experiments` | List all MLflow experiments |
 | `GET` | `/experiments/{id}/runs` | List FINISHED runs, ordered by start_time DESC, max 100 |
-| `GET` | `/models` | List all registered models and their versions |
-| `GET` | `/model/latest` | Latest Production model info + GitHub Release download URL |
+| `GET` | `/models` | List all registered model versions, aliases, stages, and run IDs |
+| `GET` | `/model/latest` | Current promoted model info + GitHub Release download URL |
+| `POST` | `/models/{name}/versions/{version}/promote` | Assign the `champion` alias and optional Production stage |
 
 ### Response Examples
 
@@ -101,11 +102,15 @@ FastAPI app entrypoint. Registers routers, configures CORS (`allow_origins=["*"]
 - `GET /experiments/{id}/runs` → `mlflow.search_runs(filter_string="status = 'FINISHED'", order_by=["start_time DESC"], max_results=100)`
 
 ### `routers/models.py`
-- `GET /models` → `MlflowClient().search_registered_models()`
+- `GET /models` -> `MlflowClient().search_model_versions()` so every version is visible, not only per-stage latest versions.
 - `GET /model/latest`:
-  1. `MlflowClient().get_latest_versions(name, stages=["Production"])` → if empty, raise HTTP 404
-  2. Call GitHub API `GET https://api.github.com/repos/{GITHUB_REPO}/releases/latest` with `Authorization: Bearer {GITHUB_TOKEN}`
-  3. Find first asset where `name.endswith(".onnx")` → return `browser_download_url`
+  1. Resolve the `champion` alias first, then fall back to the legacy `Production` stage.
+  2. Read `github_release_tag` from the source run or infer it from the model version source URL.
+  3. Fetch the GitHub Release metadata and asset download URLs.
+- `POST /models/{name}/versions/{version}/promote`:
+  1. Assigns the `champion` alias to the selected version.
+  2. Adds promotion metadata tags.
+  3. Optionally transitions the version to the legacy `Production` stage for MLflow 2.x UI compatibility.
 
 ### `models/schemas.py`
 Pydantic response schemas for type-safe API responses.
@@ -132,7 +137,7 @@ GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
 ```yaml
 services:
   mlflow:
-    image: ghcr.io/mlflow/mlflow:latest
+    image: ghcr.io/mlflow/mlflow:v2.22.4
     command: mlflow server --backend-store-uri sqlite:///data/mlflow.db --no-serve-artifacts --host 0.0.0.0 --port 5000
     ports: ["5000:5000"]
     volumes: ["./data:/data"]

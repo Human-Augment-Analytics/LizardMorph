@@ -398,6 +398,55 @@ if CPU_USAGE or MEMORY_USAGE or DISK_USAGE:
 def health_check():
     return {"status": "ok"}, 200
 
+
+@app.route("/api/sync-model", methods=["POST"])
+@cross_origin()
+def sync_model_from_registry():
+    """Pull the current Production model from model-api and reload the cache.
+
+    Calls model-api's /model/latest, downloads the fp16 onnx into the path
+    backend currently uses (TOEPAD_YOLO_MODEL), then resets the cache so the
+    next inference call reloads from disk.
+    """
+    global _cached_yolo_model
+    import requests as _requests
+
+    model_api_url = os.getenv("MODEL_API_URL", "http://localhost:8000")
+    target_path = TOEPAD_YOLO_MODEL
+    if not target_path:
+        return jsonify({"status": "error", "error": "TOEPAD_YOLO_MODEL not configured"}), 500
+
+    try:
+        latest = _requests.get(f"{model_api_url}/model/latest", timeout=10).json()
+    except Exception as exc:
+        return jsonify({"status": "error", "error": f"model-api unreachable: {exc}"}), 502
+
+    if "assets" not in latest:
+        return jsonify({"status": "error", "error": f"unexpected model-api response: {latest}"}), 502
+
+    download_url = latest["assets"].get("fp16") or latest["assets"].get("fp32")
+    if not download_url:
+        return jsonify({"status": "error", "error": "no onnx asset in latest model"}), 404
+
+    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+    try:
+        with _requests.get(download_url, stream=True, timeout=60) as r:
+            r.raise_for_status()
+            with open(target_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=1 << 20):
+                    f.write(chunk)
+    except Exception as exc:
+        return jsonify({"status": "error", "error": f"download failed: {exc}"}), 502
+
+    _cached_yolo_model = None  # force reload on next inference
+    logger.info(f"Model synced: {latest.get('version')} → {target_path}")
+
+    return jsonify({
+        "status": "ok",
+        "loaded_model": target_path,
+        "version": latest.get("version", "unknown"),
+    }), 200
+
 # Prometheus metrics endpoint
 @app.route('/metrics')
 def metrics():

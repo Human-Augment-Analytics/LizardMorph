@@ -136,6 +136,42 @@ models/
 
 ## 5. Start for Development
 
+### Short Local Start
+
+Open one terminal per service:
+
+```powershell
+cd D:\Github\LizardMorph
+mlflow server --backend-store-uri sqlite:///data/mlflow.db --port 5000
+```
+
+```powershell
+cd D:\Github\LizardMorph\model-api
+uv run uvicorn main:app --port 8000
+```
+
+```powershell
+cd D:\Github\LizardMorph\backend
+python app.py
+```
+
+```powershell
+cd D:\Github\LizardMorph\frontend
+npm run dev
+```
+
+Open:
+
+```text
+App:         http://localhost:5173
+Models page: http://localhost:5173/#/models
+MLflow UI:   http://localhost:5000
+model-api:   http://localhost:8000/docs
+```
+
+If `model-api` cannot reach MLflow, set `MLFLOW_TRACKING_URI=http://localhost:5000`
+for the `model-api` terminal before starting uvicorn.
+
 You can effortlessly start both the backend and frontend simultaneously with:
 
 ```bash

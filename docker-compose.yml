@@ -1,6 +1,6 @@
 services:
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.13.0
+    image: ghcr.io/mlflow/mlflow:v2.22.4
     command: >
       mlflow server
       --backend-store-uri sqlite:///data/mlflow.db

@@ -89,6 +89,11 @@ monitoring/web.yml
 # Local experiments / training artifacts
 Experiment/
 
+# MLflow local data
+mlruns/
+data/mlflow.db
+data/artifacts/
+
 # Electron build and runtime
 electron/dist/
 electron/dist-arm64/

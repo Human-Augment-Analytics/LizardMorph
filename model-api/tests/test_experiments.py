@@ -17,13 +17,14 @@ def make_experiment(exp_id, name):
     return e
 
 
-def make_run(run_id, name, metrics, params):
+def make_run(run_id, name, metrics, params, tags=None):
     r = MagicMock()
     r.info.run_id = run_id
     r.info.run_name = name
     r.info.status = "FINISHED"
     r.data.metrics = metrics
     r.data.params = params
+    r.data.tags = tags or {}
     return r
 
 
@@ -62,3 +63,17 @@ def test_get_runs_empty():
         response = client.get("/experiments/99/runs")
     assert response.status_code == 200
     assert response.json()["runs"] == []
+
+
+def test_get_runs_dedupes_repeated_release_tags():
+    mock_runs = [
+        make_run("new", "H11_obb_v1", {"mAP50": 0.93}, {}, {"github_release_tag": "model/v1"}),
+        make_run("old", "H11_obb_v1", {"mAP50": 0.91}, {}, {"github_release_tag": "model/v1"}),
+    ]
+    with patch("mlflow.MlflowClient") as MockClient:
+        MockClient.return_value.search_runs.return_value = mock_runs
+        response = client.get("/experiments/1/runs")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["runs"]) == 1
+    assert data["runs"][0]["run_id"] == "new"

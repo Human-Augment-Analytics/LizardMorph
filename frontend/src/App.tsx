@@ -2,6 +2,7 @@ import React from "react";
 import { HashRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import "./App.css";
 import { MainView } from "./views/MainView";
+import { ModelsView } from "./views/ModelsView";
 import { LandingPage } from "./components/LandingPage";
 import type { LizardViewType } from "./components/LandingPage";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
@@ -60,6 +61,7 @@ function App() {
         <Route path="/toepads" element={<MainViewWrapper selectedViewType="toepads" />} />
         <Route path="/toepad" element={<MainViewWrapper selectedViewType="toepads" />} />
         <Route path="/free" element={<MainViewWrapper selectedViewType="free" />} />
+        <Route path="/models" element={<ModelsView />} />
         <Route path="/custom" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional
 
 
 class HealthResponse(BaseModel):
@@ -23,6 +23,7 @@ class RunItem(BaseModel):
     status: str
     metrics: dict[str, float]
     params: dict[str, str]
+    tags: dict[str, str] = Field(default_factory=dict)
 
 
 class RunsResponse(BaseModel):
@@ -34,10 +35,31 @@ class ModelVersionItem(BaseModel):
     name: str
     version: str
     stage: str
+    aliases: list[str] = Field(default_factory=list)
+    run_id: Optional[str] = None
+    source: Optional[str] = None
+    status: Optional[str] = None
+    tags: dict[str, str] = Field(default_factory=dict)
 
 
 class ModelsResponse(BaseModel):
     models: list[ModelVersionItem]
+
+
+class PromoteModelRequest(BaseModel):
+    alias: str = "champion"
+    set_stage: bool = True
+    stage: Literal["Production", "Staging", "Archived", "None"] = "Production"
+    archive_existing_versions: bool = True
+
+
+class PromoteModelResponse(BaseModel):
+    name: str
+    version: str
+    alias: str
+    stage: str
+    aliases: list[str] = Field(default_factory=list)
+    run_id: Optional[str] = None
 
 
 # /model/latest — rich response from GitHub Release metadata.json

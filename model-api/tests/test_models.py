@@ -12,34 +12,35 @@ client = TestClient(app)
 def make_model_version(name, version, stage, run_id="run-abc123"):
     mv = MagicMock()
     mv.name = name
-    mv.version = version
+    mv.version = str(version)
     mv.current_stage = stage
     mv.run_id = run_id
+    mv.source = "https://github.com/org/repo/releases/tag/model/v1.0.0-obb"
+    mv.status = "READY"
+    mv.aliases = []
+    mv.tags = {}
+    mv.creation_timestamp = 1000
+    mv.last_updated_timestamp = 1000
     return mv
 
-
-def make_registered_model(name, versions):
-    m = MagicMock()
-    m.name = name
-    m.latest_versions = versions
-    return m
-
-
 def test_list_models():
-    mv = make_model_version("H8_obb_botonly", "3", "Production")
-    mock_models = [make_registered_model("H8_obb_botonly", [mv])]
+    mv1 = make_model_version("H8_obb_botonly", "1", "None")
+    mv2 = make_model_version("H8_obb_botonly", "3", "Production")
+    mv2.aliases = ["champion"]
     with patch("mlflow.MlflowClient") as MockClient:
-        MockClient.return_value.search_registered_models.return_value = mock_models
+        MockClient.return_value.search_model_versions.return_value = [mv1, mv2]
         response = client.get("/models")
     assert response.status_code == 200
     data = response.json()
     assert data["models"][0]["name"] == "H8_obb_botonly"
+    assert data["models"][0]["version"] == "3"
     assert data["models"][0]["stage"] == "Production"
+    assert data["models"][0]["aliases"] == ["champion"]
 
 
 def test_list_models_empty():
     with patch("mlflow.MlflowClient") as MockClient:
-        MockClient.return_value.search_registered_models.return_value = []
+        MockClient.return_value.search_model_versions.return_value = []
         response = client.get("/models")
     assert response.status_code == 200
     assert response.json()["models"] == []
@@ -92,10 +93,7 @@ def test_latest_model():
     mock_run = make_mock_run(tags={"github_release_tag": "model/v1.0.0-obb"})
     with patch("mlflow.MlflowClient") as MockClient, \
          patch("httpx.get", side_effect=mock_httpx_get):
-        MockClient.return_value.search_registered_models.return_value = [
-            make_registered_model("H8_obb_botonly", [mv])
-        ]
-        MockClient.return_value.get_latest_versions.return_value = [mv]
+        MockClient.return_value.search_model_versions.return_value = [mv]
         MockClient.return_value.get_run.return_value = mock_run
         response = client.get("/model/latest")
     assert response.status_code == 200
@@ -109,10 +107,7 @@ def test_latest_model():
 
 def test_latest_model_no_production():
     with patch("mlflow.MlflowClient") as MockClient:
-        MockClient.return_value.search_registered_models.return_value = [
-            make_registered_model("H8_obb_botonly", [])
-        ]
-        MockClient.return_value.get_latest_versions.return_value = []
+        MockClient.return_value.search_model_versions.return_value = []
         response = client.get("/model/latest")
     assert response.status_code == 404
     assert "Production" in response.json()["detail"]
@@ -120,12 +115,10 @@ def test_latest_model_no_production():
 
 def test_latest_model_no_release_tag():
     mv = make_model_version("H8_obb_botonly", "3", "Production", run_id="run-abc123")
+    mv.source = ""
     mock_run = make_mock_run(tags={})  # no github_release_tag
     with patch("mlflow.MlflowClient") as MockClient:
-        MockClient.return_value.search_registered_models.return_value = [
-            make_registered_model("H8_obb_botonly", [mv])
-        ]
-        MockClient.return_value.get_latest_versions.return_value = [mv]
+        MockClient.return_value.search_model_versions.return_value = [mv]
         MockClient.return_value.get_run.return_value = mock_run
         response = client.get("/model/latest")
     assert response.status_code == 404
@@ -149,11 +142,59 @@ def test_latest_model_no_metadata_asset():
 
     with patch("mlflow.MlflowClient") as MockClient, \
          patch("httpx.get", side_effect=mock_get_no_meta):
-        MockClient.return_value.search_registered_models.return_value = [
-            make_registered_model("H8_obb_botonly", [mv])
-        ]
-        MockClient.return_value.get_latest_versions.return_value = [mv]
+        MockClient.return_value.search_model_versions.return_value = [mv]
         MockClient.return_value.get_run.return_value = mock_run
         response = client.get("/model/latest")
     assert response.status_code == 404
     assert "metadata.json" in response.json()["detail"]
+
+
+def test_latest_model_prefers_champion_alias():
+    mv = make_model_version("H8_obb_botonly", "4", "None", run_id="run-alias")
+    mv.aliases = ["champion"]
+    mock_run = make_mock_run(tags={"github_release_tag": "model/v1.0.0-obb"})
+    with patch("mlflow.MlflowClient") as MockClient, \
+         patch("httpx.get", side_effect=mock_httpx_get):
+        MockClient.return_value.search_model_versions.return_value = [mv]
+        MockClient.return_value.get_run.return_value = mock_run
+        response = client.get("/model/latest")
+    assert response.status_code == 200
+
+
+def test_latest_model_picks_most_recent_promoted_alias():
+    old = make_model_version("H11_obb", "2", "None", run_id="run-old")
+    old.aliases = ["champion"]
+    old.tags = {"promoted_at": "2026-03-13T00:00:00+00:00"}
+    new = make_model_version("H12_obb", "1", "None", run_id="run-new")
+    new.aliases = ["champion"]
+    new.tags = {"promoted_at": "2026-04-01T00:00:00+00:00"}
+    mock_run = make_mock_run(tags={"github_release_tag": "model/v1.0.0-obb"})
+    with patch("mlflow.MlflowClient") as MockClient, \
+         patch("httpx.get", side_effect=mock_httpx_get):
+        MockClient.return_value.search_model_versions.return_value = [old, new]
+        MockClient.return_value.get_run.return_value = mock_run
+        response = client.get("/model/latest")
+    assert response.status_code == 200
+    MockClient.return_value.get_run.assert_called_once_with("run-new")
+
+
+def test_promote_model_version_sets_alias_stage_and_tags():
+    mv = make_model_version("H8_obb_botonly", "3", "Production", run_id="run-abc123")
+    mv.aliases = ["champion"]
+    with patch("mlflow.MlflowClient") as MockClient:
+        MockClient.return_value.get_model_version.return_value = mv
+        MockClient.return_value.transition_model_version_stage.return_value = mv
+        response = client.post(
+            "/models/H8_obb_botonly/versions/3/promote",
+            json={"alias": "champion"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "H8_obb_botonly"
+    assert data["version"] == "3"
+    assert data["alias"] == "champion"
+    MockClient.return_value.set_registered_model_alias.assert_called_once_with(
+        "H8_obb_botonly", "champion", "3"
+    )
+    MockClient.return_value.transition_model_version_stage.assert_called_once()

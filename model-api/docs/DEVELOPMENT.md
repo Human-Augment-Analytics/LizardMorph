@@ -33,6 +33,20 @@ curl http://localhost:8000/experiments
 # → {"experiments":[]}
 ```
 
+## Promote a Model
+
+```bash
+curl http://localhost:8000/models
+# -> {"models":[...]}
+
+curl -X POST http://localhost:8000/models/H11_obb/versions/2/promote \
+  -H "Content-Type: application/json" \
+  -d '{"alias":"champion","set_stage":true,"stage":"Production"}'
+```
+
+This promotes the version for `/model/latest`. The alias is the forward-compatible
+deployment pointer; the Production stage is kept for MLflow 2.x UI compatibility.
+
 ## Browse SQLite Database
 
 ```bash
