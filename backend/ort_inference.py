@@ -1,13 +1,18 @@
 """
 ORT-based YOLO OBB inference module.
 
-Replaces ultralytics YOLO dependency with direct ONNX Runtime inference
-for the 6-class oriented bounding box model (yolo_obb_6class_h7).
+Direct ONNX Runtime inference for YOLO OBB toepad models. Auto-detects
+the model schema from class names embedded in the ONNX metadata:
 
-Implements dual-pass detection (normal + vertically flipped) to detect
-all 6 classes: up_finger, up_toe, bot_finger, bot_toe, ruler, id.
+- H7 6-class (up_finger, up_toe, bot_finger, bot_toe, ruler, id):
+  normal pass produces all 6 classes; flipped pass acts as fallback for
+  missed up_* detections.
+
+- H11 4-class (finger, toe, ruler, id, trained bottom-only):
+  normal pass → bot_*; flipped pass → up_* (Y-flipped).
 """
 
+import ast
 import math
 import numpy as np
 import cv2
@@ -16,11 +21,12 @@ import onnxruntime as ort
 
 # Model constants
 INPUT_SIZE = 1280
-NUM_ANCHORS = 33600
-NUM_CLASSES = 6
 CONF_THRESHOLD = 0.25
 IOU_THRESHOLD = 0.45
 YOLO_MAX_DIM = 4096
+
+SCHEMA_H7_6CLASS = "h7_6class"
+SCHEMA_H11_4CLASS = "h11_4class"
 
 def _get_execution_providers():
     """Return available execution providers, preferring GPU."""
@@ -37,7 +43,8 @@ def _get_execution_providers():
     return providers
 
 
-CLASS_NAMES = {
+# Default fallback for legacy 6-class H7 models without proper metadata
+DEFAULT_H7_CLASS_NAMES = {
     0: "up_finger",
     1: "up_toe",
     2: "bot_finger",
@@ -45,6 +52,33 @@ CLASS_NAMES = {
     4: "ruler",
     5: "id",
 }
+
+
+def _read_class_names_from_onnx(session: ort.InferenceSession) -> dict[int, str] | None:
+    """Read class names dict from ONNX model metadata.
+
+    Ultralytics writes a `names` key like "{0: 'finger', 1: 'toe', ...}".
+    """
+    try:
+        meta = session.get_modelmeta().custom_metadata_map
+        names_str = meta.get("names")
+        if not names_str:
+            return None
+        parsed = ast.literal_eval(names_str)
+        if isinstance(parsed, dict):
+            return {int(k): str(v) for k, v in parsed.items()}
+    except Exception:
+        pass
+    return None
+
+
+def _infer_schema(class_names: dict[int, str]) -> str:
+    """Pick the merge strategy based on the number of classes.
+
+    - 4 classes → H11 schema (dual-pass routes by pass: normal=bot, flipped=up)
+    - 6 classes (or anything else) → H7 schema (class name tells up vs bot)
+    """
+    return SCHEMA_H11_4CLASS if len(class_names) == 4 else SCHEMA_H7_6CLASS
 
 
 class OrtYoloDetector:
@@ -63,7 +97,16 @@ class OrtYoloDetector:
         )
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
-        print(f"[OrtYoloDetector] Loaded model from {model_path}")
+
+        self.class_names = (
+            _read_class_names_from_onnx(self.session) or DEFAULT_H7_CLASS_NAMES
+        )
+        self.num_classes = len(self.class_names)
+        self.schema = _infer_schema(self.class_names)
+        print(
+            f"[OrtYoloDetector] Loaded {model_path} "
+            f"(schema={self.schema}, classes={self.num_classes}: {list(self.class_names.values())})"
+        )
 
     # ------------------------------------------------------------------
     # Preprocessing
@@ -108,21 +151,20 @@ class OrtYoloDetector:
     # Detection parsing
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _parse_detections(output: np.ndarray, conf_threshold: float):
-        """Parse raw model output [1, 11, 33600] into detection list.
+    def _parse_detections(self, output: np.ndarray, conf_threshold: float):
+        """Parse raw model output [1, 4+nc+1, num_anchors] into detection list.
 
-        Channels: 0=cx, 1=cy, 2=w, 3=h, 4-9=class_confs, 10=angle
+        Channels: 0=cx, 1=cy, 2=w, 3=h, 4..(4+nc-1)=class_confs, last=angle
 
         Returns list of dicts with keys: x, y, w, h, angle, conf, class_id
         """
-        data = output[0]  # [11, 33600]
-        # Extract class confidences [6, 33600]
-        class_confs = data[4:10]  # rows 4..9
-        max_class_ids = np.argmax(class_confs, axis=0)  # [33600]
-        max_confs = np.max(class_confs, axis=0)  # [33600]
+        data = output[0]  # [C, num_anchors]
+        nc = self.num_classes
+        class_confs = data[4 : 4 + nc]
+        max_class_ids = np.argmax(class_confs, axis=0)
+        max_confs = np.max(class_confs, axis=0)
+        angle_row = data[4 + nc]
 
-        # Filter by confidence
         mask = max_confs > conf_threshold
         indices = np.where(mask)[0]
 
@@ -133,7 +175,7 @@ class OrtYoloDetector:
                 "y": float(data[1, i]),
                 "w": float(data[2, i]),
                 "h": float(data[3, i]),
-                "angle": float(data[10, i]),
+                "angle": float(angle_row[i]),
                 "conf": float(max_confs[i]),
                 "class_id": int(max_class_ids[i]),
             })
@@ -318,46 +360,70 @@ class OrtYoloDetector:
             corners_orig = corners_ds * inv_scale
             return corners_orig
 
-        # Process normal pass detections
-        for box in normal_boxes:
-            cls_name = CLASS_NAMES.get(box["class_id"], "unknown")
-            corners = _model_to_original_corners(box)
-            det = {"conf": box["conf"], "corners": corners}
+        def _flip_y(corners):
+            out = np.copy(corners)
+            out[:, 1] = h_img - 1 - out[:, 1]
+            return out
 
-            if cls_name in ("ruler", "scale"):
-                # Also store w, h for scale detections
-                det["obb_wh"] = (box["w"] / scale * inv_scale, box["h"] / scale * inv_scale)
-                detections["scale"].append(det)
-            elif cls_name == "bot_finger":
-                detections["bot_finger"].append(det)
-            elif cls_name == "bot_toe":
-                detections["bot_toe"].append(det)
-            elif cls_name == "up_finger":
-                # up_finger detected in normal pass: flip corners Y to get flipped-image coords
-                corners_flipped = np.copy(corners)
-                h_orig = h_img  # original image height (before downsampling)
-                corners_flipped[:, 1] = h_orig - 1 - corners_flipped[:, 1]
-                det_flipped = {"conf": box["conf"], "corners": corners_flipped}
-                detections["up_finger"].append(det_flipped)
-            elif cls_name == "up_toe":
-                corners_flipped = np.copy(corners)
-                h_orig = h_img
-                corners_flipped[:, 1] = h_orig - 1 - corners_flipped[:, 1]
-                det_flipped = {"conf": box["conf"], "corners": corners_flipped}
-                detections["up_toe"].append(det_flipped)
-            elif cls_name == "id":
-                detections["id"].append(det)
+        if self.schema == SCHEMA_H7_6CLASS:
+            # Normal pass produces all 6 classes; flipped pass acts as fallback for missed up_*
+            for box in normal_boxes:
+                cls_name = self.class_names.get(box["class_id"], "unknown")
+                corners = _model_to_original_corners(box)
+                det = {"conf": box["conf"], "corners": corners}
 
-        # Process flipped pass detections: bot_finger -> up_finger, bot_toe -> up_toe
-        for box in flipped_boxes:
-            cls_name = CLASS_NAMES.get(box["class_id"], "unknown")
-            if cls_name == "bot_finger":
-                corners = _model_to_flipped_original_corners(box)
-                detections["up_finger"].append({"conf": box["conf"], "corners": corners})
-            elif cls_name == "bot_toe":
-                corners = _model_to_flipped_original_corners(box)
-                detections["up_toe"].append({"conf": box["conf"], "corners": corners})
-            # Ignore ruler, id, up_finger, up_toe from flipped pass
+                if cls_name in ("ruler", "scale"):
+                    det["obb_wh"] = (box["w"] / scale * inv_scale, box["h"] / scale * inv_scale)
+                    detections["scale"].append(det)
+                elif cls_name == "bot_finger":
+                    detections["bot_finger"].append(det)
+                elif cls_name == "bot_toe":
+                    detections["bot_toe"].append(det)
+                elif cls_name == "up_finger":
+                    detections["up_finger"].append({"conf": box["conf"], "corners": _flip_y(corners)})
+                elif cls_name == "up_toe":
+                    detections["up_toe"].append({"conf": box["conf"], "corners": _flip_y(corners)})
+                elif cls_name == "id":
+                    detections["id"].append(det)
+
+            for box in flipped_boxes:
+                cls_name = self.class_names.get(box["class_id"], "unknown")
+                if cls_name == "bot_finger":
+                    detections["up_finger"].append(
+                        {"conf": box["conf"], "corners": _model_to_flipped_original_corners(box)}
+                    )
+                elif cls_name == "bot_toe":
+                    detections["up_toe"].append(
+                        {"conf": box["conf"], "corners": _model_to_flipped_original_corners(box)}
+                    )
+
+        else:  # SCHEMA_H11_4CLASS — pass routes class to bot/up
+            for box in normal_boxes:
+                cls_name = self.class_names.get(box["class_id"], "unknown")
+                corners = _model_to_original_corners(box)
+                det = {"conf": box["conf"], "corners": corners}
+
+                if cls_name in ("ruler", "scale"):
+                    det["obb_wh"] = (box["w"] / scale * inv_scale, box["h"] / scale * inv_scale)
+                    detections["scale"].append(det)
+                elif cls_name == "finger":
+                    detections["bot_finger"].append(det)
+                elif cls_name == "toe":
+                    detections["bot_toe"].append(det)
+                elif cls_name == "id":
+                    detections["id"].append(det)
+
+            for box in flipped_boxes:
+                cls_name = self.class_names.get(box["class_id"], "unknown")
+                # ruler/id deduped via normal pass; flipped pass only contributes upper toepads
+                if cls_name == "finger":
+                    detections["up_finger"].append(
+                        {"conf": box["conf"], "corners": _model_to_flipped_original_corners(box)}
+                    )
+                elif cls_name == "toe":
+                    detections["up_toe"].append(
+                        {"conf": box["conf"], "corners": _model_to_flipped_original_corners(box)}
+                    )
 
         # Keep only best (highest conf) per category
         for category in detections:
