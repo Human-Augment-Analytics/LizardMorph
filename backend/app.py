@@ -712,6 +712,18 @@ def delete_predictor(predictor_id):
 @track_metrics
 def start_train_predictor():
     try:
+        # Prune completed or failed jobs older than 3600 seconds (1 hour)
+        with TRAINING_JOBS_LOCK:
+            now = time.time()
+            to_delete = []
+            for jid, job in list(TRAINING_JOBS.items()):
+                if job.get("status") in ("completed", "failed"):
+                    created_at = job.get("created_at", 0)
+                    if now - created_at > 3600:
+                        to_delete.append(jid)
+            for jid in to_delete:
+                del TRAINING_JOBS[jid]
+
         model_name = request.form.get("model_name", "Custom Predictor").strip()
         f = request.files.get("dataset")
         
@@ -733,7 +745,8 @@ def start_train_predictor():
             TRAINING_JOBS[job_id] = {
                 "status": "pending",
                 "error": None,
-                "predictor": None
+                "predictor": None,
+                "created_at": now
             }
             
         def worker_thread(jid, zip_p, name):
@@ -743,14 +756,14 @@ def start_train_predictor():
                     
                 # Lower tree & cascade depth slightly for standard uploads if requested to keep server happy
                 # (but respect standard requirements)
-                with PREDICTOR_INDEX_LOCK:
-                    meta = utils.train_predictor_from_zip(
-                        model_name=name,
-                        zip_path=zip_p,
-                        predictor_id=jid,
-                        index_path=PREDICTOR_LIBRARY_INDEX,
-                        files_dir=PREDICTOR_LIBRARY_FILES
-                    )
+                meta = utils.train_predictor_from_zip(
+                    model_name=name,
+                    zip_path=zip_p,
+                    predictor_id=jid,
+                    index_path=PREDICTOR_LIBRARY_INDEX,
+                    files_dir=PREDICTOR_LIBRARY_FILES,
+                    index_lock=PREDICTOR_INDEX_LOCK
+                )
                 
                 with TRAINING_JOBS_LOCK:
                     TRAINING_JOBS[jid]["status"] = "completed"
@@ -805,7 +818,6 @@ def get_train_status(job_id):
 
 
 @app.route("/free_autoplace", methods=["POST"])
-
 @cross_origin()
 @track_metrics
 def free_autoplace():
@@ -833,7 +845,8 @@ def free_autoplace():
         if not os.path.exists(image_path):
             return jsonify({"error": f"File {safe_name} not found in session uploads folder"}), 404
 
-        meta = predictor_library.get_predictor(PREDICTOR_LIBRARY_INDEX, predictor_id)
+        with PREDICTOR_INDEX_LOCK:
+            meta = predictor_library.get_predictor(PREDICTOR_LIBRARY_INDEX, predictor_id)
         if meta is None:
             return jsonify({"error": "Predictor not found"}), 404
 

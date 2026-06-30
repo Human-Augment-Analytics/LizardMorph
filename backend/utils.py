@@ -1926,7 +1926,7 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
     return obj_count
 
 
-def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, files_dir, custom_options=None):
+def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, files_dir, custom_options=None, index_lock=None):
     """
     Extracts a ZIP containing images and annotations, formats a dlib dataset, trains
     a shape predictor, registers it in the library, and cleans up.
@@ -2085,11 +2085,19 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
             )
             
             # Save to list index
-            idx = predictor_library.load_index(index_path)
-            predictors = idx.get("predictors", [])
-            predictors.append(asdict(meta))
-            idx["predictors"] = predictors
-            predictor_library.save_index(index_path, idx)
+            if index_lock is not None:
+                with index_lock:
+                    idx = predictor_library.load_index(index_path)
+                    predictors = idx.get("predictors", [])
+                    predictors.append(asdict(meta))
+                    idx["predictors"] = predictors
+                    predictor_library.save_index(index_path, idx)
+            else:
+                idx = predictor_library.load_index(index_path)
+                predictors = idx.get("predictors", [])
+                predictors.append(asdict(meta))
+                idx["predictors"] = predictors
+                predictor_library.save_index(index_path, idx)
         except Exception:
             if os.path.exists(output_model_path):
                 try:

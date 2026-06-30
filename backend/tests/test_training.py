@@ -505,4 +505,59 @@ def test_api_train_predictor_lifecycle(temp_workspace):
         app_module.PREDICTOR_LIBRARY_FILES = old_files
 
 
+def test_api_train_predictor_job_pruning():
+    from app import app, TRAINING_JOBS, TRAINING_JOBS_LOCK
+    import time
+    
+    with TRAINING_JOBS_LOCK:
+        TRAINING_JOBS.clear()
+        
+        # 1. Job 1: completed and older than 3600s
+        TRAINING_JOBS["job-old-completed"] = {
+            "status": "completed",
+            "error": None,
+            "predictor": {},
+            "created_at": time.time() - 4000
+        }
+        # 2. Job 2: failed and older than 3600s
+        TRAINING_JOBS["job-old-failed"] = {
+            "status": "failed",
+            "error": "Some error",
+            "predictor": None,
+            "created_at": time.time() - 5000
+        }
+        # 3. Job 3: completed but recent (not older than 3600s)
+        TRAINING_JOBS["job-recent-completed"] = {
+            "status": "completed",
+            "error": None,
+            "predictor": {},
+            "created_at": time.time() - 100
+        }
+        # 4. Job 4: pending and older than 3600s
+        TRAINING_JOBS["job-old-pending"] = {
+            "status": "pending",
+            "error": None,
+            "predictor": None,
+            "created_at": time.time() - 4000
+        }
+
+    with app.test_client() as client:
+        # Triggering the route (even if it returns a 400 bad request due to missing file)
+        resp = client.post("/train_predictor", data={})
+        assert resp.status_code == 400
+        
+    with TRAINING_JOBS_LOCK:
+        # Verify old completed/failed jobs are pruned
+        assert "job-old-completed" not in TRAINING_JOBS
+        assert "job-old-failed" not in TRAINING_JOBS
+        
+        # Verify recent jobs and non-completed/failed jobs are kept
+        assert "job-recent-completed" in TRAINING_JOBS
+        assert "job-old-pending" in TRAINING_JOBS
+        
+        # Cleanup
+        TRAINING_JOBS.clear()
+
+
+
 
