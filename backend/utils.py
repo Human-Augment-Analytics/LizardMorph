@@ -2114,6 +2114,6 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
         return asdict(meta)
         
     finally:
-        shutil.rmtree(temp_dir)
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
