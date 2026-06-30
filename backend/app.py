@@ -35,6 +35,7 @@ import psutil
 import threading
 import time
 import predictor_library
+import uuid
 
 # prometheus_client is optional in some environments (e.g. minimal installs, tests)
 try:
@@ -108,6 +109,11 @@ VERIFY_SIGNATURE = os.getenv("VERIFY_SIGNATURE", "true").lower() == "true"
 
 # Allowed image extensions
 valid_extensions = [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif"]
+
+# Thread-safe dictionary to keep track of training jobs
+TRAINING_JOBS = {}
+TRAINING_JOBS_LOCK = threading.Lock()
+
 
 # Configure logging
 logging.basicConfig(
@@ -696,7 +702,101 @@ def delete_predictor(predictor_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/train_predictor", methods=["POST"])
+@cross_origin()
+@track_metrics
+def start_train_predictor():
+    try:
+        model_name = request.form.get("model_name", "Custom Predictor").strip()
+        f = request.files.get("dataset")
+        
+        if not f:
+            return jsonify({"success": False, "error": "Missing dataset ZIP file"}), 400
+            
+        job_id = str(uuid.uuid4())
+        
+        # Ensure directories exist
+        predictor_library.ensure_dir(PREDICTOR_LIBRARY_DIR)
+        predictor_library.ensure_dir(PREDICTOR_LIBRARY_FILES)
+        
+        # Save ZIP upload to a temporary location
+        temp_zip_path = os.path.join(PREDICTOR_LIBRARY_DIR, f"upload_{job_id}.zip")
+        f.save(temp_zip_path)
+        
+        # Initialize registry entry
+        with TRAINING_JOBS_LOCK:
+            TRAINING_JOBS[job_id] = {
+                "status": "pending",
+                "error": None,
+                "predictor": None
+            }
+            
+        def worker_thread(jid, zip_p, name):
+            try:
+                with TRAINING_JOBS_LOCK:
+                    TRAINING_JOBS[jid]["status"] = "training"
+                    
+                # Lower tree & cascade depth slightly for standard uploads if requested to keep server happy
+                # (but respect standard requirements)
+                meta = utils.train_predictor_from_zip(
+                    model_name=name,
+                    zip_path=zip_p,
+                    predictor_id=jid,
+                    index_path=PREDICTOR_LIBRARY_INDEX,
+                    files_dir=PREDICTOR_LIBRARY_FILES
+                )
+                
+                with TRAINING_JOBS_LOCK:
+                    TRAINING_JOBS[jid]["status"] = "completed"
+                    TRAINING_JOBS[jid]["predictor"] = meta
+                    
+            except Exception as ex:
+                logger.error(f"Error in training job {jid}: {ex}", exc_info=True)
+                with TRAINING_JOBS_LOCK:
+                    TRAINING_JOBS[jid]["status"] = "failed"
+                    TRAINING_JOBS[jid]["error"] = str(ex)
+            finally:
+                try:
+                    if os.path.exists(zip_p):
+                        os.remove(zip_p)
+                except Exception:
+                    pass
+
+        # Launch background thread
+        t = threading.Thread(target=worker_thread, args=(job_id, temp_zip_path, model_name))
+        t.start()
+        
+        return jsonify({
+            "success": True,
+            "job_id": job_id,
+            "message": "Training job started"
+        }), 202
+        
+    except Exception as e:
+        logger.error(f"Error starting training job: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/train_status/<job_id>", methods=["GET"])
+@cross_origin()
+@track_metrics
+def get_train_status(job_id):
+    with TRAINING_JOBS_LOCK:
+        job = TRAINING_JOBS.get(job_id)
+        
+    if not job:
+        return jsonify({"success": False, "error": "Job not found"}), 404
+        
+    return jsonify({
+        "success": True,
+        "status": job["status"],
+        "error": job["error"],
+        "predictor": job["predictor"]
+    }), 200
+
+
 @app.route("/free_autoplace", methods=["POST"])
+
 @cross_origin()
 @track_metrics
 def free_autoplace():

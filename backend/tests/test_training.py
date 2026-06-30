@@ -440,3 +440,65 @@ def test_train_predictor_duplicate_filename(temp_workspace):
         )
 
 
+def test_api_train_predictor_lifecycle(temp_workspace):
+    # Setup app test client
+    from app import app, TRAINING_JOBS
+    import io
+    app.config['TESTING'] = True
+    
+    # Temporarily override predictor library constants
+    import app as app_module
+    old_idx = app_module.PREDICTOR_LIBRARY_INDEX
+    old_files = app_module.PREDICTOR_LIBRARY_FILES
+    
+    app_module.PREDICTOR_LIBRARY_INDEX = os.path.join(temp_workspace, "predictors.json")
+    app_module.PREDICTOR_LIBRARY_FILES = os.path.join(temp_workspace, "files")
+    os.makedirs(app_module.PREDICTOR_LIBRARY_FILES, exist_ok=True)
+
+    try:
+        # Create a mock zip payload
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w') as z:
+            img = np.zeros((50, 50, 3), dtype=np.uint8)
+            cv2.imwrite("t1.jpg", img)
+            z.write("t1.jpg")
+            os.remove("t1.jpg")
+            tps_content = "LM=1\n10 10\nIMAGE=t1.jpg\nID=0\n"
+            z.writestr("an.tps", tps_content)
+        
+        zip_buffer.seek(0)
+        
+        # Trigger training API
+        with app.test_client() as client:
+            resp = client.post(
+                "/train_predictor",
+                data={
+                    "model_name": "API Train",
+                    "dataset": (zip_buffer, "test.zip")
+                },
+                content_type="multipart/form-data"
+            )
+            assert resp.status_code == 202
+            data = resp.get_json()
+            assert data["success"] is True
+            job_id = data["job_id"]
+            
+            # Wait for background thread to complete
+            import time
+            for _ in range(20):
+                resp_status = client.get(f"/train_status/{job_id}")
+                status_data = resp_status.get_json()
+                if status_data["status"] in ["completed", "failed"]:
+                    break
+                time.sleep(0.5)
+                
+            assert status_data["status"] == "completed"
+            assert status_data["error"] is None
+            assert status_data["predictor"]["display_name"] == "API Train"
+            
+    finally:
+        app_module.PREDICTOR_LIBRARY_INDEX = old_idx
+        app_module.PREDICTOR_LIBRARY_FILES = old_files
+
+
+
