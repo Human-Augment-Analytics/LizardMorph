@@ -1,0 +1,79 @@
+import os
+import shutil
+import tempfile
+import zipfile
+import cv2
+import numpy as np
+import pytest
+from utils import train_predictor_from_zip, read_tps
+import predictor_library
+
+@pytest.fixture
+def temp_workspace():
+    tmpdir = tempfile.mkdtemp()
+    yield tmpdir
+    shutil.rmtree(tmpdir)
+
+def test_train_predictor_from_zip_success(temp_workspace):
+    # 1. Create a mock dataset zip file
+    zip_path = os.path.join(temp_workspace, "dataset.zip")
+    index_path = os.path.join(temp_workspace, "predictors.json")
+    files_dir = os.path.join(temp_workspace, "files")
+    
+    os.makedirs(files_dir, exist_ok=True)
+    
+    with zipfile.ZipFile(zip_path, 'w') as z:
+        # Save 2 solid black images
+        img = np.zeros((100, 100, 3), dtype=np.uint8)
+        img1_path = "img1.jpg"
+        img2_path = "img2.jpg"
+        cv2.imwrite(img1_path, img)
+        cv2.imwrite(img2_path, img)
+        
+        z.write(img1_path)
+        z.write(img2_path)
+        
+        os.remove(img1_path)
+        os.remove(img2_path)
+        
+        # Create corresponding TPS annotations
+        tps_content = """LM=2
+10.0 90.0
+20.0 80.0
+IMAGE=img1.jpg
+ID=0
+
+LM=2
+15.0 85.0
+25.0 75.0
+IMAGE=img2.jpg
+ID=1
+"""
+        z.writestr("annotations.tps", tps_content)
+
+    # 2. Run the training utility function
+    # Note: We configure very low depth/cascades to make it run in <1 second
+    mock_options = {
+        "nu": 0.1,
+        "tree_depth": 2,
+        "cascade_depth": 5
+    }
+    
+    meta = train_predictor_from_zip(
+        model_name="Test Predictor",
+        zip_path=zip_path,
+        predictor_id="test-uuid",
+        index_path=index_path,
+        files_dir=files_dir,
+        custom_options=mock_options
+    )
+    
+    assert meta is not None
+    assert meta["display_name"] == "Test Predictor"
+    assert meta["num_parts"] == 2
+    assert os.path.exists(os.path.join(files_dir, "test-uuid.dat"))
+    
+    # Check index registration
+    predictors = predictor_library.list_predictors(index_path)
+    assert len(predictors) == 1
+    assert predictors[0].id == "test-uuid"

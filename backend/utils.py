@@ -1921,3 +1921,155 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
              
     return obj_count
 
+
+def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, files_dir, custom_options=None):
+    """
+    Extracts a ZIP containing images and annotations, formats a dlib dataset, trains
+    a shape predictor, registers it in the library, and cleans up.
+    """
+    import zipfile
+    import shutil
+    import dlib
+    import xml.etree.ElementTree as ET
+    from xml.dom import minidom
+    import predictor_library
+
+    temp_dir = os.path.join(os.path.dirname(zip_path), f"training_{predictor_id}")
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    # 1. Extract ZIP
+    with zipfile.ZipFile(zip_path, 'r') as z:
+        z.extractall(temp_dir)
+        
+    # 2. Locate TPS or XML file
+    tps_file = None
+    xml_file = None
+    for root_dir, _, files in os.walk(temp_dir):
+        for f in files:
+            if f.lower().endswith(".tps"):
+                tps_file = os.path.join(root_dir, f)
+            elif f.lower().endswith(".xml") and not f.lower().startswith("mock"):
+                xml_file = os.path.join(root_dir, f)
+                
+    if not tps_file and not xml_file:
+        shutil.rmtree(temp_dir)
+        raise ValueError("No .tps or .xml annotation file found in dataset ZIP")
+        
+    dataset_xml_path = os.path.join(temp_dir, "dataset.xml")
+    num_parts = 0
+    
+    try:
+        if tps_file:
+            # Parse TPS and build XML
+            tps_data = read_tps(tps_file)
+            if not tps_data["im"]:
+                raise ValueError("TPS file contains no specimens or images.")
+                
+            root = ET.Element("dataset")
+            ET.SubElement(root, "name").text = model_name
+            images_e = ET.SubElement(root, "images")
+            
+            for idx, img_name in enumerate(tps_data["im"]):
+                # Locate referenced image inside temp_dir
+                img_filename = os.path.basename(img_name)
+                local_img_path = None
+                for r_dir, _, fs in os.walk(temp_dir):
+                    for file in fs:
+                        if file.lower() == img_filename.lower():
+                            local_img_path = os.path.join(r_dir, file)
+                            break
+                    if local_img_path:
+                        break
+                        
+                if not local_img_path:
+                    raise ValueError(f"Image '{img_name}' referenced in TPS not found in ZIP.")
+                    
+                img = cv2.imread(local_img_path)
+                if img is None:
+                    raise ValueError(f"Failed to read image '{img_name}'")
+                h, w = img.shape[:2]
+                
+                # Bounding box covering whole image
+                box_e = ET.SubElement(images_e, "image", file=local_img_path)
+                box = ET.SubElement(box_e, "box", top="1", left="1", width=str(w - 2), height=str(h - 2))
+                
+                # Flip coordinates since TPS counts Y from bottom
+                coords = tps_data["coords"][idx]
+                num_parts = len(coords)
+                for pt_idx, coord in enumerate(coords):
+                    part = ET.SubElement(box, "part", name=str(pt_idx))
+                    part.set("x", str(int(round(coord[0]))))
+                    part.set("y", str(int(round(h - coord[1]))))
+                    
+            et = ET.ElementTree(root)
+            xmlstr = minidom.parseString(ET.tostring(et.getroot())).toprettyxml(indent="   ")
+            with open(dataset_xml_path, "w", encoding="utf-8") as f:
+                f.write(xmlstr)
+        else:
+            # Use uploaded XML directly but rewrite file paths to point to absolute temp paths
+            tree = ET.parse(xml_file)
+            root = tree.getroot()
+            for image in root.findall(".//image"):
+                original_file = image.get("file")
+                img_filename = os.path.basename(original_file)
+                local_img_path = None
+                for r_dir, _, fs in os.walk(temp_dir):
+                    for file in fs:
+                        if file.lower() == img_filename.lower():
+                            local_img_path = os.path.join(r_dir, file)
+                            break
+                    if local_img_path:
+                        break
+                        
+                if not local_img_path:
+                    raise ValueError(f"Image '{original_file}' referenced in XML not found in ZIP.")
+                image.set("file", local_img_path)
+                
+                # Determine number of parts
+                parts = image.findall(".//part")
+                if parts:
+                    num_parts = max(num_parts, len(parts))
+                    
+            tree.write(dataset_xml_path)
+            
+        # 3. Train dlib predictor
+        options = dlib.shape_predictor_training_options()
+        if custom_options:
+            options.nu = custom_options.get("nu", 0.1)
+            options.tree_depth = custom_options.get("tree_depth", 4)
+            options.cascade_depth = custom_options.get("cascade_depth", 15)
+        else:
+            options.nu = 0.1
+            options.tree_depth = 4
+            options.cascade_depth = 15
+            
+        options.oversampling_amount = 5
+        options.be_verbose = False
+        
+        output_model_path = os.path.join(files_dir, f"{predictor_id}.dat")
+        dlib.train_shape_predictor(dataset_xml_path, output_model_path, options)
+        
+        # Validate predictor via library structure
+        sp = dlib.shape_predictor(output_model_path)
+        meta = predictor_library.PredictorMeta(
+            id=predictor_id,
+            display_name=model_name,
+            stored_filename=f"{predictor_id}.dat",
+            uploaded_at=predictor_library._now_iso(),
+            size_bytes=os.path.getsize(output_model_path),
+            num_parts=num_parts
+        )
+        
+        # Save to list index
+        idx = predictor_library.load_index(index_path)
+        predictors = idx.get("predictors", [])
+        predictors.append(predictor_library.asdict(meta))
+        idx["predictors"] = predictors
+        predictor_library.save_index(index_path, idx)
+        
+        return predictor_library.asdict(meta)
+        
+    finally:
+        shutil.rmtree(temp_dir)
+
+
