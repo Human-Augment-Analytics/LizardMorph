@@ -5,6 +5,7 @@ import csv
 import re
 import glob
 import ntpath
+from dataclasses import asdict
 
 import os
 import shutil
@@ -1935,6 +1936,7 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
     import predictor_library
     import time
 
+    os.makedirs(files_dir, exist_ok=True)
     temp_dir = os.path.join(os.path.dirname(zip_path), f"training_{predictor_id}")
     os.makedirs(temp_dir, exist_ok=True)
     
@@ -2086,7 +2088,7 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
             # Save to list index
             idx = predictor_library.load_index(index_path)
             predictors = idx.get("predictors", [])
-            predictors.append(predictor_library.asdict(meta))
+            predictors.append(asdict(meta))
             idx["predictors"] = predictors
             predictor_library.save_index(index_path, idx)
         except Exception:
@@ -2097,7 +2099,7 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
                     pass
             raise
             
-        return predictor_library.asdict(meta)
+        return asdict(meta)
         
     finally:
         shutil.rmtree(temp_dir)
