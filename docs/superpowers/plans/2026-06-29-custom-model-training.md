@@ -554,318 +554,450 @@ git commit -m "feat(frontend): add trainPredictor api service functions"
 
 ---
 
-### Task 4: FreePredictorPanel Collapsible Train Section UI
+### Task 4: Train Mode Landing Card & Dedicated TrainView Routing
 
 **Files:**
-*   Modify: `frontend/src/components/FreePredictorPanel.tsx`
+*   Modify: `frontend/src/components/LandingPage.tsx`
+*   Modify: `frontend/src/App.tsx`
+*   Create: `frontend/src/views/TrainView.tsx`
 
 **Interfaces:**
-*   Consumes: `ApiService` methods
-*   Produces: UI elements for zip file selection, input of model name, start training trigger
+*   Consumes: `LizardViewType`
+*   Produces: `/custom` route that mounts `TrainView` dashboard.
 
-- [ ] **Step 1: Add new props to FreePredictorPanel**
+- [ ] **Step 1: Enable Custom option card and link on Landing Page**
 
-Modify props interface in [FreePredictorPanel.tsx](file:///Users/leyangloh/dev/LizardMorph/frontend/src/components/FreePredictorPanel.tsx) to pass training handlers and states:
-
-```typescript
-interface Props {
-  predictors: PredictorMeta[];
-  selectedPredictorId: string | null;
-  predictorsLoading: boolean;
-  error: string | null;
-  hasCurrentImage: boolean;
-  onRefresh: () => void;
-  onSelectPredictorId: (id: string | null) => void;
-  onUploadPredictor: (file: File) => void;
-  onDeleteSelected: () => void;
-  onAutoplace: () => void;
-  theme: ResolvedTheme;
-  // New Training Props
-  isTraining: boolean;
-  trainingProgressText: string | null;
-  onTrainModel: (modelName: string, zipFile: File) => void;
-}
-```
-
-- [ ] **Step 2: Add training collapsible UI to component layout**
-
-Add input states and UI block inside `FreePredictorPanel` rendering:
+Modify [LandingPage.tsx](file:///Users/leyangloh/dev/LizardMorph/frontend/src/components/LandingPage.tsx) to enable navigation to `/custom` and render the Custom Model card:
 
 ```typescript
-export function FreePredictorPanel(props: Props) {
-  const selected = props.selectedPredictorId;
-  const canAutoplace = Boolean(selected) && props.hasCurrentImage && !props.predictorsLoading;
-  const isBusy = props.predictorsLoading || props.isTraining;
-  const isDark = props.theme === "dark";
-  
-  // Local state for the training inputs
-  const [isTrainAccordionOpen, setIsTrainAccordionOpen] = React.useState(false);
-  const [modelName, setModelName] = React.useState("Custom Predictor");
-  const [zipFile, setZipFile] = React.useState<File | null>(null);
-
-  // Styles
-  // ... (keep original styles)
-  const formRowStyle: React.CSSProperties = {
-    display: "flex",
-    gap: 12,
-    alignItems: "end",
-    marginTop: 12,
-    flexWrap: "wrap",
-    borderTop: `1px dashed ${isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"}`,
-    paddingTop: 12,
+// Modify handleOptionClick (around line 163):
+  const handleOptionClick = (viewType: LizardViewType) => {
+    navigate(`/${viewType}`);
   };
-```
 
-Add the collapsible training interface right above `props.error` section (around line 199):
-
-```typescript
-      {/* Training Collapsible Accordion */}
-      <div style={{ marginTop: 14, borderTop: `1px solid ${isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}` }}>
-        <button
-          onClick={() => setIsTrainAccordionOpen(!isTrainAccordionOpen)}
+// In LandingPageStyles.optionsContainer (around line 342), append the new card:
+        {/* Train Custom Model */}
+        <div
           style={{
-            background: "none",
-            border: "none",
-            width: "100%",
-            textAlign: "left",
-            padding: "10px 0 6px 0",
-            fontWeight: 700,
-            fontSize: 13,
-            cursor: "pointer",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            color: isDark ? "#4F7942" : "#2E5A1C"
+            ...LandingPageStyles.optionCard,
+            ...(hoveredCard === "custom" ? LandingPageStyles.optionCardHover : {}),
           }}
+          onClick={() => handleOptionClick("custom")}
+          onMouseEnter={() => handleMouseEnter("custom")}
+          onMouseLeave={handleMouseLeave}
         >
-          <span>🛠️ Train Custom Shape Predictor</span>
-          <span>{isTrainAccordionOpen ? "▲" : "▼"}</span>
-        </button>
-
-        {isTrainAccordionOpen && (
-          <div style={{ padding: "6px 0 10px 0" }}>
-            <div style={{ fontSize: 12, marginBottom: 8, color: isDark ? "rgba(255,255,255,0.6)" : "rgba(0,0,0,0.65)" }}>
-              Upload a <code>.zip</code> file containing training images and a <code>.tps</code> or <code>.xml</code> annotation file to train a new dlib model.
+          <div style={LandingPageStyles.cardContent}>
+            <div style={{
+              ...LandingPageStyles.icon,
+              ...(hoveredCard === "custom" ? LandingPageStyles.iconHover : {})
+            }}>
+              🧠
             </div>
-            
-            <div style={gridStyle}>
-              <div style={groupStyle}>
-                <div style={labelStyle}>Model Name</div>
-                <input
-                  type="text"
-                  value={modelName}
-                  disabled={isBusy}
-                  onChange={(e) => setModelName(e.target.value)}
-                  style={inputStyle}
-                  placeholder="e.g. My Lizard Predictor"
-                />
-              </div>
-
-              <div style={groupStyle}>
-                <div style={labelStyle}>Dataset ZIP File</div>
-                <input
-                  type="file"
-                  accept=".zip"
-                  disabled={isBusy}
-                  style={inputStyle}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) setZipFile(file);
-                  }}
-                />
-              </div>
-
-              <div style={groupStyle}>
-                <div style={labelStyle}>&nbsp;</div>
-                <button
-                  onClick={() => {
-                    if (zipFile && modelName.trim()) {
-                      props.onTrainModel(modelName.trim(), zipFile);
-                    }
-                  }}
-                  disabled={isBusy || !zipFile || !modelName.trim()}
-                  style={isBusy || !zipFile || !modelName.trim() ? { ...primaryButton, opacity: 0.55, cursor: "not-allowed" } : primaryButton}
-                >
-                  {props.isTraining ? "Training…" : "Train Model"}
-                </button>
-              </div>
-            </div>
-
-            {props.isTraining && props.trainingProgressText && (
-              <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8, color: isDark ? "#81c784" : "#2e7d32", fontWeight: 700, fontSize: 12 }}>
-                <span className="spinner" style={{ display: "inline-block", width: 12, height: 12, border: "2px solid currentColor", borderRightColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
-                <span>{props.trainingProgressText}</span>
-              </div>
-            )}
+            <h3 style={{
+              ...LandingPageStyles.optionTitle,
+              ...(hoveredCard === "custom" ? LandingPageStyles.optionTitleHover : {})
+            }}>
+              Train Custom Model
+            </h3>
+            <p style={LandingPageStyles.optionDescription}>
+              Upload annotated datasets (images + TPS/XML) and train custom shape predictors locally.
+            </p>
           </div>
-        )}
-      </div>
+        </div>
 ```
 
-- [ ] **Step 3: Verify compiling**
+- [ ] **Step 2: Update routing in App.tsx**
 
-Run: `cd frontend && npm run build`
-Expected: Fail due to missing `onTrainModel`, `isTraining` in `MainView.tsx` props hookup. (This confirms Task 4 is correctly bound for Task 5).
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add frontend/src/components/FreePredictorPanel.tsx
-git commit -m "feat(frontend): add training collapsible UI to FreePredictorPanel"
-```
-
----
-
-### Task 5: MainView State Integration & Polling Loop
-
-**Files:**
-*   Modify: `frontend/src/views/MainView.tsx`
-
-**Interfaces:**
-*   Consumes: `ApiService` training methods, modified `FreePredictorPanel`
-*   Produces: State trackers (`isTraining`, `trainingProgressText`), status poller trigger
-
-- [ ] **Step 1: Add new state attributes to MainView**
-
-In [MainView.tsx](file:///Users/leyangloh/dev/LizardMorph/frontend/src/views/MainView.tsx), update `State` interface:
-
-```typescript
-  isTraining: boolean;
-  trainingProgressText: string | null;
-  trainingJobId: string | null;
-```
-
-Initialize them in `constructor` (around line 125):
-
-```typescript
-    this.state = {
-      // ... (existing state)
-      isTraining: false,
-      trainingProgressText: null,
-      trainingJobId: null,
+Modify [App.tsx](file:///Users/leyangloh/dev/LizardMorph/frontend/src/App.tsx):
+*   Import `TrainView` (to be created):
+    ```typescript
+    import { TrainView } from "./views/TrainView";
+    ```
+*   Update route for `/custom` (around line 63):
+    ```typescript
+    <Route path="/custom" element={<TrainView onNavigateHome={() => navigate("/")} />} />
+    ```
+    Wait, inside `App` router we need to wrap it:
+    ```typescript
+    // wrapper component helper or direct route
+    const TrainViewWrapper: React.FC = () => {
+      const navigate = useNavigate();
+      return <TrainView onNavigateHome={() => navigate("/")} />;
     };
-```
+    
+    // In Routes:
+    <Route path="/custom" element={<TrainViewWrapper />} />
+    ```
 
-- [ ] **Step 2: Add Train Model handlers and polling loops**
+- [ ] **Step 3: Create TrainView.tsx skeleton**
 
-Define method handlers in `MainView` class:
-
-```typescript
-  // Polling reference
-  trainingPollInterval: number | null = null;
-
-  handleTrainModel = async (modelName: string, zipFile: File) => {
-    this.setState({
-      isTraining: true,
-      trainingProgressText: "Uploading dataset and initializing training job...",
-      predictorsError: null
-    });
-
-    try {
-      const res = await ApiService.trainPredictor(modelName, zipFile);
-      if (res.success && res.job_id) {
-        this.setState({
-          trainingJobId: res.job_id,
-          trainingProgressText: "Training dlib shape predictor on server... (may take 10-30s)"
-        });
-
-        // Start polling status
-        this.trainingPollInterval = window.setInterval(async () => {
-          try {
-            const statusRes = await ApiService.getTrainStatus(res.job_id);
-            if (statusRes.success) {
-              if (statusRes.status === "completed" && statusRes.predictor) {
-                this.stopTrainingPoll();
-                this.setState({
-                  isTraining: false,
-                  trainingProgressText: null,
-                  trainingJobId: null,
-                  freePredictorId: statusRes.predictor.id // Auto-select new model
-                });
-                // Refresh list of predictors
-                await this.refreshPredictors();
-              } else if (statusRes.status === "failed") {
-                this.stopTrainingPoll();
-                this.setState({
-                  isTraining: false,
-                  trainingProgressText: null,
-                  trainingJobId: null,
-                  predictorsError: `Training failed: ${statusRes.error || "Unknown server training error"}`
-                });
-              } else if (statusRes.status === "training") {
-                this.setState({
-                  trainingProgressText: "Training model: crunching landmarks..."
-                });
-              }
-            }
-          } catch (pollErr: any) {
-            this.stopTrainingPoll();
-            this.setState({
-              isTraining: false,
-              trainingProgressText: null,
-              trainingJobId: null,
-              predictorsError: `Status check failed: ${pollErr.message || pollErr}`
-            });
-          }
-        }, 2000);
-      } else {
-        throw new Error("Job not accepted");
-      }
-    } catch (err: any) {
-      this.setState({
-        isTraining: false,
-        trainingProgressText: null,
-        predictorsError: `Failed to initiate training: ${err.message || err}`
-      });
-    }
-  };
-
-  stopTrainingPoll = () => {
-    if (this.trainingPollInterval !== null) {
-      window.clearInterval(this.trainingPollInterval);
-      this.trainingPollInterval = null;
-    }
-  };
-
-  // Add cleanup to componentWillUnmount
-  componentWillUnmount() {
-    this.stopTrainingPoll();
-    // ... (any existing unmounting logic)
-  }
-```
-
-- [ ] **Step 3: Connect new handlers to FreePredictorPanel rendering**
-
-In the `render` method where `FreePredictorPanel` is mounted, pass the new states and handler:
+Create `frontend/src/views/TrainView.tsx` with a basic view and back button:
 
 ```typescript
-                    <FreePredictorPanel
-                      predictors={this.state.availablePredictors}
-                      selectedPredictorId={this.state.freePredictorId}
-                      predictorsLoading={this.state.predictorsLoading}
-                      error={this.state.predictorsError}
-                      hasCurrentImage={Boolean(this.state.imageFilename)}
-                      onRefresh={this.refreshPredictors}
-                      onSelectPredictorId={(id) => this.setState({ freePredictorId: id })}
-                      onUploadPredictor={this.handleUploadFreePredictor}
-                      onDeleteSelected={this.handleDeleteSelectedFreePredictor}
-                      onAutoplace={this.handleFreeAutoplace}
-                      theme={theme}
-                      // Pass training state & props
-                      isTraining={this.state.isTraining}
-                      trainingProgressText={this.state.trainingProgressText}
-                      onTrainModel={this.handleTrainModel}
-                    />
+import React from "react";
+
+interface Props {
+  onNavigateHome: () => void;
+}
+
+export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
+  return (
+    <div style={{ padding: 24, fontFamily: "sans-serif" }}>
+      <button onClick={onNavigateHome}>← Back to Home</button>
+      <h2>Train Custom Model</h2>
+    </div>
+  );
+};
 ```
 
 - [ ] **Step 4: Verify compiling**
 
 Run: `cd frontend && npm run build`
-Expected: Build passes with no TypeScript or styling warnings.
+Expected: Build passes with no TypeScript or style warnings.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add frontend/src/views/MainView.tsx
-git commit -m "feat(frontend): integrate custom model training state and polling loop in MainView"
+git add frontend/src/components/LandingPage.tsx frontend/src/App.tsx frontend/src/views/TrainView.tsx
+git commit -m "feat(frontend): add Train Mode routing and view skeleton"
 ```
+
+---
+
+### Task 5: TrainView Dashboard, List Models, & Polling Loop
+
+**Files:**
+*   Modify/Update: `frontend/src/views/TrainView.tsx`
+
+**Interfaces:**
+*   Consumes: `ApiService` methods for list predictors, delete, train, status.
+*   Produces: Full training and management dashboard.
+
+- [ ] **Step 1: Implement TrainView dashboard layout & state**
+
+Overwrite `frontend/src/views/TrainView.tsx` with the complete training form, list of predictors, and active polling:
+
+```typescript
+import React, { useState, useEffect, useRef } from "react";
+import ApiService, { PredictorMeta } from "../services/ApiService";
+import { useTheme } from "../contexts/ThemeContext";
+
+interface Props {
+  onNavigateHome: () => void;
+}
+
+export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
+  const { resolved } = useTheme();
+  const isDark = resolved === "dark";
+
+  const [predictors, setPredictors] = useState<PredictorMeta[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Training form state
+  const [modelName, setModelName] = useState("Custom Predictor");
+  const [zipFile, setZipFile] = useState<File | null>(null);
+  
+  // Training execution state
+  const [isTraining, setIsTraining] = useState(false);
+  const [progressText, setProgressText] = useState<string | null>(null);
+  const [trainingJobId, setTrainingJobId] = useState<string | null>(null);
+
+  const pollIntervalRef = useRef<number | null>(null);
+
+  // Fetch current custom predictors list
+  const fetchPredictors = async () => {
+    setLoading(true);
+    try {
+      const res = await ApiService.listPredictors();
+      if (res.success) {
+        setPredictors(res.predictors);
+      }
+    } catch (err: any) {
+      setError(`Failed to load predictors: ${err.message || err}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPredictors();
+    return () => stopPolling();
+  }, []);
+
+  const stopPolling = () => {
+    if (pollIntervalRef.current !== null) {
+      window.clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  };
+
+  const handleTrainModel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!zipFile || !modelName.trim()) return;
+
+    setIsTraining(true);
+    setProgressText("Uploading dataset ZIP file...");
+    setError(null);
+
+    try {
+      const res = await ApiService.trainPredictor(modelName.trim(), zipFile);
+      if (res.success && res.job_id) {
+        setTrainingJobId(res.job_id);
+        setProgressText("Training shape predictor... (this may take 10-40s)");
+
+        pollIntervalRef.current = window.setInterval(async () => {
+          try {
+            const statusRes = await ApiService.getTrainStatus(res.job_id);
+            if (statusRes.success) {
+              if (statusRes.status === "completed" && statusRes.predictor) {
+                stopPolling();
+                setIsTraining(false);
+                setProgressText(null);
+                setTrainingJobId(null);
+                setZipFile(null);
+                setModelName("Custom Predictor");
+                // Refresh list
+                await fetchPredictors();
+              } else if (statusRes.status === "failed") {
+                stopPolling();
+                setIsTraining(false);
+                setProgressText(null);
+                setTrainingJobId(null);
+                setError(`Training failed: ${statusRes.error || "Unknown server error"}`);
+              } else if (statusRes.status === "training") {
+                setProgressText("Training model: learning shape predictor cascades...");
+              }
+            }
+          } catch (pollErr: any) {
+            stopPolling();
+            setIsTraining(false);
+            setProgressText(null);
+            setTrainingJobId(null);
+            setError(`Status polling check failed: ${pollErr.message || pollErr}`);
+          }
+        }, 2000);
+      }
+    } catch (err: any) {
+      setIsTraining(false);
+      setProgressText(null);
+      setError(`Failed to initiate training: ${err.message || err}`);
+    }
+  };
+
+  const handleDeletePredictor = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this custom model?")) return;
+    try {
+      const res = await ApiService.deletePredictor(id);
+      if (res.success) {
+        await fetchPredictors();
+      }
+    } catch (err: any) {
+      setError(`Failed to delete model: ${err.message || err}`);
+    }
+  };
+
+  // Styles
+  const containerStyle: React.CSSProperties = {
+    maxWidth: "1100px",
+    margin: "0 auto",
+    padding: "30px 20px",
+    color: isDark ? "#e0e0e0" : "#111",
+    fontFamily: "'Outfit', 'Inter', sans-serif",
+  };
+
+  const gridStyle: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: "1fr 1.2fr",
+    gap: "30px",
+    marginTop: "24px",
+  };
+
+  const cardStyle: React.CSSProperties = {
+    background: isDark ? "rgba(30, 42, 58, 0.85)" : "rgba(255, 255, 255, 0.85)",
+    border: `1px solid ${isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"}`,
+    borderRadius: "16px",
+    padding: "24px",
+    boxShadow: `0 8px 32px ${isDark ? "rgba(0,0,0,0.2)" : "rgba(0,0,0,0.06)"}`,
+  };
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: "10px",
+    border: `1px solid ${isDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.14)"}`,
+    background: isDark ? "#2a3a4e" : "white",
+    color: isDark ? "#e0e0e0" : "#111",
+    outline: "none",
+    marginTop: "6px",
+    boxSizing: "border-box",
+  };
+
+  const buttonStyle: React.CSSProperties = {
+    padding: "10px 18px",
+    borderRadius: "10px",
+    border: "none",
+    background: "#4F7942",
+    color: "white",
+    fontWeight: 700,
+    cursor: "pointer",
+    width: "100%",
+    marginTop: "16px",
+  };
+
+  return (
+    <div style={containerStyle}>
+      <button
+        onClick={onNavigateHome}
+        style={{
+          background: "none",
+          border: "none",
+          color: isDark ? "#81c784" : "#2e7d32",
+          cursor: "pointer",
+          fontWeight: 700,
+          fontSize: "14px",
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          padding: "6px 0",
+        }}
+      >
+        ← Back to Overview
+      </button>
+
+      <h1 style={{ marginTop: "12px", fontSize: "28px", fontWeight: 800 }}>🧠 Custom Model Training</h1>
+      <p style={{ opacity: 0.7, fontSize: "14px", marginTop: "4px" }}>
+        Train new shape predictors using your own annotated datasets on your local CPU.
+      </p>
+
+      {error && (
+        <div style={{ marginTop: "16px", padding: "12px 16px", background: "rgba(183, 28, 28, 0.15)", border: "1px solid rgba(183, 28, 28, 0.25)", color: "#e57373", borderRadius: "10px", fontSize: "14px", fontWeight: 600 }}>
+          ⚠️ {error}
+        </div>
+      )}
+
+      <div style={gridStyle}>
+        {/* Left Side: Training Form */}
+        <div style={cardStyle}>
+          <h2 style={{ fontSize: "18px", fontWeight: 700, marginBottom: "16px" }}>🛠️ Train New Predictor</h2>
+          <form onSubmit={handleTrainModel}>
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ fontSize: "13px", fontWeight: 700, opacity: 0.8 }}>Model Display Name</label>
+              <input
+                type="text"
+                value={modelName}
+                onChange={(e) => setModelName(e.target.value)}
+                disabled={isTraining}
+                required
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ fontSize: "13px", fontWeight: 700, opacity: 0.8 }}>
+                Dataset ZIP File (Images + TPS or XML)
+              </label>
+              <input
+                type="file"
+                accept=".zip"
+                onChange={(e) => setZipFile(e.target.files?.[0] || null)}
+                disabled={isTraining}
+                required
+                style={inputStyle}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isTraining || !zipFile || !modelName.trim()}
+              style={{
+                ...buttonStyle,
+                opacity: isTraining || !zipFile || !modelName.trim() ? 0.55 : 1,
+                cursor: isTraining || !zipFile || !modelName.trim() ? "not-allowed" : "pointer",
+              }}
+            >
+              {isTraining ? "Training..." : "Start Local Training"}
+            </button>
+          </form>
+
+          {isTraining && progressText && (
+            <div style={{ marginTop: "16px", display: "flex", alignItems: "center", gap: "10px", color: isDark ? "#a5d6a7" : "#1b5e20", fontSize: "13px", fontWeight: 700 }}>
+              <span className="spinner" style={{ display: "inline-block", width: "14px", height: "14px", border: "2px solid currentColor", borderRightColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+              <span>{progressText}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Right Side: Predictors List */}
+        <div style={cardStyle}>
+          <h2 style={{ fontSize: "18px", fontWeight: 700, marginBottom: "16px" }}>📚 Available Custom Models</h2>
+          {loading && <p style={{ fontSize: "14px", opacity: 0.7 }}>Loading models...</p>}
+          {!loading && predictors.length === 0 && (
+            <p style={{ fontSize: "14px", opacity: 0.6, fontStyle: "italic" }}>
+              No custom models trained yet. Upload a dataset to train your first model!
+            </p>
+          )}
+          {!loading && predictors.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxHeight: "400px", overflowY: "auto" }}>
+              {predictors.map((p) => (
+                <div
+                  key={p.id}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "12px 14px",
+                    background: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.03)",
+                    border: `1px solid ${isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"}`,
+                    borderRadius: "10px",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: "14px" }}>{p.display_name}</div>
+                    <div style={{ fontSize: "11px", opacity: 0.6, marginTop: "2px" }}>
+                      Points: {p.num_parts ?? "Unknown"} | Size: {(p.size_bytes / (1024 * 1024)).toFixed(2)} MB
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleDeletePredictor(p.id)}
+                    style={{
+                      background: "rgba(183, 28, 28, 0.1)",
+                      border: "none",
+                      color: "#ef5350",
+                      padding: "6px 10px",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+    </div>
+  );
+};
+```
+
+- [ ] **Step 2: Verify compiling**
+
+Run: `cd frontend && npm run build`
+Expected: Build passes with no TypeScript or style warnings.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add frontend/src/views/TrainView.tsx
+git commit -m "feat(frontend): implement TrainView layout, model listing, and deletion"
+```
+
