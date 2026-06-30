@@ -401,3 +401,42 @@ def test_train_predictor_finally_block_ignores_errors(temp_workspace, monkeypatc
         )
 
 
+def test_train_predictor_zip_slip(temp_workspace):
+    zip_path = os.path.join(temp_workspace, "dataset_zipslip.zip")
+    index_path = os.path.join(temp_workspace, "predictors.json")
+    files_dir = os.path.join(temp_workspace, "files")
+    os.makedirs(files_dir, exist_ok=True)
+    
+    with zipfile.ZipFile(zip_path, 'w') as z:
+        z.writestr("../traversal.tps", "LM=0\n")
+        
+    with pytest.raises(ValueError, match="Directory traversal attempt detected"):
+        train_predictor_from_zip(
+            model_name="Test Zip Slip",
+            zip_path=zip_path,
+            predictor_id="test-zipslip-uuid",
+            index_path=index_path,
+            files_dir=files_dir
+        )
+
+
+def test_train_predictor_duplicate_filename(temp_workspace):
+    zip_path = os.path.join(temp_workspace, "dataset_duplicate.zip")
+    index_path = os.path.join(temp_workspace, "predictors.json")
+    files_dir = os.path.join(temp_workspace, "files")
+    os.makedirs(files_dir, exist_ok=True)
+    
+    with zipfile.ZipFile(zip_path, 'w') as z:
+        z.writestr("folder1/annotation.tps", "LM=0\n")
+        z.writestr("folder2/annotation.tps", "LM=0\n")
+        
+    with pytest.raises(ValueError, match="Duplicate filename 'annotation.tps' found in the archive"):
+        train_predictor_from_zip(
+            model_name="Test Duplicate",
+            zip_path=zip_path,
+            predictor_id="test-dup-uuid",
+            index_path=index_path,
+            files_dir=files_dir
+        )
+
+

@@ -5,6 +5,8 @@ import csv
 import re
 import glob
 import ntpath
+import zipfile
+import time
 from dataclasses import asdict
 
 import os
@@ -12,6 +14,7 @@ import shutil
 import random
 import numpy as np
 import cv2
+import predictor_library
 try:
     import dlib
 except ImportError:
@@ -1928,21 +1931,18 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
     Extracts a ZIP containing images and annotations, formats a dlib dataset, trains
     a shape predictor, registers it in the library, and cleans up.
     """
-    import zipfile
-    import shutil
-    import dlib
-    import xml.etree.ElementTree as ET
-    from xml.dom import minidom
-    import predictor_library
-    import time
-
     os.makedirs(files_dir, exist_ok=True)
     temp_dir = os.path.join(os.path.dirname(zip_path), f"training_{predictor_id}")
     os.makedirs(temp_dir, exist_ok=True)
     
     try:
-        # 1. Extract ZIP
+        # 1. Extract ZIP with Zip Slip prevention
         with zipfile.ZipFile(zip_path, 'r') as z:
+            temp_dir_abs = os.path.abspath(temp_dir)
+            for member in z.infolist():
+                target_path = os.path.abspath(os.path.join(temp_dir_abs, member.filename))
+                if not target_path.startswith(temp_dir_abs + os.path.sep) and target_path != temp_dir_abs:
+                    raise ValueError(f"Directory traversal attempt detected: {member.filename}")
             z.extractall(temp_dir)
             
         # 2. Pre-index all files in temp_dir and locate TPS or XML file
@@ -1956,7 +1956,10 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
                 if f.startswith("._"):
                     continue
                 abs_path = os.path.abspath(os.path.join(root_dir, f))
-                file_index[f.lower()] = abs_path
+                key = f.lower()
+                if key in file_index:
+                    raise ValueError(f"Duplicate filename '{f}' found in the archive, potential name collision.")
+                file_index[key] = abs_path
                 if f.lower().endswith(".tps"):
                     tps_files.append(abs_path)
                 elif f.lower().endswith(".xml") and not f.lower().startswith("mock"):
@@ -2037,6 +2040,14 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
             
         # 3. Train dlib predictor
         options = dlib.shape_predictor_training_options()
+        options.num_threads = os.cpu_count() or 1
+        # Cap num_threads to prevent dlib shape predictor training segfault on small datasets
+        if tps_file:
+            num_images = len(tps_data["im"])
+        else:
+            num_images = len(root.findall(".//image"))
+        if num_images > 0:
+            options.num_threads = min(options.num_threads, num_images)
         opts = custom_options or {}
         options.nu = opts.get("nu", 0.1)
         options.tree_depth = opts.get("tree_depth", 4)
@@ -2056,7 +2067,6 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
             # Retrieve num_parts safely
             num_parts = getattr(sp, "num_parts", None)
             if num_parts is None:
-                import numpy as np
                 dummy_img = np.zeros((10, 10, 3), dtype=np.uint8)
                 dummy_rect = dlib.rectangle(0, 0, 10, 10)
                 try:
