@@ -288,6 +288,51 @@ export class ApiService {
     }
     return res.json();
   }
+
+  static async trainPredictor(
+    modelName: string,
+    file: File
+  ): Promise<{ success: boolean; job_id: string; message: string }> {
+    const base = await apiUrl();
+    const formData = new FormData();
+    formData.append("model_name", modelName);
+    formData.append("dataset", file);
+
+    const response = await fetch(`${base}/train_predictor`, {
+      method: "POST",
+      headers: {
+        ...SessionService.getSessionHeaders(),
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: "Server error" }));
+      throw new Error(err.error || "Failed to start training job");
+    }
+
+    return response.json();
+  }
+
+  static async getTrainStatus(
+    jobId: string
+  ): Promise<{
+    success: boolean;
+    status: "pending" | "training" | "completed" | "failed";
+    error: string | null;
+    predictor: PredictorMeta | null;
+  }> {
+    const base = await apiUrl();
+    const response = await fetch(`${base}/train_status/${encodeURIComponent(jobId)}`, {
+      headers: {
+        ...SessionService.getSessionHeaders(),
+      },
+    });
+    if (!response.ok) {
+      throw new Error("Failed to get training status");
+    }
+    return response.json();
+  }
 }
 
 interface ExtractIdResult {
