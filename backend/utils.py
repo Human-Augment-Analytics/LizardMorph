@@ -1945,7 +1945,8 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
         with zipfile.ZipFile(zip_path, 'r') as z:
             z.extractall(temp_dir)
             
-        # 2. Locate TPS or XML file
+        # 2. Pre-index all files in temp_dir and locate TPS or XML file
+        file_index = {}
         tps_files = []
         xml_files = []
         for root_dir, _, files in os.walk(temp_dir):
@@ -1954,10 +1955,12 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
             for f in files:
                 if f.startswith("._"):
                     continue
+                abs_path = os.path.abspath(os.path.join(root_dir, f))
+                file_index[f.lower()] = abs_path
                 if f.lower().endswith(".tps"):
-                    tps_files.append(os.path.join(root_dir, f))
+                    tps_files.append(abs_path)
                 elif f.lower().endswith(".xml") and not f.lower().startswith("mock"):
-                    xml_files.append(os.path.join(root_dir, f))
+                    xml_files.append(abs_path)
                     
         total_annotation_files = len(tps_files) + len(xml_files)
         if total_annotation_files > 1:
@@ -1982,20 +1985,9 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
             images_e = ET.SubElement(root, "images")
             
             for idx, img_name in enumerate(tps_data["im"]):
-                # Locate referenced image inside temp_dir
+                # Locate referenced image inside temp_dir via pre-indexed lookup
                 img_filename = os.path.basename(img_name)
-                local_img_path = None
-                for r_dir, _, fs in os.walk(temp_dir):
-                    if "__MACOSX" in r_dir:
-                        continue
-                    for file in fs:
-                        if file.startswith("._"):
-                            continue
-                        if file.lower() == img_filename.lower():
-                            local_img_path = os.path.abspath(os.path.join(r_dir, file))
-                            break
-                    if local_img_path:
-                        break
+                local_img_path = file_index.get(img_filename.lower())
                         
                 if not local_img_path:
                     raise ValueError(f"Image '{img_name}' referenced in TPS not found in ZIP.")
@@ -2035,18 +2027,7 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
                     continue
                 
                 img_filename = os.path.basename(original_file)
-                local_img_path = None
-                for r_dir, _, fs in os.walk(temp_dir):
-                    if "__MACOSX" in r_dir:
-                        continue
-                    for file in fs:
-                        if file.startswith("._"):
-                            continue
-                        if file.lower() == img_filename.lower():
-                            local_img_path = os.path.abspath(os.path.join(r_dir, file))
-                            break
-                    if local_img_path:
-                        break
+                local_img_path = file_index.get(img_filename.lower())
                         
                 if not local_img_path:
                     raise ValueError(f"Image '{original_file}' referenced in XML not found in ZIP.")
@@ -2056,14 +2037,10 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
             
         # 3. Train dlib predictor
         options = dlib.shape_predictor_training_options()
-        if custom_options:
-            options.nu = custom_options.get("nu", 0.1)
-            options.tree_depth = custom_options.get("tree_depth", 4)
-            options.cascade_depth = custom_options.get("cascade_depth", 15)
-        else:
-            options.nu = 0.1
-            options.tree_depth = 4
-            options.cascade_depth = 15
+        opts = custom_options or {}
+        options.nu = opts.get("nu", 0.1)
+        options.tree_depth = opts.get("tree_depth", 4)
+        options.cascade_depth = opts.get("cascade_depth", 15)
             
         options.oversampling_amount = 5
         options.be_verbose = False
