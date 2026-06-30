@@ -21,6 +21,7 @@ from export_handler import ExportHandler
 from session_manager import SessionManager
 
 import sys
+import copy
 import hmac
 import hashlib
 import subprocess
@@ -113,6 +114,7 @@ valid_extensions = [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif"]
 # Thread-safe dictionary to keep track of training jobs
 TRAINING_JOBS = {}
 TRAINING_JOBS_LOCK = threading.Lock()
+PREDICTOR_INDEX_LOCK = threading.Lock()
 
 
 # Configure logging
@@ -612,7 +614,8 @@ def get_view_type_config(view_type):
 @track_metrics
 def list_predictors():
     try:
-        predictors = predictor_library.list_predictors(PREDICTOR_LIBRARY_INDEX)
+        with PREDICTOR_INDEX_LOCK:
+            predictors = predictor_library.list_predictors(PREDICTOR_LIBRARY_INDEX)
         return (
             jsonify(
                 {
@@ -650,14 +653,15 @@ def upload_predictor():
         predictor_library.ensure_dir(PREDICTOR_LIBRARY_FILES)
 
         file_bytes = f.read() or b""
-        meta = predictor_library.add_predictor(
-            index_path=PREDICTOR_LIBRARY_INDEX,
-            files_dir=PREDICTOR_LIBRARY_FILES,
-            original_filename=f.filename,
-            file_bytes=file_bytes,
-            max_bytes=PREDICTOR_MAX_BYTES,
-            validate_with_dlib=not app.config.get("TESTING", False),
-        )
+        with PREDICTOR_INDEX_LOCK:
+            meta = predictor_library.add_predictor(
+                index_path=PREDICTOR_LIBRARY_INDEX,
+                files_dir=PREDICTOR_LIBRARY_FILES,
+                original_filename=f.filename,
+                file_bytes=file_bytes,
+                max_bytes=PREDICTOR_MAX_BYTES,
+                validate_with_dlib=not app.config.get("TESTING", False),
+            )
 
         return (
             jsonify(
@@ -689,11 +693,12 @@ def delete_predictor(predictor_id):
     try:
         predictor_library.ensure_dir(PREDICTOR_LIBRARY_DIR)
         predictor_library.ensure_dir(PREDICTOR_LIBRARY_FILES)
-        ok = predictor_library.delete_predictor(
-            index_path=PREDICTOR_LIBRARY_INDEX,
-            files_dir=PREDICTOR_LIBRARY_FILES,
-            predictor_id=predictor_id,
-        )
+        with PREDICTOR_INDEX_LOCK:
+            ok = predictor_library.delete_predictor(
+                index_path=PREDICTOR_LIBRARY_INDEX,
+                files_dir=PREDICTOR_LIBRARY_FILES,
+                predictor_id=predictor_id,
+            )
         if not ok:
             return jsonify({"success": False, "error": "Predictor not found"}), 404
         return jsonify({"success": True}), 200
@@ -738,13 +743,14 @@ def start_train_predictor():
                     
                 # Lower tree & cascade depth slightly for standard uploads if requested to keep server happy
                 # (but respect standard requirements)
-                meta = utils.train_predictor_from_zip(
-                    model_name=name,
-                    zip_path=zip_p,
-                    predictor_id=jid,
-                    index_path=PREDICTOR_LIBRARY_INDEX,
-                    files_dir=PREDICTOR_LIBRARY_FILES
-                )
+                with PREDICTOR_INDEX_LOCK:
+                    meta = utils.train_predictor_from_zip(
+                        model_name=name,
+                        zip_path=zip_p,
+                        predictor_id=jid,
+                        index_path=PREDICTOR_LIBRARY_INDEX,
+                        files_dir=PREDICTOR_LIBRARY_FILES
+                    )
                 
                 with TRAINING_JOBS_LOCK:
                     TRAINING_JOBS[jid]["status"] = "completed"
@@ -763,7 +769,7 @@ def start_train_predictor():
                     pass
 
         # Launch background thread
-        t = threading.Thread(target=worker_thread, args=(job_id, temp_zip_path, model_name))
+        t = threading.Thread(target=worker_thread, args=(job_id, temp_zip_path, model_name), daemon=True)
         t.start()
         
         return jsonify({
@@ -783,15 +789,18 @@ def start_train_predictor():
 def get_train_status(job_id):
     with TRAINING_JOBS_LOCK:
         job = TRAINING_JOBS.get(job_id)
+        if not job:
+            return jsonify({"success": False, "error": "Job not found"}), 404
         
-    if not job:
-        return jsonify({"success": False, "error": "Job not found"}), 404
+        status = job["status"]
+        error = job["error"]
+        predictor = copy.deepcopy(job["predictor"]) if job["predictor"] is not None else None
         
     return jsonify({
         "success": True,
-        "status": job["status"],
-        "error": job["error"],
-        "predictor": job["predictor"]
+        "status": status,
+        "error": error,
+        "predictor": predictor
     }), 200
 
 

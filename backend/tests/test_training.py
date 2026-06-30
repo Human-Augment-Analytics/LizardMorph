@@ -448,9 +448,11 @@ def test_api_train_predictor_lifecycle(temp_workspace):
     
     # Temporarily override predictor library constants
     import app as app_module
+    old_dir = app_module.PREDICTOR_LIBRARY_DIR
     old_idx = app_module.PREDICTOR_LIBRARY_INDEX
     old_files = app_module.PREDICTOR_LIBRARY_FILES
     
+    app_module.PREDICTOR_LIBRARY_DIR = temp_workspace
     app_module.PREDICTOR_LIBRARY_INDEX = os.path.join(temp_workspace, "predictors.json")
     app_module.PREDICTOR_LIBRARY_FILES = os.path.join(temp_workspace, "files")
     os.makedirs(app_module.PREDICTOR_LIBRARY_FILES, exist_ok=True)
@@ -460,9 +462,10 @@ def test_api_train_predictor_lifecycle(temp_workspace):
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, 'w') as z:
             img = np.zeros((50, 50, 3), dtype=np.uint8)
-            cv2.imwrite("t1.jpg", img)
-            z.write("t1.jpg")
-            os.remove("t1.jpg")
+            t1_path = os.path.join(temp_workspace, "t1.jpg")
+            cv2.imwrite(t1_path, img)
+            z.write(t1_path, arcname="t1.jpg")
+            os.remove(t1_path)
             tps_content = "LM=1\n10 10\nIMAGE=t1.jpg\nID=0\n"
             z.writestr("an.tps", tps_content)
         
@@ -497,6 +500,7 @@ def test_api_train_predictor_lifecycle(temp_workspace):
             assert status_data["predictor"]["display_name"] == "API Train"
             
     finally:
+        app_module.PREDICTOR_LIBRARY_DIR = old_dir
         app_module.PREDICTOR_LIBRARY_INDEX = old_idx
         app_module.PREDICTOR_LIBRARY_FILES = old_files
 
