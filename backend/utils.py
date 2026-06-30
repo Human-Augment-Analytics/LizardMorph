@@ -1949,7 +1949,11 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
         tps_files = []
         xml_files = []
         for root_dir, _, files in os.walk(temp_dir):
+            if "__MACOSX" in root_dir:
+                continue
             for f in files:
+                if f.startswith("._"):
+                    continue
                 if f.lower().endswith(".tps"):
                     tps_files.append(os.path.join(root_dir, f))
                 elif f.lower().endswith(".xml") and not f.lower().startswith("mock"):
@@ -1982,9 +1986,13 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
                 img_filename = os.path.basename(img_name)
                 local_img_path = None
                 for r_dir, _, fs in os.walk(temp_dir):
+                    if "__MACOSX" in r_dir:
+                        continue
                     for file in fs:
+                        if file.startswith("._"):
+                            continue
                         if file.lower() == img_filename.lower():
-                            local_img_path = os.path.join(r_dir, file)
+                            local_img_path = os.path.abspath(os.path.join(r_dir, file))
                             break
                     if local_img_path:
                         break
@@ -2029,9 +2037,13 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
                 img_filename = os.path.basename(original_file)
                 local_img_path = None
                 for r_dir, _, fs in os.walk(temp_dir):
+                    if "__MACOSX" in r_dir:
+                        continue
                     for file in fs:
+                        if file.startswith("._"):
+                            continue
                         if file.lower() == img_filename.lower():
-                            local_img_path = os.path.join(r_dir, file)
+                            local_img_path = os.path.abspath(os.path.join(r_dir, file))
                             break
                     if local_img_path:
                         break
