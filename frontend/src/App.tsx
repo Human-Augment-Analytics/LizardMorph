@@ -5,11 +5,18 @@ import { MainView } from "./views/MainView";
 import { LandingPage } from "./components/LandingPage";
 import type { LizardViewType } from "./components/LandingPage";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
+import { TrainView } from "./views/TrainView";
 
 // Wrapper component to provide navigation to MainView
 const MainViewWrapper: React.FC<{ selectedViewType: LizardViewType }> = ({ selectedViewType }) => {
   const navigate = useNavigate();
   return <MainView selectedViewType={selectedViewType} onNavigateHome={() => navigate("/")} />;
+};
+
+// Wrapper component for TrainView custom mode routing
+const TrainViewWrapper: React.FC = () => {
+  const navigate = useNavigate();
+  return <TrainView onNavigateHome={() => navigate("/")} />;
 };
 
 // Version display component
@@ -60,7 +67,7 @@ function App() {
         <Route path="/toepads" element={<MainViewWrapper selectedViewType="toepads" />} />
         <Route path="/toepad" element={<MainViewWrapper selectedViewType="toepads" />} />
         <Route path="/free" element={<MainViewWrapper selectedViewType="free" />} />
-        <Route path="/custom" element={<Navigate to="/" replace />} />
+        <Route path="/custom" element={<TrainViewWrapper />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <VersionInfo />

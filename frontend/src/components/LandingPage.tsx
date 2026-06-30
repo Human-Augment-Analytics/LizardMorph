@@ -161,9 +161,6 @@ export const LandingPage: React.FC = () => {
   const LandingPageStyles = getLandingPageStyles(isDark);
 
   const handleOptionClick = (viewType: LizardViewType) => {
-    if (viewType === "custom") {
-      return; // Disabled
-    }
     navigate(`/${viewType}`);
   };
 
@@ -336,6 +333,35 @@ export const LandingPage: React.FC = () => {
             </h3>
             <p style={LandingPageStyles.optionDescription}>
               Manually place landmarks on any image by clicking
+            </p>
+          </div>
+        </div>
+
+        {/* Train Custom Model */}
+        <div
+          style={{
+            ...LandingPageStyles.optionCard,
+            ...(hoveredCard === "custom" ? LandingPageStyles.optionCardHover : {}),
+          }}
+          onClick={() => handleOptionClick("custom")}
+          onMouseEnter={() => handleMouseEnter("custom")}
+          onMouseLeave={handleMouseLeave}
+        >
+          <div style={LandingPageStyles.cardContent}>
+            <div style={{
+              ...LandingPageStyles.icon,
+              ...(hoveredCard === "custom" ? LandingPageStyles.iconHover : {})
+            }}>
+              🧠
+            </div>
+            <h3 style={{
+              ...LandingPageStyles.optionTitle,
+              ...(hoveredCard === "custom" ? LandingPageStyles.optionTitleHover : {})
+            }}>
+              Train Custom Model
+            </h3>
+            <p style={LandingPageStyles.optionDescription}>
+              Upload annotated datasets (images + TPS/XML) and train custom shape predictors locally.
             </p>
           </div>
         </div>
