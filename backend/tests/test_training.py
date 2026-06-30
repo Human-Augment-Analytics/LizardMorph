@@ -152,3 +152,117 @@ ID=0
         
     # Verify the .dat file is deleted
     assert not os.path.exists(expected_dat_path)
+
+
+def test_train_predictor_multiple_annotations_error(temp_workspace):
+    zip_path = os.path.join(temp_workspace, "dataset_multi.zip")
+    index_path = os.path.join(temp_workspace, "predictors.json")
+    files_dir = os.path.join(temp_workspace, "files")
+    os.makedirs(files_dir, exist_ok=True)
+    
+    with zipfile.ZipFile(zip_path, 'w') as z:
+        z.writestr("annotations1.tps", "LM=0\n")
+        z.writestr("annotations2.xml", "<dataset></dataset>")
+        
+    with pytest.raises(ValueError, match="Multiple annotation files"):
+        train_predictor_from_zip(
+            model_name="Test Multi",
+            zip_path=zip_path,
+            predictor_id="test-multi-uuid",
+            index_path=index_path,
+            files_dir=files_dir
+        )
+
+
+def test_train_predictor_cleanup_on_training_failure(temp_workspace, monkeypatch):
+    zip_path = os.path.join(temp_workspace, "dataset_train_fail.zip")
+    index_path = os.path.join(temp_workspace, "predictors.json")
+    files_dir = os.path.join(temp_workspace, "files")
+    os.makedirs(files_dir, exist_ok=True)
+    
+    with zipfile.ZipFile(zip_path, 'w') as z:
+        img = np.zeros((100, 100, 3), dtype=np.uint8)
+        img1_path = os.path.join(temp_workspace, "img1.jpg")
+        cv2.imwrite(img1_path, img)
+        z.write(img1_path, arcname="img1.jpg")
+        os.remove(img1_path)
+        
+        tps_content = "LM=1\n10.0 90.0\nIMAGE=img1.jpg\nID=0\n"
+        z.writestr("annotations.tps", tps_content)
+
+    import dlib
+    def mock_train(xml, out, opt):
+        # Create a dummy file to simulate training starting to output something
+        with open(out, "w") as f:
+            f.write("partial data")
+        raise RuntimeError("Simulated training crash")
+        
+    monkeypatch.setattr(dlib, "train_shape_predictor", mock_train)
+    
+    predictor_id = "test-train-fail-uuid"
+    expected_dat_path = os.path.join(files_dir, f"{predictor_id}.dat")
+    
+    with pytest.raises(RuntimeError, match="Simulated training crash"):
+        train_predictor_from_zip(
+            model_name="Test Train Fail",
+            zip_path=zip_path,
+            predictor_id=predictor_id,
+            index_path=index_path,
+            files_dir=files_dir
+        )
+        
+    assert not os.path.exists(expected_dat_path)
+
+
+def test_train_predictor_xml_none_file_ignored(temp_workspace):
+    zip_path = os.path.join(temp_workspace, "dataset_xml_none.zip")
+    index_path = os.path.join(temp_workspace, "predictors.json")
+    files_dir = os.path.join(temp_workspace, "files")
+    os.makedirs(files_dir, exist_ok=True)
+    
+    with zipfile.ZipFile(zip_path, 'w') as z:
+        # Save a valid image
+        img = np.zeros((100, 100, 3), dtype=np.uint8)
+        img1_path = os.path.join(temp_workspace, "img1.jpg")
+        cv2.imwrite(img1_path, img)
+        z.write(img1_path, arcname="img1.jpg")
+        os.remove(img1_path)
+        
+        # XML containing one image without 'file' attribute, and one valid image
+        xml_content = """<?xml version='1.0' encoding='UTF-8'?>
+<dataset>
+  <name>Test XML None</name>
+  <images>
+    <image>
+      <box top="10" left="10" width="80" height="80">
+        <part name="0" x="20" y="20"/>
+      </box>
+    </image>
+    <image file="img1.jpg">
+      <box top="10" left="10" width="80" height="80">
+        <part name="0" x="20" y="20"/>
+      </box>
+    </image>
+  </images>
+</dataset>
+"""
+        z.writestr("annotations.xml", xml_content)
+        
+    mock_options = {
+        "nu": 0.1,
+        "tree_depth": 2,
+        "cascade_depth": 5
+    }
+    
+    meta = train_predictor_from_zip(
+        model_name="Test XML None",
+        zip_path=zip_path,
+        predictor_id="test-xml-none-uuid",
+        index_path=index_path,
+        files_dir=files_dir,
+        custom_options=mock_options
+    )
+    
+    assert meta is not None
+    assert meta["num_parts"] == 1
+

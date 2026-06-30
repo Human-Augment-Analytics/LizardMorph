@@ -1944,17 +1944,24 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
             z.extractall(temp_dir)
             
         # 2. Locate TPS or XML file
-        tps_file = None
-        xml_file = None
+        tps_files = []
+        xml_files = []
         for root_dir, _, files in os.walk(temp_dir):
             for f in files:
                 if f.lower().endswith(".tps"):
-                    tps_file = os.path.join(root_dir, f)
+                    tps_files.append(os.path.join(root_dir, f))
                 elif f.lower().endswith(".xml") and not f.lower().startswith("mock"):
-                    xml_file = os.path.join(root_dir, f)
+                    xml_files.append(os.path.join(root_dir, f))
                     
-        if not tps_file and not xml_file:
+        total_annotation_files = len(tps_files) + len(xml_files)
+        if total_annotation_files > 1:
+            raise ValueError("Multiple annotation files (.tps/.xml) found in zip; expected exactly one")
+            
+        if total_annotation_files == 0:
             raise ValueError("No .tps or .xml annotation file found in dataset ZIP")
+            
+        tps_file = tps_files[0] if tps_files else None
+        xml_file = xml_files[0] if xml_files else None
             
         dataset_xml_path = os.path.join(temp_dir, "dataset.xml")
         
@@ -2007,8 +2014,16 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
             # Use uploaded XML directly but rewrite file paths to point to absolute temp paths
             tree = ET.parse(xml_file)
             root = tree.getroot()
+            parent_map = {c: p for p in root.iter() for c in p}
+            
             for image in root.findall(".//image"):
                 original_file = image.get("file")
+                if not original_file:
+                    parent = parent_map.get(image)
+                    if parent is not None:
+                        parent.remove(image)
+                    continue
+                
                 img_filename = os.path.basename(original_file)
                 local_img_path = None
                 for r_dir, _, fs in os.walk(temp_dir):
@@ -2040,19 +2055,24 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
         options.be_verbose = False
         
         output_model_path = os.path.join(files_dir, f"{predictor_id}.dat")
-        dlib.train_shape_predictor(dataset_xml_path, output_model_path, options)
         
         try:
+            dlib.train_shape_predictor(dataset_xml_path, output_model_path, options)
+            
             # Validate predictor via library structure
-            if not hasattr(dlib.shape_predictor, "num_parts"):
-                import numpy as np
-                def _get_num_parts(self):
-                    dummy_img = np.zeros((10, 10, 3), dtype=np.uint8)
-                    dummy_rect = dlib.rectangle(0, 0, 10, 10)
-                    return self(dummy_img, dummy_rect).num_parts
-                dlib.shape_predictor.num_parts = property(_get_num_parts)
-
             sp = dlib.shape_predictor(output_model_path)
+            
+            # Retrieve num_parts safely
+            num_parts = getattr(sp, "num_parts", None)
+            if num_parts is None:
+                import numpy as np
+                dummy_img = np.zeros((10, 10, 3), dtype=np.uint8)
+                dummy_rect = dlib.rectangle(0, 0, 10, 10)
+                try:
+                    num_parts = sp(dummy_img, dummy_rect).num_parts
+                except Exception:
+                    num_parts = 0
+            
             iso_timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             meta = predictor_library.PredictorMeta(
                 id=predictor_id,
@@ -2060,7 +2080,7 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
                 stored_filename=f"{predictor_id}.dat",
                 uploaded_at=iso_timestamp,
                 size_bytes=os.path.getsize(output_model_path),
-                num_parts=sp.num_parts
+                num_parts=num_parts
             )
             
             # Save to list index
