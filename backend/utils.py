@@ -1933,32 +1933,31 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
     import xml.etree.ElementTree as ET
     from xml.dom import minidom
     import predictor_library
+    import time
 
     temp_dir = os.path.join(os.path.dirname(zip_path), f"training_{predictor_id}")
     os.makedirs(temp_dir, exist_ok=True)
     
-    # 1. Extract ZIP
-    with zipfile.ZipFile(zip_path, 'r') as z:
-        z.extractall(temp_dir)
-        
-    # 2. Locate TPS or XML file
-    tps_file = None
-    xml_file = None
-    for root_dir, _, files in os.walk(temp_dir):
-        for f in files:
-            if f.lower().endswith(".tps"):
-                tps_file = os.path.join(root_dir, f)
-            elif f.lower().endswith(".xml") and not f.lower().startswith("mock"):
-                xml_file = os.path.join(root_dir, f)
-                
-    if not tps_file and not xml_file:
-        shutil.rmtree(temp_dir)
-        raise ValueError("No .tps or .xml annotation file found in dataset ZIP")
-        
-    dataset_xml_path = os.path.join(temp_dir, "dataset.xml")
-    num_parts = 0
-    
     try:
+        # 1. Extract ZIP
+        with zipfile.ZipFile(zip_path, 'r') as z:
+            z.extractall(temp_dir)
+            
+        # 2. Locate TPS or XML file
+        tps_file = None
+        xml_file = None
+        for root_dir, _, files in os.walk(temp_dir):
+            for f in files:
+                if f.lower().endswith(".tps"):
+                    tps_file = os.path.join(root_dir, f)
+                elif f.lower().endswith(".xml") and not f.lower().startswith("mock"):
+                    xml_file = os.path.join(root_dir, f)
+                    
+        if not tps_file and not xml_file:
+            raise ValueError("No .tps or .xml annotation file found in dataset ZIP")
+            
+        dataset_xml_path = os.path.join(temp_dir, "dataset.xml")
+        
         if tps_file:
             # Parse TPS and build XML
             tps_data = read_tps(tps_file)
@@ -1995,7 +1994,6 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
                 
                 # Flip coordinates since TPS counts Y from bottom
                 coords = tps_data["coords"][idx]
-                num_parts = len(coords)
                 for pt_idx, coord in enumerate(coords):
                     part = ET.SubElement(box, "part", name=str(pt_idx))
                     part.set("x", str(int(round(coord[0]))))
@@ -2025,11 +2023,6 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
                     raise ValueError(f"Image '{original_file}' referenced in XML not found in ZIP.")
                 image.set("file", local_img_path)
                 
-                # Determine number of parts
-                parts = image.findall(".//part")
-                if parts:
-                    num_parts = max(num_parts, len(parts))
-                    
             tree.write(dataset_xml_path)
             
         # 3. Train dlib predictor
@@ -2049,24 +2042,41 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
         output_model_path = os.path.join(files_dir, f"{predictor_id}.dat")
         dlib.train_shape_predictor(dataset_xml_path, output_model_path, options)
         
-        # Validate predictor via library structure
-        sp = dlib.shape_predictor(output_model_path)
-        meta = predictor_library.PredictorMeta(
-            id=predictor_id,
-            display_name=model_name,
-            stored_filename=f"{predictor_id}.dat",
-            uploaded_at=predictor_library._now_iso(),
-            size_bytes=os.path.getsize(output_model_path),
-            num_parts=num_parts
-        )
-        
-        # Save to list index
-        idx = predictor_library.load_index(index_path)
-        predictors = idx.get("predictors", [])
-        predictors.append(predictor_library.asdict(meta))
-        idx["predictors"] = predictors
-        predictor_library.save_index(index_path, idx)
-        
+        try:
+            # Validate predictor via library structure
+            if not hasattr(dlib.shape_predictor, "num_parts"):
+                import numpy as np
+                def _get_num_parts(self):
+                    dummy_img = np.zeros((10, 10, 3), dtype=np.uint8)
+                    dummy_rect = dlib.rectangle(0, 0, 10, 10)
+                    return self(dummy_img, dummy_rect).num_parts
+                dlib.shape_predictor.num_parts = property(_get_num_parts)
+
+            sp = dlib.shape_predictor(output_model_path)
+            iso_timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            meta = predictor_library.PredictorMeta(
+                id=predictor_id,
+                display_name=model_name,
+                stored_filename=f"{predictor_id}.dat",
+                uploaded_at=iso_timestamp,
+                size_bytes=os.path.getsize(output_model_path),
+                num_parts=sp.num_parts
+            )
+            
+            # Save to list index
+            idx = predictor_library.load_index(index_path)
+            predictors = idx.get("predictors", [])
+            predictors.append(predictor_library.asdict(meta))
+            idx["predictors"] = predictors
+            predictor_library.save_index(index_path, idx)
+        except Exception:
+            if os.path.exists(output_model_path):
+                try:
+                    os.remove(output_model_path)
+                except Exception:
+                    pass
+            raise
+            
         return predictor_library.asdict(meta)
         
     finally:

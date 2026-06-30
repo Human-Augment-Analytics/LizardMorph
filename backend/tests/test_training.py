@@ -25,13 +25,13 @@ def test_train_predictor_from_zip_success(temp_workspace):
     with zipfile.ZipFile(zip_path, 'w') as z:
         # Save 2 solid black images
         img = np.zeros((100, 100, 3), dtype=np.uint8)
-        img1_path = "img1.jpg"
-        img2_path = "img2.jpg"
+        img1_path = os.path.join(temp_workspace, "img1.jpg")
+        img2_path = os.path.join(temp_workspace, "img2.jpg")
         cv2.imwrite(img1_path, img)
         cv2.imwrite(img2_path, img)
         
-        z.write(img1_path)
-        z.write(img2_path)
+        z.write(img1_path, arcname="img1.jpg")
+        z.write(img2_path, arcname="img2.jpg")
         
         os.remove(img1_path)
         os.remove(img2_path)
@@ -77,3 +77,78 @@ ID=1
     predictors = predictor_library.list_predictors(index_path)
     assert len(predictors) == 1
     assert predictors[0].id == "test-uuid"
+
+
+def test_train_predictor_cleanup_on_invalid_zip(temp_workspace):
+    zip_path = os.path.join(temp_workspace, "invalid.zip")
+    with open(zip_path, "wb") as f:
+        f.write(b"not a zip file")
+        
+    index_path = os.path.join(temp_workspace, "predictors.json")
+    files_dir = os.path.join(temp_workspace, "files")
+    os.makedirs(files_dir, exist_ok=True)
+    
+    predictor_id = "failed-uuid"
+    expected_temp_dir = os.path.join(temp_workspace, f"training_{predictor_id}")
+    
+    with pytest.raises(Exception):
+        train_predictor_from_zip(
+            model_name="Test",
+            zip_path=zip_path,
+            predictor_id=predictor_id,
+            index_path=index_path,
+            files_dir=files_dir
+        )
+        
+    assert not os.path.exists(expected_temp_dir)
+
+
+def test_train_predictor_cleanup_dat_on_validation_failure(temp_workspace, monkeypatch):
+    # Setup a valid dataset
+    zip_path = os.path.join(temp_workspace, "dataset.zip")
+    index_path = os.path.join(temp_workspace, "predictors.json")
+    files_dir = os.path.join(temp_workspace, "files")
+    os.makedirs(files_dir, exist_ok=True)
+    
+    with zipfile.ZipFile(zip_path, 'w') as z:
+        img = np.zeros((100, 100, 3), dtype=np.uint8)
+        img1_path = os.path.join(temp_workspace, "img1.jpg")
+        cv2.imwrite(img1_path, img)
+        z.write(img1_path, arcname="img1.jpg")
+        os.remove(img1_path)
+        
+        tps_content = """LM=1
+10.0 90.0
+IMAGE=img1.jpg
+ID=0
+"""
+        z.writestr("annotations.tps", tps_content)
+
+    mock_options = {
+        "nu": 0.1,
+        "tree_depth": 2,
+        "cascade_depth": 5
+    }
+    
+    # Mock dlib.shape_predictor to raise a ValueError during validation
+    import dlib
+    def mock_sp(path):
+        raise ValueError("Simulated validation failure")
+        
+    monkeypatch.setattr(dlib, "shape_predictor", mock_sp)
+    
+    predictor_id = "test-fail-uuid"
+    expected_dat_path = os.path.join(files_dir, f"{predictor_id}.dat")
+    
+    with pytest.raises(ValueError, match="Simulated validation failure"):
+        train_predictor_from_zip(
+            model_name="Test Predictor Fail",
+            zip_path=zip_path,
+            predictor_id=predictor_id,
+            index_path=index_path,
+            files_dir=files_dir,
+            custom_options=mock_options
+        )
+        
+    # Verify the .dat file is deleted
+    assert not os.path.exists(expected_dat_path)
