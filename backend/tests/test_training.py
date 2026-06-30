@@ -266,3 +266,138 @@ def test_train_predictor_xml_none_file_ignored(temp_workspace):
     assert meta is not None
     assert meta["num_parts"] == 1
 
+
+def test_train_predictor_ignores_macosx_metadata(temp_workspace):
+    zip_path = os.path.join(temp_workspace, "dataset_macos.zip")
+    index_path = os.path.join(temp_workspace, "predictors.json")
+    files_dir = os.path.join(temp_workspace, "files")
+    os.makedirs(files_dir, exist_ok=True)
+    
+    with zipfile.ZipFile(zip_path, 'w') as z:
+        img = np.zeros((100, 100, 3), dtype=np.uint8)
+        img1_path = os.path.join(temp_workspace, "img1.jpg")
+        cv2.imwrite(img1_path, img)
+        z.write(img1_path, arcname="img1.jpg")
+        os.remove(img1_path)
+        
+        # Add a __MACOSX directory structure and some ._ files
+        z.writestr("__MACOSX/._img1.jpg", b"dummy mac meta")
+        z.writestr("__MACOSX/annotations.tps", b"dummy mac meta")
+        z.writestr("._annotations.tps", b"dummy mac meta")
+        
+        # Real annotations
+        tps_content = """LM=1
+10.0 90.0
+IMAGE=img1.jpg
+ID=0
+"""
+        z.writestr("annotations.tps", tps_content)
+        
+    mock_options = {
+        "nu": 0.1,
+        "tree_depth": 2,
+        "cascade_depth": 5
+    }
+    
+    meta = train_predictor_from_zip(
+        model_name="Test MacOS",
+        zip_path=zip_path,
+        predictor_id="test-macos-uuid",
+        index_path=index_path,
+        files_dir=files_dir,
+        custom_options=mock_options
+    )
+    
+    assert meta is not None
+    assert meta["num_parts"] == 1
+
+
+def test_train_predictor_resolves_absolute_paths(temp_workspace):
+    zip_path = os.path.join(temp_workspace, "dataset_abs.zip")
+    index_path = os.path.join(temp_workspace, "predictors.json")
+    files_dir = os.path.join(temp_workspace, "files")
+    os.makedirs(files_dir, exist_ok=True)
+    
+    with zipfile.ZipFile(zip_path, 'w') as z:
+        img = np.zeros((100, 100, 3), dtype=np.uint8)
+        img1_path = os.path.join(temp_workspace, "img1.jpg")
+        cv2.imwrite(img1_path, img)
+        z.write(img1_path, arcname="img1.jpg")
+        os.remove(img1_path)
+        
+        tps_content = """LM=1
+10.0 90.0
+IMAGE=img1.jpg
+ID=0
+"""
+        z.writestr("annotations.tps", tps_content)
+        
+    mock_options = {
+        "nu": 0.1,
+        "tree_depth": 2,
+        "cascade_depth": 5
+    }
+    
+    import dlib
+    import xml.etree.ElementTree as ET
+    
+    xml_inspected_path = [None]
+    
+    orig_train = dlib.train_shape_predictor
+    def mock_train(xml_path, out_path, options):
+        xml_inspected_path[0] = xml_path
+        # Parse XML to check if image path is absolute
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        for image in root.findall(".//image"):
+            file_val = image.get("file")
+            assert os.path.isabs(file_val), f"Path should be absolute: {file_val}"
+        
+        orig_train(xml_path, out_path, options)
+            
+    # Use temporary override
+    import sys
+    dlib.train_shape_predictor = mock_train
+    try:
+        meta = train_predictor_from_zip(
+            model_name="Test Absolute Path",
+            zip_path=zip_path,
+            predictor_id="test-abs-uuid",
+            index_path=index_path,
+            files_dir=files_dir,
+            custom_options=mock_options
+        )
+    finally:
+        dlib.train_shape_predictor = orig_train
+        
+    assert meta is not None
+    assert xml_inspected_path[0] is not None
+
+
+def test_train_predictor_finally_block_ignores_errors(temp_workspace, monkeypatch):
+    zip_path = os.path.join(temp_workspace, "dataset_finally.zip")
+    index_path = os.path.join(temp_workspace, "predictors.json")
+    files_dir = os.path.join(temp_workspace, "files")
+    os.makedirs(files_dir, exist_ok=True)
+    
+    with zipfile.ZipFile(zip_path, 'w') as z:
+        z.writestr("not_an_annotation.txt", "garbage")
+        
+    # Mock shutil.rmtree to raise an exception when ignore_errors is False
+    import shutil
+    def mock_rmtree(path, ignore_errors=False):
+        if not ignore_errors:
+            raise OSError("Simulated rmtree failure")
+            
+    monkeypatch.setattr(shutil, "rmtree", mock_rmtree)
+    
+    with pytest.raises(ValueError, match="No .tps or .xml annotation file found"):
+        train_predictor_from_zip(
+            model_name="Test Finally",
+            zip_path=zip_path,
+            predictor_id="test-finally-uuid",
+            index_path=index_path,
+            files_dir=files_dir
+        )
+
+
