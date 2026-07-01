@@ -100,3 +100,6 @@ electron/invert_image/
 electron/color_constrasted/
 electron/node_modules/
 electron/frontend/
+
+# Local training datasets
+ml_morph_dataset.zip
