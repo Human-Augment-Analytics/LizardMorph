@@ -36,6 +36,8 @@ To train a custom shape predictor, you must package your images and their coordi
 2.  On the **Overview** page, scroll to the bottom and click the **Train Custom Model** button.
 3.  This opens the `/custom` route (the Custom Model Training Dashboard).
 
+![LizardMorph Custom Training Dashboard Empty](docs/screenshots/drosophila_1_empty.png)
+
 ---
 
 ### Step 3: Configure and Upload
@@ -43,11 +45,15 @@ To train a custom shape predictor, you must package your images and their coordi
 2.  **Upload Dataset**: Drag-and-drop your prepared dataset `.zip` file into the upload dropzone, or click the dropzone to browse your local filesystem.
 3.  **Configure Parameters (Optional)**: Click **Show Advanced Settings** to reveal the training parameter sliders.
 
+![LizardMorph Dataset Configured and Uploaded](docs/screenshots/drosophila_2_form_filled.png)
+
 ---
 
 ## ⚙️ Advanced Training Parameters
 
 If you are working with specialized datasets (e.g. very small image counts, high landmark counts, or noisy backgrounds), you can optimize the shape predictor's performance using the following parameters:
+
+![LizardMorph Advanced Settings Parameter Configuration](docs/screenshots/train_settings.png)
 
 | Parameter | Default | Range | Explanation & Impact |
 | :--- | :---: | :---: | :--- |
@@ -66,9 +72,13 @@ If you are working with specialized datasets (e.g. very small image counts, high
 3.  The dashboard will show a **"Training..."** progress bar and report the active background Job ID. 
 4.  *Note: Only one local training job is allowed to execute at any given time. If multiple users/tabs submit jobs, they will be queued automatically.*
 
+![LizardMorph Training Progress](docs/screenshots/drosophila_3_training_progress.png)
+
 ---
 
 ### Step 5: Verification & Deletion
 *   Once completed, the newly trained predictor model will be registered in the available custom models database.
 *   The model will appear in the **Available Custom Models** list displaying its name, file size, and target landmark count.
 *   To delete a model from the system, click the **Delete** button next to the model entry.
+
+![LizardMorph Training Completed Model Registered](docs/screenshots/drosophila_4_training_completed.png)
