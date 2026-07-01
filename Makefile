@@ -36,20 +36,20 @@ dev-backend:
 	if lsof -iTCP:"$${PORT}" -sTCP:LISTEN -nP >/dev/null 2>&1; then \
 		PIDS="$$(lsof -t -iTCP:"$${PORT}" -sTCP:LISTEN -nP | tr '\n' ' ')" && \
 		CMDLINE="$$(ps -o cmd= -p $$(echo "$$PIDS" | awk '{print $$1}') 2>/dev/null || true)" && \
-		if echo "$$CMDLINE" | grep -q gunicorn; then \
-			echo "Stopping existing gunicorn on port $${PORT} (PIDs: $${PIDS})"; \
+		if echo "$$CMDLINE" | grep -Eq 'python[0-9.]* .*app\.py'; then \
+			echo "Stopping existing backend on port $${PORT} (PIDs: $${PIDS})"; \
 			kill $${PIDS} 2>/dev/null || true; \
 			for i in 1 2 3 4 5 6 7 8 9 10; do \
 				sleep 0.5; \
 				if ! lsof -iTCP:"$${PORT}" -sTCP:LISTEN -nP >/dev/null 2>&1; then break; fi; \
 			done; \
 			if lsof -iTCP:"$${PORT}" -sTCP:LISTEN -nP >/dev/null 2>&1; then \
-				echo "Gunicorn still listening; sending SIGKILL."; \
+				echo "Backend still listening; sending SIGKILL."; \
 				kill -9 $${PIDS} 2>/dev/null || true; \
 				sleep 0.5; \
 			fi; \
 		else \
-			echo "Port $${PORT} is in use by a non-gunicorn process; refusing to kill it."; \
+			echo "Port $${PORT} is in use by a non-backend process; refusing to kill it."; \
 			lsof -iTCP:"$${PORT}" -sTCP:LISTEN -nP; \
 			exit 1; \
 		fi; \

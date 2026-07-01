@@ -177,31 +177,21 @@ https://ngrok.com/docs/getting-started/
 
 ## 6. Server Production Deployment
 
-To set up and run the application in a production environment:
+To set up and run the application on the current production server:
 
-1. Clone repository and install dependencies using `make setup`.
-2. Configure `.env` with appropriate model paths, API port, and frontend base URL.
-3. Build the frontend for production:
+1. Clone the repository and install dependencies using `make setup`.
+2. Configure the repo-root `.env` with model paths, API port, frontend base URL, and `WEBHOOK_SECRET`.
+3. Build the frontend:
    ```bash
    cd frontend
    npm run build
    ```
-4. Use `gunicorn.conf.py` at the repo root for production settings:
-
+4. Install the systemd service:
    ```bash
-   cd /var/www/LizardMorph
-   cd backend && uv run gunicorn -c ../gunicorn.conf.py app:app
+   sudo bash /var/www/LizardMorph/systemd/setup.sh
    ```
 
-   Or use the minimal startup script from the backend:
-
-   ```bash
-   cd backend
-   bash startup.sh
-   # Update startup.sh to utilize `uv run gunicorn` accordingly if desired.
-   ```
-
-Gunicorn logs go to `/var/log/lizardmorph/` (configure in `gunicorn.conf.py`). Ensure the port matches what your reverse proxy (e.g., Nginx) expects.
+The backend service is defined in `systemd/lizardmorph-backend.service` and runs from `/var/www/LizardMorph/backend`. Backend logs go to `/var/log/lizardmorph/`.
 
 ### GitHub CI/CD (auto-deploy on push to `main`)
 

@@ -20,7 +20,6 @@ checks = [
     ("PIL (Pillow)", "PIL"),
     ("flask", "flask"),
     ("flask_cors", "flask_cors"),
-    ("gunicorn", "gunicorn"),
     ("ultralytics (YOLO)", "ultralytics"),
     ("torch", "torch"),
     ("torchvision", "torchvision"),

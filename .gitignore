@@ -3,6 +3,7 @@
 
 # Local agent/tool state
 /AGENTS.md
+/clear-history.sh
 .claude/
 .cursor/
 .planning/
