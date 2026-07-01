@@ -370,7 +370,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
       <div className="train-grid">
         {/* Left Side: Training Form */}
         <div className="train-card">
-          <h2 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "20px" }}>🛠️ Train New Predictor</h2>
+          <h2 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "20px" }}>Train New Predictor</h2>
           <form onSubmit={handleTrainModel}>
             <div className="form-group">
               <label className="form-label">Model Display Name</label>
@@ -429,7 +429,19 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
                   style={{ display: "none" }}
                   required
                 />
-                <span style={{ fontSize: "28px" }}>{zipFile ? "📦" : "📤"}</span>
+                {zipFile ? (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "32px", height: "32px", color: "#4CAF50", marginBottom: "8px" }}>
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                    <line x1="12" y1="22.08" x2="12" y2="12" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "32px", height: "32px", color: t.textMuted, marginBottom: "8px" }}>
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                )}
                 <span style={{ fontSize: "14px", fontWeight: 600, color: t.text }}>
                   {zipFile ? zipFile.name : "Choose dataset ZIP file"}
                 </span>
@@ -472,7 +484,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
 
         {/* Right Side: Predictors List */}
         <div className="train-card">
-          <h2 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "20px" }}>📚 Available Custom Models</h2>
+          <h2 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "20px" }}>Available Custom Models</h2>
           {loading && <p style={{ fontSize: "14px", opacity: 0.7 }}>Loading models...</p>}
           {!loading && predictors.length === 0 && (
             <p style={{ fontSize: "14px", opacity: 0.6, fontStyle: "italic" }}>
