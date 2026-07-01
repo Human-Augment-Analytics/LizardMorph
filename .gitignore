@@ -2,6 +2,7 @@
 .git
 
 # Local agent/tool state
+/AGENTS.md
 .claude/
 .cursor/
 .planning/
