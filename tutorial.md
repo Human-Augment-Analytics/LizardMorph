@@ -36,16 +36,12 @@ To train a custom shape predictor, you must package your images and their coordi
 2.  On the **Overview** page, scroll to the bottom and click the **Train Custom Model** button.
 3.  This opens the `/custom` route (the Custom Model Training Dashboard).
 
-![LizardMorph Custom Training Dashboard Empty](docs/screenshots/drosophila_1_empty.png)
-
 ---
 
 ### Step 3: Configure and Upload
 1.  **Model Display Name**: Enter a descriptive name for your custom shape predictor (e.g., `Drosophila Wing Predictor`).
 2.  **Upload Dataset**: Drag-and-drop your prepared dataset `.zip` file into the upload dropzone, or click the dropzone to browse your local filesystem.
 3.  **Configure Parameters (Optional)**: Click **Show Advanced Settings** to reveal the training parameter sliders.
-
-![LizardMorph Dataset Configured and Uploaded](docs/screenshots/drosophila_2_form_filled.png)
 
 ---
 
@@ -71,8 +67,6 @@ If you are working with specialized datasets (e.g. very small image counts, high
 2.  The application will upload the ZIP archive and trigger a CPU training process in a background thread.
 3.  The dashboard will show a **"Training..."** progress bar and report the active background Job ID. 
 4.  *Note: Only one local training job is allowed to execute at any given time. If multiple users/tabs submit jobs, they will be queued automatically.*
-
-![LizardMorph Training Progress](docs/screenshots/drosophila_3_training_progress.png)
 
 ---
 
