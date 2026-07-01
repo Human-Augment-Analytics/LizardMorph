@@ -64,12 +64,14 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
         # First, build arm64
         echo "--- Packaging arm64 DMG ---"
         rm -rf "$SCRIPT_DIR/dist/backend"
+        mkdir -p "$SCRIPT_DIR/dist"
         cp -r "$SCRIPT_DIR/dist-arm64/backend" "$SCRIPT_DIR/dist/backend"
         npx electron-builder --mac --arm64 --publish never
 
         # Then, build x64
         echo "--- Packaging x64 DMG ---"
         rm -rf "$SCRIPT_DIR/dist/backend"
+        mkdir -p "$SCRIPT_DIR/dist"
         cp -r "$SCRIPT_DIR/dist-x64/backend" "$SCRIPT_DIR/dist/backend"
         npx electron-builder --mac --x64 --publish never
     elif [[ -n "$TARGET_ARCH" ]]; then
@@ -81,6 +83,7 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
         # If backend was built to arch-specific dir, copy it to standard location
         if [[ -d "$SCRIPT_DIR/dist-${TARGET_ARCH}/backend" ]]; then
             rm -rf "$SCRIPT_DIR/dist/backend"
+            mkdir -p "$SCRIPT_DIR/dist"
             cp -r "$SCRIPT_DIR/dist-${TARGET_ARCH}/backend" "$SCRIPT_DIR/dist/backend"
         fi
         npx electron-builder --mac --${TARGET_ARCH} --publish never
