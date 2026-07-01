@@ -1936,13 +1936,34 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
     os.makedirs(temp_dir, exist_ok=True)
     
     try:
-        # 1. Extract ZIP with Zip Slip prevention
+        # 1. Extract ZIP with Zip Slip prevention and Zip Bomb checks
         with zipfile.ZipFile(zip_path, 'r') as z:
             temp_dir_abs = os.path.abspath(temp_dir)
-            for member in z.infolist():
+            members = z.infolist()
+            
+            # Cap limits to prevent Zip Bombs / DoS
+            MAX_ZIP_MEMBER_COUNT = 500
+            MAX_SINGLE_FILE_SIZE = 20 * 1024 * 1024  # 20MB
+            MAX_TOTAL_UNCOMPRESSED_SIZE = 100 * 1024 * 1024  # 100MB
+            
+            if len(members) > MAX_ZIP_MEMBER_COUNT:
+                raise ValueError(f"ZIP archive contains too many members ({len(members)}). Maximum allowed is {MAX_ZIP_MEMBER_COUNT}.")
+                
+            total_size = 0
+            for member in members:
+                # Zip Slip check
                 target_path = os.path.abspath(os.path.join(temp_dir_abs, member.filename))
                 if not target_path.startswith(temp_dir_abs + os.path.sep) and target_path != temp_dir_abs:
                     raise ValueError(f"Directory traversal attempt detected: {member.filename}")
+                
+                # Zip Bomb individual file size check
+                if member.file_size > MAX_SINGLE_FILE_SIZE:
+                    raise ValueError(f"File {member.filename} in ZIP archive exceeds size limit of {MAX_SINGLE_FILE_SIZE // (1024 * 1024)}MB.")
+                
+                total_size += member.file_size
+                if total_size > MAX_TOTAL_UNCOMPRESSED_SIZE:
+                    raise ValueError(f"Total uncompressed size of ZIP archive exceeds limit of {MAX_TOTAL_UNCOMPRESSED_SIZE // (1024 * 1024)}MB.")
+            
             z.extractall(temp_dir)
             
         # 2. Pre-index all files in temp_dir and locate TPS or XML file
@@ -1960,22 +1981,20 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
                 if key in file_index:
                     raise ValueError(f"Duplicate filename '{f}' found in the archive, potential name collision.")
                 file_index[key] = abs_path
-                if f.lower().endswith(".tps"):
+                if key.endswith(".tps"):
                     tps_files.append(abs_path)
-                elif f.lower().endswith(".xml") and not f.lower().startswith("mock"):
+                elif key.endswith(".xml"):
                     xml_files.append(abs_path)
                     
-        total_annotation_files = len(tps_files) + len(xml_files)
-        if total_annotation_files > 1:
-            raise ValueError("Multiple annotation files (.tps/.xml) found in zip; expected exactly one")
-            
-        if total_annotation_files == 0:
+        if len(tps_files) + len(xml_files) == 0:
             raise ValueError("No .tps or .xml annotation file found in dataset ZIP")
+        if len(tps_files) + len(xml_files) > 1:
+            raise ValueError("Multiple annotation files (.tps/.xml) found in zip; expected exactly one.")
             
         tps_file = tps_files[0] if tps_files else None
         xml_file = xml_files[0] if xml_files else None
             
-        dataset_xml_path = os.path.join(temp_dir, "dataset.xml")
+        dataset_xml_path = os.path.join(temp_dir, "training_dataset.xml")
         
         if tps_file:
             # Parse TPS and build XML
@@ -2040,7 +2059,8 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
             
         # 3. Train dlib predictor
         options = dlib.shape_predictor_training_options()
-        options.num_threads = os.cpu_count() or 1
+        # Cap per-job threads to prevent CPU starvation (max 4 threads or CPU count)
+        options.num_threads = min(4, os.cpu_count() or 1)
         # Cap num_threads to prevent dlib shape predictor training segfault on small datasets
         if tps_file:
             num_images = len(tps_data["im"])

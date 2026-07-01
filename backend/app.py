@@ -116,6 +116,52 @@ TRAINING_JOBS = {}
 TRAINING_JOBS_LOCK = threading.Lock()
 PREDICTOR_INDEX_LOCK = threading.Lock()
 
+# Global semaphore for serializing training execution (max 1 concurrency)
+TRAINING_SEMAPHORE = threading.Semaphore(1)
+
+# Persistent file-based job store
+JOBS_DIR = os.path.join(os.path.dirname(__file__), "sessions", "jobs")
+
+def save_job_status(job_id, status_dict):
+    try:
+        os.makedirs(JOBS_DIR, exist_ok=True)
+        job_file = os.path.join(JOBS_DIR, f"job_{job_id}.json")
+        with open(job_file, "w") as f:
+            json.dump(status_dict, f)
+    except Exception as e:
+        logger.error(f"Error saving job status for {job_id}: {e}")
+
+def load_job_status(job_id):
+    job_file = os.path.join(JOBS_DIR, f"job_{job_id}.json")
+    if not os.path.exists(job_file):
+        return None
+    try:
+        with open(job_file, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading job status for {job_id}: {e}")
+        return None
+
+def prune_old_jobs(max_age_seconds=3600):
+    try:
+        if not os.path.exists(JOBS_DIR):
+            return
+        now = time.time()
+        for filename in os.listdir(JOBS_DIR):
+            if filename.startswith("job_") and filename.endswith(".json"):
+                filepath = os.path.join(JOBS_DIR, filename)
+                try:
+                    with open(filepath, "r") as f:
+                        data = json.load(f)
+                    if data.get("status") in ("completed", "failed"):
+                        created_at = data.get("created_at", 0)
+                        if now - created_at > max_age_seconds:
+                            os.remove(filepath)
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.error(f"Error pruning old jobs: {e}")
+
 
 # Configure logging
 logging.basicConfig(
@@ -713,22 +759,17 @@ def delete_predictor(predictor_id):
 def start_train_predictor():
     try:
         # Prune completed or failed jobs older than 3600 seconds (1 hour)
-        with TRAINING_JOBS_LOCK:
-            now = time.time()
-            to_delete = []
-            for jid, job in list(TRAINING_JOBS.items()):
-                if job.get("status") in ("completed", "failed"):
-                    created_at = job.get("created_at", 0)
-                    if now - created_at > 3600:
-                        to_delete.append(jid)
-            for jid in to_delete:
-                del TRAINING_JOBS[jid]
+        prune_old_jobs(max_age_seconds=3600)
 
         model_name = request.form.get("model_name", "Custom Predictor").strip()
         f = request.files.get("dataset")
         
         if not f:
             return jsonify({"success": False, "error": "Missing dataset ZIP file"}), 400
+            
+        # Check upload size using header if available
+        if request.content_length and request.content_length > PREDICTOR_MAX_BYTES:
+            return jsonify({"success": False, "error": f"Upload size exceeds limit of {PREDICTOR_MAX_BYTES // (1024 * 1024)}MB"}), 413
             
         job_id = str(uuid.uuid4())
         
@@ -740,46 +781,59 @@ def start_train_predictor():
         temp_zip_path = os.path.join(PREDICTOR_LIBRARY_DIR, f"upload_{job_id}.zip")
         f.save(temp_zip_path)
         
+        # Enforce actual file size check on disk
+        if os.path.getsize(temp_zip_path) > PREDICTOR_MAX_BYTES:
+            try:
+                os.remove(temp_zip_path)
+            except Exception:
+                pass
+            return jsonify({"success": False, "error": f"Uploaded dataset ZIP file exceeds size limit of {PREDICTOR_MAX_BYTES // (1024 * 1024)}MB"}), 413
+            
         # Initialize registry entry
-        with TRAINING_JOBS_LOCK:
-            TRAINING_JOBS[job_id] = {
-                "status": "pending",
-                "error": None,
-                "predictor": None,
-                "created_at": now
-            }
+        save_job_status(job_id, {
+            "status": "pending",
+            "error": None,
+            "predictor": None,
+            "created_at": time.time()
+        })
             
         def worker_thread(jid, zip_p, name):
-            try:
-                with TRAINING_JOBS_LOCK:
-                    TRAINING_JOBS[jid]["status"] = "training"
-                    
-                # Lower tree & cascade depth slightly for standard uploads if requested to keep server happy
-                # (but respect standard requirements)
-                meta = utils.train_predictor_from_zip(
-                    model_name=name,
-                    zip_path=zip_p,
-                    predictor_id=jid,
-                    index_path=PREDICTOR_LIBRARY_INDEX,
-                    files_dir=PREDICTOR_LIBRARY_FILES,
-                    index_lock=PREDICTOR_INDEX_LOCK
-                )
-                
-                with TRAINING_JOBS_LOCK:
-                    TRAINING_JOBS[jid]["status"] = "completed"
-                    TRAINING_JOBS[jid]["predictor"] = meta
-                    
-            except Exception as ex:
-                logger.error(f"Error in training job {jid}: {ex}", exc_info=True)
-                with TRAINING_JOBS_LOCK:
-                    TRAINING_JOBS[jid]["status"] = "failed"
-                    TRAINING_JOBS[jid]["error"] = str(ex)
-            finally:
+            # Enforce global training concurrency (max 1 training job at a time)
+            with TRAINING_SEMAPHORE:
                 try:
-                    if os.path.exists(zip_p):
-                        os.remove(zip_p)
-                except Exception:
-                    pass
+                    # Update status to training
+                    status = load_job_status(jid)
+                    if status:
+                        status["status"] = "training"
+                        save_job_status(jid, status)
+                        
+                    meta = utils.train_predictor_from_zip(
+                        model_name=name,
+                        zip_path=zip_p,
+                        predictor_id=jid,
+                        index_path=PREDICTOR_LIBRARY_INDEX,
+                        files_dir=PREDICTOR_LIBRARY_FILES,
+                        index_lock=PREDICTOR_INDEX_LOCK
+                    )
+                    
+                    status = load_job_status(jid)
+                    if status:
+                        status["status"] = "completed"
+                        status["predictor"] = meta
+                        save_job_status(jid, status)
+                except Exception as ex:
+                    logger.error(f"Training worker failed for job {jid}: {ex}", exc_info=True)
+                    status = load_job_status(jid)
+                    if status:
+                        status["status"] = "failed"
+                        status["error"] = str(ex)
+                        save_job_status(jid, status)
+                finally:
+                    try:
+                        if os.path.exists(zip_p):
+                            os.remove(zip_p)
+                    except Exception:
+                        pass
 
         # Launch background thread
         t = threading.Thread(target=worker_thread, args=(job_id, temp_zip_path, model_name), daemon=True)
@@ -800,20 +854,15 @@ def start_train_predictor():
 @cross_origin()
 @track_metrics
 def get_train_status(job_id):
-    with TRAINING_JOBS_LOCK:
-        job = TRAINING_JOBS.get(job_id)
-        if not job:
-            return jsonify({"success": False, "error": "Job not found"}), 404
-        
-        status = job["status"]
-        error = job["error"]
-        predictor = copy.deepcopy(job["predictor"]) if job["predictor"] is not None else None
+    job = load_job_status(job_id)
+    if not job:
+        return jsonify({"success": False, "error": "Job not found"}), 404
         
     return jsonify({
         "success": True,
-        "status": status,
-        "error": error,
-        "predictor": predictor
+        "status": job["status"],
+        "error": job["error"],
+        "predictor": job["predictor"]
     }), 200
 
 

@@ -505,58 +505,57 @@ def test_api_train_predictor_lifecycle(temp_workspace):
         app_module.PREDICTOR_LIBRARY_FILES = old_files
 
 
-def test_api_train_predictor_job_pruning():
-    from app import app, TRAINING_JOBS, TRAINING_JOBS_LOCK
+def test_api_train_predictor_job_pruning(tmp_path):
+    from app import app
+    import app as app_module
+    import json
     import time
     
-    with TRAINING_JOBS_LOCK:
-        TRAINING_JOBS.clear()
-        
+    # Override JOBS_DIR to a temporary folder
+    old_jobs_dir = app_module.JOBS_DIR
+    temp_jobs_dir = os.path.join(str(tmp_path), "jobs")
+    app_module.JOBS_DIR = temp_jobs_dir
+    os.makedirs(temp_jobs_dir, exist_ok=True)
+    
+    try:
+        # Create helper to write job status file
+        def write_job(job_id, status, error, predictor, age):
+            filepath = os.path.join(temp_jobs_dir, f"job_{job_id}.json")
+            with open(filepath, "w") as f:
+                json.dump({
+                    "status": status,
+                    "error": error,
+                    "predictor": predictor,
+                    "created_at": time.time() - age
+                }, f)
+            # Set the file modification time to match the simulated age
+            mtime = time.time() - age
+            os.utime(filepath, (mtime, mtime))
+            
         # 1. Job 1: completed and older than 3600s
-        TRAINING_JOBS["job-old-completed"] = {
-            "status": "completed",
-            "error": None,
-            "predictor": {},
-            "created_at": time.time() - 4000
-        }
+        write_job("job-old-completed", "completed", None, {}, 4000)
         # 2. Job 2: failed and older than 3600s
-        TRAINING_JOBS["job-old-failed"] = {
-            "status": "failed",
-            "error": "Some error",
-            "predictor": None,
-            "created_at": time.time() - 5000
-        }
+        write_job("job-old-failed", "failed", "Some error", None, 5000)
         # 3. Job 3: completed but recent (not older than 3600s)
-        TRAINING_JOBS["job-recent-completed"] = {
-            "status": "completed",
-            "error": None,
-            "predictor": {},
-            "created_at": time.time() - 100
-        }
+        write_job("job-recent-completed", "completed", None, {}, 100)
         # 4. Job 4: pending and older than 3600s
-        TRAINING_JOBS["job-old-pending"] = {
-            "status": "pending",
-            "error": None,
-            "predictor": None,
-            "created_at": time.time() - 4000
-        }
-
-    with app.test_client() as client:
-        # Triggering the route (even if it returns a 400 bad request due to missing file)
-        resp = client.post("/train_predictor", data={})
-        assert resp.status_code == 400
+        write_job("job-old-pending", "pending", None, None, 4000)
         
-    with TRAINING_JOBS_LOCK:
+        with app.test_client() as client:
+            # Triggering the route (even if it returns a 400 bad request due to missing file)
+            resp = client.post("/train_predictor", data={})
+            assert resp.status_code == 400
+            
         # Verify old completed/failed jobs are pruned
-        assert "job-old-completed" not in TRAINING_JOBS
-        assert "job-old-failed" not in TRAINING_JOBS
+        assert not os.path.exists(os.path.join(temp_jobs_dir, "job_job-old-completed.json"))
+        assert not os.path.exists(os.path.join(temp_jobs_dir, "job_job-old-failed.json"))
         
         # Verify recent jobs and non-completed/failed jobs are kept
-        assert "job-recent-completed" in TRAINING_JOBS
-        assert "job-old-pending" in TRAINING_JOBS
+        assert os.path.exists(os.path.join(temp_jobs_dir, "job_job-recent-completed.json"))
+        assert os.path.exists(os.path.join(temp_jobs_dir, "job_job-old-pending.json"))
         
-        # Cleanup
-        TRAINING_JOBS.clear()
+    finally:
+        app_module.JOBS_DIR = old_jobs_dir
 
 
 
