@@ -1,6 +1,12 @@
 # Git
 .git
 
+# Local agent/tool state
+.claude/
+.cursor/
+.planning/
+.worktrees/
+
 backend/*.dat
 backend/test/
 backend/landmark_visualizations/
@@ -12,6 +18,7 @@ images/
 # Node.js
 frontend/node_modules
 frontend/build
+frontend/dist/
 frontend/.env
 frontend/.env.*
 frontend/npm-debug.log*
@@ -20,6 +27,7 @@ frontend/yarn-error.log*
 
 # Python
 __pycache__/
+.pytest_cache/
 *.py[cod]
 *$py.class
 backend/.env
@@ -31,6 +39,17 @@ backend/.pytest_cache
 backend/sessions
 
 # Output directories
+/build/
+/dist/
+/tmp/
+/sessions/
+/upload/
+/outputs/
+/color_constrasted/
+/tps_download/
+/image_download/
+/invert_image/
+/main.html
 backend/upload
 backend/color_constrasted/
 backend/tps_download/
@@ -55,6 +74,7 @@ backend/debug_*.py
 
 # ONNX Web WASM and Scripts
 frontend/onnxruntime-web-local/
+frontend/public/models/
 frontend/public/ort-*.wasm
 *.onnx
 
@@ -78,10 +98,6 @@ Thumbs.db
 
 # Monitoring configuration files with sensitive data
 monitoring/web.yml
-
-# AI configuration
-.claude
-.worktrees/
 
 # Local experiments / training artifacts
 Experiment/
