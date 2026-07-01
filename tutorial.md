@@ -42,6 +42,7 @@ To train a custom shape predictor, you must package your images and their coordi
 1.  **Model Display Name**: Enter a descriptive name for your custom shape predictor (e.g., `Drosophila Wing Predictor`).
 2.  **Upload Dataset**: Drag-and-drop your prepared dataset `.zip` file into the upload dropzone, or click the dropzone to browse your local filesystem.
 3.  **Configure Parameters (Optional)**: Click **Show Advanced Settings** to reveal the training parameter sliders.
+4.  **Configure Test Split Ratio**: Adjust the **Test Split Ratio** slider (e.g., `20%`) to partition your dataset. If set above `0%`, the system will set aside those images to evaluate accuracy after training is complete.
 
 ---
 
@@ -49,7 +50,7 @@ To train a custom shape predictor, you must package your images and their coordi
 
 If you are working with specialized datasets (e.g. very small image counts, high landmark counts, or noisy backgrounds), you can optimize the shape predictor's performance using the following parameters:
 
-![LizardMorph Advanced Settings Parameter Configuration](docs/screenshots/train_settings.png)
+![LizardMorph Advanced Settings Parameter Configuration and Test Error Metrics](docs/screenshots/train_settings.png)
 
 | Parameter | Default | Range | Explanation & Impact |
 | :--- | :---: | :---: | :--- |
@@ -73,7 +74,5 @@ If you are working with specialized datasets (e.g. very small image counts, high
 
 ### Step 5: Verification & Deletion
 *   Once completed, the newly trained predictor model will be registered in the available custom models database.
-*   The model will appear in the **Available Custom Models** list displaying its name, file size, and target landmark count.
+*   The model will appear in the **Available Custom Models** list displaying its name, file size, target landmark count, and its **Test Error** (e.g., `Test Error: 12.95 px` representing the average pixel distance error between predictions and ground-truth coordinates on the test set).
 *   To delete a model from the system, click the **Delete** button next to the model entry.
-
-![LizardMorph Training Completed Model Registered](docs/screenshots/drosophila_4_training_completed.png)
