@@ -2008,9 +2008,15 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
             members = z.infolist()
             
             # Cap limits to prevent Zip Bombs / DoS
-            MAX_ZIP_MEMBER_COUNT = 500
-            MAX_SINGLE_FILE_SIZE = 20 * 1024 * 1024  # 20MB
-            MAX_TOTAL_UNCOMPRESSED_SIZE = 100 * 1024 * 1024  # 100MB
+            is_hosted = os.getenv("LIZARDMORPH_HOSTED", "false").lower() in ("true", "1", "yes")
+            if is_hosted:
+                MAX_ZIP_MEMBER_COUNT = 500
+                MAX_SINGLE_FILE_SIZE = 20 * 1024 * 1024  # 20MB
+                MAX_TOTAL_UNCOMPRESSED_SIZE = 100 * 1024 * 1024  # 100MB
+            else:
+                MAX_ZIP_MEMBER_COUNT = 100000
+                MAX_SINGLE_FILE_SIZE = 10 * 1024 * 1024 * 1024  # 10GB
+                MAX_TOTAL_UNCOMPRESSED_SIZE = 10 * 1024 * 1024 * 1024  # 10GB
             
             if len(members) > MAX_ZIP_MEMBER_COUNT:
                 raise ValueError(f"ZIP archive contains too many members ({len(members)}). Maximum allowed is {MAX_ZIP_MEMBER_COUNT}.")

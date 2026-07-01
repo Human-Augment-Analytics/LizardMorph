@@ -23,11 +23,13 @@ To train a custom shape predictor, you must package your images and their coordi
 3.  **Flat Directory Structure**: Ensure no nested subdirectories are present.
 
 > [!IMPORTANT]
-> To prevent Denial-of-Service or resources exhaustion, the application enforces the following safety limits on ZIP uploads:
+> When deployed in hosted web mode (configured via environment variable `LIZARDMORPH_HOSTED=true`), the application enforces safety limits to prevent server resource exhaustion or Denial-of-Service:
 > *   Maximum ZIP upload size: **100 MB**
 > *   Maximum file count inside the ZIP: **500 files**
 > *   Maximum uncompressed size of any single file: **20 MB**
 > *   Maximum total uncompressed size: **100 MB**
+> 
+> *Note: When running locally (default local servers or inside the Electron desktop application wrapper), these limits are extended up to 10 GB to support training large specimen collections.*
 
 ---
 

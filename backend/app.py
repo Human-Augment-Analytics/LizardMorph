@@ -74,7 +74,12 @@ PREDICTOR_LIBRARY_DIR = get_model_path(
 )
 PREDICTOR_LIBRARY_INDEX = os.path.join(PREDICTOR_LIBRARY_DIR, "predictors.json")
 PREDICTOR_LIBRARY_FILES = os.path.join(PREDICTOR_LIBRARY_DIR, "files")
-PREDICTOR_MAX_BYTES = int(os.getenv("PREDICTOR_MAX_BYTES", str(100 * 1024 * 1024)))
+
+IS_HOSTED = os.getenv("LIZARDMORPH_HOSTED", "false").lower() in ("true", "1", "yes")
+if IS_HOSTED:
+    PREDICTOR_MAX_BYTES = int(os.getenv("PREDICTOR_MAX_BYTES", str(100 * 1024 * 1024)))
+else:
+    PREDICTOR_MAX_BYTES = int(os.getenv("PREDICTOR_MAX_BYTES", str(10 * 1024 * 1024 * 1024)))  # 10GB
 
 # Model files for different view types
 DORSAL_PREDICTOR_FILE = get_model_path(os.getenv("DORSAL_PREDICTOR_FILE", "../models/lizard-x-ray/dorsal_predictor_clahe_best.dat"))
