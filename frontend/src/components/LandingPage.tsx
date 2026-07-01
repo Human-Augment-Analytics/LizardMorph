@@ -150,12 +150,55 @@ function getLandingPageStyles(isDark: boolean) {
       borderColor: "#4F7942",
       boxShadow: "0 8px 30px rgba(79, 121, 66, 0.15)",
     },
+    secondaryContainer: {
+      marginTop: "4rem",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: "1.5rem",
+      backgroundColor: t.bg,
+      padding: "1.2rem 2.5rem",
+      borderRadius: "16px",
+      boxShadow: `0 8px 32px ${isDark ? "rgba(0,0,0,0.25)" : "rgba(0,0,0,0.06)"}`,
+      border: `1px solid ${isDark ? "#2a3a4e" : "#e8e8e8"}`,
+      maxWidth: "800px",
+      width: "calc(100% - 40px)",
+      boxSizing: "border-box" as const,
+      flexWrap: "wrap" as const,
+      textAlign: "center" as const,
+    },
+    secondaryText: {
+      fontSize: "1.1rem",
+      fontWeight: "500" as const,
+      color: t.text,
+    },
+    secondaryButton: {
+      backgroundColor: "transparent",
+      color: "#4CAF50",
+      border: "2px solid #4CAF50",
+      padding: "0.7rem 1.8rem",
+      borderRadius: "10px",
+      fontSize: "1rem",
+      fontWeight: "bold" as const,
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      gap: "0.5rem",
+      transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+    },
+    secondaryButtonHover: {
+      backgroundColor: "#4CAF50",
+      color: "#fff",
+      boxShadow: "0 8px 24px rgba(76, 175, 80, 0.3)",
+      transform: "translateY(-2px)",
+    },
   };
 }
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
+  const [isSecondaryHovered, setIsSecondaryHovered] = useState(false);
   const { resolved, preference, setPreference } = useTheme();
   const isDark = resolved === "dark";
   const LandingPageStyles = getLandingPageStyles(isDark);
@@ -321,13 +364,13 @@ export const LandingPage: React.FC = () => {
           <div style={LandingPageStyles.cardContent}>
             <div style={{
               ...LandingPageStyles.icon,
-              ...(hoveredCard === "free" ? LandingPageStyles.iconHover : {})
+              ...((hoveredCard === "free") ? LandingPageStyles.iconHover : {})
             }}>
               📌
             </div>
             <h3 style={{
               ...LandingPageStyles.optionTitle,
-              ...(hoveredCard === "free" ? LandingPageStyles.optionTitleHover : {})
+              ...((hoveredCard === "free") ? LandingPageStyles.optionTitleHover : {})
             }}>
               Free Mode
             </h3>
@@ -336,35 +379,24 @@ export const LandingPage: React.FC = () => {
             </p>
           </div>
         </div>
+      </div>
 
-        {/* Train Custom Model */}
-        <div
-          style={{
-            ...LandingPageStyles.optionCard,
-            ...(hoveredCard === "custom" ? LandingPageStyles.optionCardHover : {}),
-          }}
+      {/* Train Custom Model Segmented Section */}
+      <div style={LandingPageStyles.secondaryContainer}>
+        <span style={LandingPageStyles.secondaryText}>
+          Want to use your own landmark configuration?
+        </span>
+        <button
           onClick={() => handleOptionClick("custom")}
-          onMouseEnter={() => handleMouseEnter("custom")}
-          onMouseLeave={handleMouseLeave}
+          onMouseEnter={() => setIsSecondaryHovered(true)}
+          onMouseLeave={() => setIsSecondaryHovered(false)}
+          style={{
+            ...LandingPageStyles.secondaryButton,
+            ...(isSecondaryHovered ? LandingPageStyles.secondaryButtonHover : {})
+          }}
         >
-          <div style={LandingPageStyles.cardContent}>
-            <div style={{
-              ...LandingPageStyles.icon,
-              ...(hoveredCard === "custom" ? LandingPageStyles.iconHover : {})
-            }}>
-              🧠
-            </div>
-            <h3 style={{
-              ...LandingPageStyles.optionTitle,
-              ...(hoveredCard === "custom" ? LandingPageStyles.optionTitleHover : {})
-            }}>
-              Train Custom Model
-            </h3>
-            <p style={LandingPageStyles.optionDescription}>
-              Upload annotated datasets (images + TPS/XML) and train custom shape predictors locally.
-            </p>
-          </div>
-        </div>
+          🧠 Train Custom Model
+        </button>
       </div>
     </div>
   );
