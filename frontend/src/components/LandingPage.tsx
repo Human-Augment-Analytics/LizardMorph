@@ -101,7 +101,6 @@ function getLandingPageStyles(isDark: boolean) {
       justifyContent: "center",
       color: "#4F7942",
       transition: "all 0.3s ease",
-      filter: "brightness(0) invert(41%) sepia(10%) saturate(2258%) hue-rotate(58deg) brightness(96%) contrast(84%)",
     },
     iconLogo: {
       fontSize: "4rem",
@@ -308,7 +307,13 @@ export const LandingPage: React.FC = () => {
               ...LandingPageStyles.icon,
               ...(hoveredCard === "lateral" ? LandingPageStyles.iconHover : {})
             }}>
-              🦖
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "90%", height: "90%" }}>
+                <path d="M2 14c1.5-2.5 4-4 8-3s6.5 2 9 0.5c1.5-1 2.5-2 3-3.5" />
+                <path d="M7.5 12.5c-.3 1.5-.5 3 .2 4.5" />
+                <path d="M12.5 12.5c-.2 1.5-.1 3.2.5 4.7" />
+                <path d="M17.5 11.5c.3 1.5.8 2.8 1.5 3.8" />
+                <circle cx="21" cy="6.5" r="0.8" fill="currentColor" />
+              </svg>
             </div>
             <h3 style={{
               ...LandingPageStyles.optionTitle,
@@ -337,7 +342,14 @@ export const LandingPage: React.FC = () => {
               ...LandingPageStyles.icon,
               ...(hoveredCard === "toepads" ? LandingPageStyles.iconHover : {})
             }}>
-              🦶
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "85%", height: "85%" }}>
+                <path d="M12 11c-2 0-3.8 1.2-3.8 3.5s1.6 3.5 3.8 3.5 3.8-.8 3.8-3.5-1.6-3.5-3.8-3.5z" />
+                <circle cx="12" cy="6.5" r="1.5" fill="currentColor" />
+                <circle cx="8" cy="7.8" r="1.5" fill="currentColor" />
+                <circle cx="16" cy="7.8" r="1.5" fill="currentColor" />
+                <circle cx="5" cy="11.2" r="1.3" fill="currentColor" />
+                <circle cx="19" cy="11.2" r="1.3" fill="currentColor" />
+              </svg>
             </div>
             <h3 style={{
               ...LandingPageStyles.optionTitle,
@@ -366,7 +378,14 @@ export const LandingPage: React.FC = () => {
               ...LandingPageStyles.icon,
               ...((hoveredCard === "free") ? LandingPageStyles.iconHover : {})
             }}>
-              📌
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "95%", height: "95%" }}>
+                <circle cx="12" cy="12" r="9" />
+                <line x1="22" y1="12" x2="17" y2="12" />
+                <line x1="7" y1="12" x2="2" y2="12" />
+                <line x1="12" y1="7" x2="12" y2="2" />
+                <line x1="12" y1="22" x2="12" y2="17" />
+                <circle cx="12" cy="12" r="2.5" fill="currentColor" />
+              </svg>
             </div>
             <h3 style={{
               ...LandingPageStyles.optionTitle,
