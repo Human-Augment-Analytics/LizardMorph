@@ -97,6 +97,7 @@ The `.env` file must live at the **repo root** (`LizardMorph/.env`), not inside 
 | `VITE_BASE_URL` | Frontend base path (default: empty) |
 | `VITE_ALLOWED_HOSTS` | Comma-separated allowed ngrok/proxy hosts |
 | `WEBHOOK_SECRET` | GitHub webhook secret for auto-deploy |
+| `LIZARDMORPH_HOSTED` | Set to `true` to enforce strict safety size/count limits on training uploads in shared public servers (default: `false`) |
 
 ### Full working `.env` example
 
