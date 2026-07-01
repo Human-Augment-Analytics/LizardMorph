@@ -356,7 +356,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
         ← Back to Overview
       </button>
 
-      <h1 style={{ marginTop: "12px", fontSize: "32px", fontWeight: 800 }}>🧠 Custom Model Training</h1>
+      <h1 style={{ marginTop: "12px", fontSize: "32px", fontWeight: 800 }}>Custom Model Training</h1>
       <p style={{ opacity: 0.7, fontSize: "14px", marginTop: "6px", marginBottom: "30px" }}>
         Train new shape predictors using your own annotated datasets on your local CPU.
       </p>

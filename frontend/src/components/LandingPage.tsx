@@ -395,7 +395,7 @@ export const LandingPage: React.FC = () => {
             ...(isSecondaryHovered ? LandingPageStyles.secondaryButtonHover : {})
           }}
         >
-          🧠 Train Custom Model
+          Train Custom Model
         </button>
       </div>
     </div>
