@@ -59,6 +59,7 @@ If you are working with specialized datasets (e.g. very small image counts, high
 | **Oversampling Amount** | `5` | `0` - `50` | The number of times each image is randomly deformed and replicated. Larger oversampling increases rotation and translation robustness but prolongs training time. |
 | **Feature Pool Size** | `400` | `50` - `2000` | The number of pixel intensity comparison pairs sampled to construct each tree. Larger pools yield higher landmark resolution at the expense of higher CPU memory consumption. |
 | **Number of Test Splits** | `20` | `5` - `100` | The number of candidate feature splits evaluated at each tree node. Higher values search more splits to find optimal decisions, which increases training duration. |
+| **Test Split Ratio** | `20%` | `0%` - `50%` | The percentage of the uploaded dataset split and reserved to evaluate the trained shape predictor. The calculated mean pixel error on the test dataset is reported upon model completion. |
 
 ---
 

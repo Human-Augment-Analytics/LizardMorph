@@ -558,5 +558,39 @@ def test_api_train_predictor_job_pruning(tmp_path):
         app_module.JOBS_DIR = old_jobs_dir
 
 
+def test_split_dlib_dataset(temp_workspace):
+    from utils import split_dlib_dataset
+    import xml.etree.ElementTree as ET
+    xml_path = os.path.join(temp_workspace, "dataset.xml")
+    
+    # Create a dummy XML dataset with 5 images
+    root = ET.Element("dataset")
+    ET.SubElement(root, "name").text = "Test Model"
+    images_container = ET.SubElement(root, "images")
+    
+    for i in range(5):
+        img_el = ET.SubElement(images_container, "image", file=f"img{i}.jpg")
+        box_el = ET.SubElement(img_el, "box", top="1", left="1", width="10", height="10")
+        ET.SubElement(box_el, "part", name="0", x="5", y="5")
+        
+    ET.ElementTree(root).write(xml_path, encoding="utf-8")
+    
+    # Split with 40% (2 test images, 3 train images)
+    train_xml, test_xml = split_dlib_dataset(xml_path, test_ratio=0.4, seed=42)
+    
+    assert train_xml is not None
+    assert test_xml is not None
+    assert os.path.exists(train_xml)
+    assert os.path.exists(test_xml)
+    
+    train_tree = ET.parse(train_xml)
+    train_images = train_tree.getroot().find("images").findall("image")
+    assert len(train_images) == 3
+    
+    test_tree = ET.parse(test_xml)
+    test_images = test_tree.getroot().find("images").findall("image")
+    assert len(test_images) == 2
+
+
 
 

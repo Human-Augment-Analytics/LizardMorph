@@ -674,6 +674,7 @@ def list_predictors():
                             "uploaded_at": p.uploaded_at,
                             "size_bytes": p.size_bytes,
                             "num_parts": p.num_parts,
+                            "test_accuracy": p.test_accuracy,
                         }
                         for p in predictors
                     ],
@@ -804,6 +805,8 @@ def start_train_predictor():
                 custom_options["feature_pool_size"] = max(50, min(2000, int(request.form["feature_pool_size"])))
             if "num_test_splits" in request.form:
                 custom_options["num_test_splits"] = max(5, min(100, int(request.form["num_test_splits"])))
+            if "test_split" in request.form:
+                custom_options["test_split"] = max(0.0, min(0.5, float(request.form["test_split"])))
         except ValueError as e:
             return jsonify({"success": False, "error": f"Invalid parameter format: {e}"}), 400
 

@@ -21,6 +21,7 @@ class PredictorMeta:
     uploaded_at: str
     size_bytes: int
     num_parts: Optional[int] = None
+    test_accuracy: Optional[float] = None
 
 
 def ensure_dir(path: str) -> None:

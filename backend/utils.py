@@ -1926,6 +1926,72 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
     return obj_count
 
 
+def split_dlib_dataset(xml_path, test_ratio=0.2, seed=42):
+    """
+    Splits a dlib XML dataset into train and test XML datasets.
+    Returns (train_xml_path, test_xml_path).
+    If test_ratio is 0 or dataset is too small, returns (xml_path, None).
+    """
+    if test_ratio <= 0.0 or test_ratio >= 1.0:
+        return xml_path, None
+
+    import random
+    import xml.etree.ElementTree as ET
+    
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        images_container = root.find("images")
+        if images_container is None:
+            return xml_path, None
+
+        images = list(images_container.findall("image"))
+        num_images = len(images)
+        
+        # We need at least 2 images to do a split
+        if num_images < 2:
+            return xml_path, None
+
+        test_count = max(1, min(num_images - 1, int(round(num_images * test_ratio))))
+        
+        # Shuffle using a fixed seed for reproducibility
+        rng = random.Random(seed)
+        indices = list(range(num_images))
+        rng.shuffle(indices)
+        
+        test_indices = set(indices[:test_count])
+        
+        # Create train and test documents
+        train_root = ET.Element("dataset")
+        name_el = root.find("name")
+        if name_el is not None:
+            ET.SubElement(train_root, "name").text = name_el.text
+        train_images_container = ET.SubElement(train_root, "images")
+        
+        test_root = ET.Element("dataset")
+        if name_el is not None:
+            ET.SubElement(test_root, "name").text = (name_el.text or "Model") + " (test)"
+        test_images_container = ET.SubElement(test_root, "images")
+        
+        for idx, image in enumerate(images):
+            if idx in test_indices:
+                test_images_container.append(image)
+            else:
+                train_images_container.append(image)
+                
+        base_dir = os.path.dirname(xml_path)
+        train_xml_path = os.path.join(base_dir, "train_dataset.xml")
+        test_xml_path = os.path.join(base_dir, "test_dataset.xml")
+        
+        ET.ElementTree(train_root).write(train_xml_path, encoding="utf-8")
+        ET.ElementTree(test_root).write(test_xml_path, encoding="utf-8")
+        
+        return train_xml_path, test_xml_path
+    except Exception as e:
+        # Fallback to single file on any error
+        return xml_path, None
+
+
 def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, files_dir, custom_options=None, index_lock=None):
     """
     Extracts a ZIP containing images and annotations, formats a dlib dataset, trains
@@ -2058,17 +2124,23 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
             tree.write(dataset_xml_path)
             
         # 3. Train dlib predictor
+        opts = custom_options or {}
+        test_ratio = float(opts.get("test_split", 0.2))
+        train_xml_path, test_xml_path = split_dlib_dataset(dataset_xml_path, test_ratio)
+        
+        # Count images in the training XML to cap threads
+        try:
+            train_tree = ET.parse(train_xml_path)
+            num_images = len(train_tree.getroot().findall(".//image"))
+        except Exception:
+            num_images = 1
+
         options = dlib.shape_predictor_training_options()
         # Cap per-job threads to prevent CPU starvation (max 4 threads or CPU count)
         options.num_threads = min(4, os.cpu_count() or 1)
-        # Cap num_threads to prevent dlib shape predictor training segfault on small datasets
-        if tps_file:
-            num_images = len(tps_data["im"])
-        else:
-            num_images = len(root.findall(".//image"))
         if num_images > 0:
             options.num_threads = min(options.num_threads, num_images)
-        opts = custom_options or {}
+            
         options.nu = float(opts.get("nu", 0.1))
         options.tree_depth = int(opts.get("tree_depth", 4))
         options.cascade_depth = int(opts.get("cascade_depth", 15))
@@ -2080,9 +2152,9 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
         output_model_path = os.path.join(files_dir, f"{predictor_id}.dat")
         
         try:
-            dlib.train_shape_predictor(dataset_xml_path, output_model_path, options)
+            dlib.train_shape_predictor(train_xml_path, output_model_path, options)
             
-            # Validate predictor via library structure
+            # Validate predictor via dlib shape predictor metadata
             sp = dlib.shape_predictor(output_model_path)
             
             # Retrieve num_parts safely
@@ -2095,6 +2167,15 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
                 except Exception:
                     num_parts = 0
             
+            # Calculate test accuracy (mean pixel error)
+            test_accuracy = None
+            if test_xml_path and os.path.exists(test_xml_path):
+                try:
+                    test_error = dlib.test_shape_predictor(test_xml_path, output_model_path)
+                    test_accuracy = round(float(test_error), 4)
+                except Exception as eval_ex:
+                    logger.error(f"Error calculating test accuracy: {eval_ex}")
+            
             iso_timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             meta = predictor_library.PredictorMeta(
                 id=predictor_id,
@@ -2102,7 +2183,8 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
                 stored_filename=f"{predictor_id}.dat",
                 uploaded_at=iso_timestamp,
                 size_bytes=os.path.getsize(output_model_path),
-                num_parts=num_parts
+                num_parts=num_parts,
+                test_accuracy=test_accuracy
             )
             
             # Save to list index

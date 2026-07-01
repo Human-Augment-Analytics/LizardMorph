@@ -299,6 +299,7 @@ export class ApiService {
       oversampling_amount?: number;
       feature_pool_size?: number;
       num_test_splits?: number;
+      test_split?: number;
     }
   ): Promise<{ success: boolean; job_id: string; message: string }> {
     const base = await apiUrl();
@@ -374,4 +375,5 @@ export interface PredictorMeta {
   uploaded_at?: string;
   size_bytes?: number;
   num_parts?: number | null;
+  test_accuracy?: number | null;
 }

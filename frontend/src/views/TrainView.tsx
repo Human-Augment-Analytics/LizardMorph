@@ -36,6 +36,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
   const [oversamplingAmount, setOversamplingAmount] = useState<number>(5);
   const [featurePoolSize, setFeaturePoolSize] = useState<number>(400);
   const [numTestSplits, setNumTestSplits] = useState<number>(20);
+  const [testSplit, setTestSplit] = useState<number>(0.2);
 
   const pollIntervalRef = useRef<number | null>(null);
 
@@ -79,7 +80,8 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
         cascade_depth: cascadeDepth,
         oversampling_amount: oversamplingAmount,
         feature_pool_size: featurePoolSize,
-        num_test_splits: numTestSplits
+        num_test_splits: numTestSplits,
+        test_split: testSplit
       });
       if (!res.success || !res.job_id) {
         throw new Error((res as any).error || res.message || "Failed to start training (no job ID returned)");
@@ -600,6 +602,23 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
                       style={{ width: "100%", accentColor: "#4CAF50" }}
                     />
                   </div>
+
+                  {/* Test Split Ratio */}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: "12px", marginBottom: "4px", display: "flex", justifyContent: "space-between" }}>
+                      <span>Test Split Ratio:</span> <code>{Math.round(testSplit * 100)}%</code>
+                    </label>
+                    <input
+                      type="range"
+                      min="0.0"
+                      max="0.5"
+                      step="0.05"
+                      value={testSplit}
+                      onChange={(e) => setTestSplit(parseFloat(e.target.value))}
+                      disabled={isTraining}
+                      style={{ width: "100%", accentColor: "#4CAF50" }}
+                    />
+                  </div>
                 </div>
               )}
             </div>
@@ -652,6 +671,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
                     <div style={{ fontWeight: 700, fontSize: "15px" }}>{p.display_name}</div>
                     <div style={{ fontSize: "12px", opacity: 0.6, marginTop: "4px" }}>
                       Points: {p.num_parts ?? "Unknown"} | Size: {p.size_bytes ? `${(p.size_bytes / (1024 * 1024)).toFixed(2)} MB` : "Unknown size"}
+                      {p.test_accuracy !== undefined && p.test_accuracy !== null ? ` | Test Error: ${p.test_accuracy.toFixed(2)} px` : ""}
                     </div>
                   </div>
                   <button
