@@ -291,12 +291,28 @@ export class ApiService {
 
   static async trainPredictor(
     modelName: string,
-    file: File
+    file: File,
+    options?: {
+      nu?: number;
+      tree_depth?: number;
+      cascade_depth?: number;
+      oversampling_amount?: number;
+      feature_pool_size?: number;
+      num_test_splits?: number;
+    }
   ): Promise<{ success: boolean; job_id: string; message: string }> {
     const base = await apiUrl();
     const formData = new FormData();
     formData.append("model_name", modelName);
     formData.append("dataset", file);
+
+    if (options) {
+      Object.entries(options).forEach(([key, val]) => {
+        if (val !== undefined && val !== null) {
+          formData.append(key, String(val));
+        }
+      });
+    }
 
     const response = await fetch(`${base}/train_predictor`, {
       method: "POST",

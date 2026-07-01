@@ -2069,11 +2069,12 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
         if num_images > 0:
             options.num_threads = min(options.num_threads, num_images)
         opts = custom_options or {}
-        options.nu = opts.get("nu", 0.1)
-        options.tree_depth = opts.get("tree_depth", 4)
-        options.cascade_depth = opts.get("cascade_depth", 15)
-            
-        options.oversampling_amount = 5
+        options.nu = float(opts.get("nu", 0.1))
+        options.tree_depth = int(opts.get("tree_depth", 4))
+        options.cascade_depth = int(opts.get("cascade_depth", 15))
+        options.oversampling_amount = int(opts.get("oversampling_amount", 5))
+        options.feature_pool_size = int(opts.get("feature_pool_size", 400))
+        options.num_test_splits = int(opts.get("num_test_splits", 20))
         options.be_verbose = False
         
         output_model_path = os.path.join(files_dir, f"{predictor_id}.dat")

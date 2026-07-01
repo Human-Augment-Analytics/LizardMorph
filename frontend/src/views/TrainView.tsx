@@ -28,6 +28,15 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
+  // Advanced Training Options State
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [nu, setNu] = useState<number>(0.1);
+  const [treeDepth, setTreeDepth] = useState<number>(4);
+  const [cascadeDepth, setCascadeDepth] = useState<number>(15);
+  const [oversamplingAmount, setOversamplingAmount] = useState<number>(5);
+  const [featurePoolSize, setFeaturePoolSize] = useState<number>(400);
+  const [numTestSplits, setNumTestSplits] = useState<number>(20);
+
   const pollIntervalRef = useRef<number | null>(null);
 
   // Fetch current custom predictors list
@@ -64,7 +73,14 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
     setError(null);
 
     try {
-      const res = await ApiService.trainPredictor(modelName.trim(), zipFile);
+      const res = await ApiService.trainPredictor(modelName.trim(), zipFile, {
+        nu,
+        tree_depth: treeDepth,
+        cascade_depth: cascadeDepth,
+        oversampling_amount: oversamplingAmount,
+        feature_pool_size: featurePoolSize,
+        num_test_splits: numTestSplits
+      });
       if (!res.success || !res.job_id) {
         throw new Error((res as any).error || res.message || "Failed to start training (no job ID returned)");
       }
@@ -449,6 +465,143 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
                   {zipFile ? `Size: ${(zipFile.size / (1024 * 1024)).toFixed(2)} MB` : "Must contain images and TPS/XML metadata"}
                 </span>
               </label>
+            </div>
+
+            {/* Advanced Settings Accordion */}
+            <div style={{ marginTop: "20px", marginBottom: "20px" }}>
+              <button
+                type="button"
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#4CAF50",
+                  fontWeight: 600,
+                  fontSize: "14px",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: 0,
+                }}
+              >
+                <span>{showAdvanced ? "▼ Hide Advanced Settings" : "▶ Show Advanced Settings"}</span>
+              </button>
+
+              {showAdvanced && (
+                <div style={{
+                  marginTop: "12px",
+                  padding: "16px",
+                  borderRadius: "8px",
+                  backgroundColor: isDark ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)",
+                  border: `1px solid ${t.border}`,
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "12px 20px"
+                }}>
+                  {/* Nu Regularization */}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: "12px", marginBottom: "4px", display: "flex", justifyContent: "space-between" }}>
+                      <span>Regularization (nu):</span> <code>{nu}</code>
+                    </label>
+                    <input
+                      type="range"
+                      min="0.01"
+                      max="1.0"
+                      step="0.01"
+                      value={nu}
+                      onChange={(e) => setNu(parseFloat(e.target.value))}
+                      disabled={isTraining}
+                      style={{ width: "100%", accentColor: "#4CAF50" }}
+                    />
+                  </div>
+
+                  {/* Tree Depth */}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: "12px", marginBottom: "4px", display: "flex", justifyContent: "space-between" }}>
+                      <span>Tree Depth:</span> <code>{treeDepth}</code>
+                    </label>
+                    <input
+                      type="range"
+                      min="2"
+                      max="8"
+                      step="1"
+                      value={treeDepth}
+                      onChange={(e) => setTreeDepth(parseInt(e.target.value))}
+                      disabled={isTraining}
+                      style={{ width: "100%", accentColor: "#4CAF50" }}
+                    />
+                  </div>
+
+                  {/* Cascade Depth */}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: "12px", marginBottom: "4px", display: "flex", justifyContent: "space-between" }}>
+                      <span>Cascade Depth:</span> <code>{cascadeDepth}</code>
+                    </label>
+                    <input
+                      type="range"
+                      min="1"
+                      max="60"
+                      step="1"
+                      value={cascadeDepth}
+                      onChange={(e) => setCascadeDepth(parseInt(e.target.value))}
+                      disabled={isTraining}
+                      style={{ width: "100%", accentColor: "#4CAF50" }}
+                    />
+                  </div>
+
+                  {/* Oversampling Amount */}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: "12px", marginBottom: "4px", display: "flex", justifyContent: "space-between" }}>
+                      <span>Oversampling Amount:</span> <code>{oversamplingAmount}</code>
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="50"
+                      step="1"
+                      value={oversamplingAmount}
+                      onChange={(e) => setOversamplingAmount(parseInt(e.target.value))}
+                      disabled={isTraining}
+                      style={{ width: "100%", accentColor: "#4CAF50" }}
+                    />
+                  </div>
+
+                  {/* Feature Pool Size */}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: "12px", marginBottom: "4px", display: "flex", justifyContent: "space-between" }}>
+                      <span>Feature Pool Size:</span> <code>{featurePoolSize}</code>
+                    </label>
+                    <input
+                      type="range"
+                      min="50"
+                      max="2000"
+                      step="50"
+                      value={featurePoolSize}
+                      onChange={(e) => setFeaturePoolSize(parseInt(e.target.value))}
+                      disabled={isTraining}
+                      style={{ width: "100%", accentColor: "#4CAF50" }}
+                    />
+                  </div>
+
+                  {/* Num Test Splits */}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: "12px", marginBottom: "4px", display: "flex", justifyContent: "space-between" }}>
+                      <span>Number of Test Splits:</span> <code>{numTestSplits}</code>
+                    </label>
+                    <input
+                      type="range"
+                      min="5"
+                      max="100"
+                      step="5"
+                      value={numTestSplits}
+                      onChange={(e) => setNumTestSplits(parseInt(e.target.value))}
+                      disabled={isTraining}
+                      style={{ width: "100%", accentColor: "#4CAF50" }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             <button

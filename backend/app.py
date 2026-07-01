@@ -789,6 +789,24 @@ def start_train_predictor():
                 pass
             return jsonify({"success": False, "error": f"Uploaded dataset ZIP file exceeds size limit of {PREDICTOR_MAX_BYTES // (1024 * 1024)}MB"}), 413
             
+        # Read optional custom options
+        custom_options = {}
+        try:
+            if "nu" in request.form:
+                custom_options["nu"] = max(0.0001, min(1.0, float(request.form["nu"])))
+            if "tree_depth" in request.form:
+                custom_options["tree_depth"] = max(2, min(8, int(request.form["tree_depth"])))
+            if "cascade_depth" in request.form:
+                custom_options["cascade_depth"] = max(1, min(60, int(request.form["cascade_depth"])))
+            if "oversampling_amount" in request.form:
+                custom_options["oversampling_amount"] = max(0, min(50, int(request.form["oversampling_amount"])))
+            if "feature_pool_size" in request.form:
+                custom_options["feature_pool_size"] = max(50, min(2000, int(request.form["feature_pool_size"])))
+            if "num_test_splits" in request.form:
+                custom_options["num_test_splits"] = max(5, min(100, int(request.form["num_test_splits"])))
+        except ValueError as e:
+            return jsonify({"success": False, "error": f"Invalid parameter format: {e}"}), 400
+
         # Initialize registry entry
         save_job_status(job_id, {
             "status": "pending",
@@ -797,7 +815,7 @@ def start_train_predictor():
             "created_at": time.time()
         })
             
-        def worker_thread(jid, zip_p, name):
+        def worker_thread(jid, zip_p, name, opts):
             # Enforce global training concurrency (max 1 training job at a time)
             with TRAINING_SEMAPHORE:
                 try:
@@ -813,6 +831,7 @@ def start_train_predictor():
                         predictor_id=jid,
                         index_path=PREDICTOR_LIBRARY_INDEX,
                         files_dir=PREDICTOR_LIBRARY_FILES,
+                        custom_options=opts,
                         index_lock=PREDICTOR_INDEX_LOCK
                     )
                     
@@ -836,7 +855,7 @@ def start_train_predictor():
                         pass
 
         # Launch background thread
-        t = threading.Thread(target=worker_thread, args=(job_id, temp_zip_path, model_name), daemon=True)
+        t = threading.Thread(target=worker_thread, args=(job_id, temp_zip_path, model_name, custom_options), daemon=True)
         t.start()
         
         return jsonify({
