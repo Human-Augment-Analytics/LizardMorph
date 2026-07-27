@@ -38,19 +38,25 @@ elif sys.platform == 'win32':
         'asyncio',
     ])
 
+datas_candidates = [
+    (os.path.join(models_dir, 'lizard-x-ray', 'dorsal_predictor_clahe_best.dat'), 'models/lizard-x-ray'),
+    (os.path.join(models_dir, 'lizard-x-ray', 'scale_predictor_clahe.dat'), 'models/lizard-x-ray'),
+    (os.path.join(models_dir, 'lizard-x-ray', 'lateral_predictor_auto.dat'), 'models/lizard-x-ray'),
+    (os.path.join(models_dir, 'lizard-toe-pad', 'yolo_obb_6class_h7_int8.onnx'), 'models/lizard-toe-pad'),
+    (os.path.join(models_dir, 'lizard-toe-pad', 'yolo_obb_6class_h7.onnx'), 'models/lizard-toe-pad'),
+    (os.path.join(models_dir, 'lizard-toe-pad', 'ml_morph_best.dat'), 'models/lizard-toe-pad'),
+    (os.path.join(models_dir, 'lizard-toe-pad', 'toe_predictor_obb.dat'), 'models/lizard-toe-pad'),
+    (os.path.join(models_dir, 'lizard-toe-pad', 'finger_predictor_obb.dat'), 'models/lizard-toe-pad'),
+    (os.path.join(models_dir, 'lizard-toe-pad', 'lizard_scale.dat'), 'models/lizard-toe-pad'),
+]
+
+datas = [(src, dst) for src, dst in datas_candidates if os.path.exists(src)]
+
 a = Analysis(
     [os.path.join(backend_dir, 'app.py')],
     pathex=[backend_dir],
     binaries=[],
-    datas=[
-        (os.path.join(models_dir, 'lizard-x-ray', 'dorsal_predictor_clahe_best.dat'), 'models/lizard-x-ray'),
-        (os.path.join(models_dir, 'lizard-x-ray', 'scale_predictor_clahe.dat'), 'models/lizard-x-ray'),
-        (os.path.join(models_dir, 'lizard-x-ray', 'lateral_predictor_auto.dat'), 'models/lizard-x-ray'),
-        (os.path.join(models_dir, 'lizard-toe-pad', 'yolo_obb_6class_h7_int8.onnx'), 'models/lizard-toe-pad'),
-        (os.path.join(models_dir, 'lizard-toe-pad', 'toe_predictor_obb.dat'), 'models/lizard-toe-pad'),
-        (os.path.join(models_dir, 'lizard-toe-pad', 'finger_predictor_obb.dat'), 'models/lizard-toe-pad'),
-        (os.path.join(models_dir, 'lizard-toe-pad', 'lizard_scale.dat'), 'models/lizard-toe-pad'),
-    ],
+    datas=datas,
     hiddenimports=base_hiddenimports,
     hookspath=[],
     hooksconfig={},
