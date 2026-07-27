@@ -97,9 +97,9 @@ CUSTOM_DETECTOR_FILE = get_model_path(os.getenv("CUSTOM_DETECTOR_FILE")) if os.g
 # Lizard Toepad model files
 # YOLO-OBB 6-class model: bot_finger, bot_toe (use flip inference for up_finger, up_toe)
 TOEPAD_YOLO_MODEL = get_model_path(os.getenv("TOEPAD_YOLO_MODEL", "../models/lizard-toe-pad/yolo_obb_6class_h7.onnx"))
-TOEPAD_TOE_PREDICTOR = get_model_path(os.getenv("TOEPAD_TOE_PREDICTOR", "../models/lizard-toe-pad/toe_predictor_obb.dat"))
+TOEPAD_TOE_PREDICTOR = get_model_path(os.getenv("TOEPAD_TOE_PREDICTOR", "../models/lizard-toe-pad/ml_morph_best.dat"))
 TOEPAD_SCALE_PREDICTOR = get_model_path(os.getenv("TOEPAD_SCALE_PREDICTOR", "../models/lizard-toe-pad/lizard_scale.dat"))
-TOEPAD_FINGER_PREDICTOR = get_model_path(os.getenv("TOEPAD_FINGER_PREDICTOR", "../models/lizard-toe-pad/finger_predictor_obb.dat"))
+TOEPAD_FINGER_PREDICTOR = get_model_path(os.getenv("TOEPAD_FINGER_PREDICTOR", "../models/lizard-toe-pad/ml_morph_best.dat"))
 ID_EXTRACTOR_MODEL = get_model_path(os.getenv("ID_EXTRACTOR_MODEL", "../models/lizard-toe-pad/yolo_obb_6class_h7.onnx"))
 
 

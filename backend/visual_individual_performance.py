@@ -112,19 +112,36 @@ def read_tps_file(file_path):
                 reading_points = False
             elif line.startswith('IMAGE='):
                 current_image = line[6:]
-                # After reading image, add data if we have points
-                if current_x and current_y:
-                    data.append((current_image, current_x, current_y))
-                    # Reset for next image
-                    current_x = []
-                    current_y = []
-            i += 1
+    with open(file_path, 'r') as f:
+        lines = f.readlines()
+        
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if line.startswith('LM='):
+            num_points = int(line.split('=')[1])
+            x_coords = []
+            y_coords = []
+            
+            for j in range(num_points):
+                i += 1
+                point_data = lines[i].strip().split()
+                x_coords.append(float(point_data[0]))
+                y_coords.append(float(point_data[1]))
+            
+            # Find IMAGE name
+            while i < len(lines) and not lines[i].strip().startswith('IMAGE='):
+                i += 1
+            
+            if i < len(lines):
+                image_name = lines[i].strip().split('=')[1]
+                data.append((image_name, x_coords, y_coords))
+        i += 1
     
     return data
 
 def create_image(tps_file_path, output_folder):
     """Create annotated images based on TPS file data."""
-    plt = _init_matplotlib()
     plot_data = read_tps_file(tps_file_path)
     output_image_paths = []
     
@@ -144,51 +161,26 @@ def create_image(tps_file_path, output_folder):
             if not os.path.exists(image_path):
                 print(f"Warning: Image file not found: {image_path}")
                 continue
-                
-            image = plt.imread(image_path)
-            height_pixels, width_pixels = image.shape[0], image.shape[1]
             
-            dpi = 100  # Use a reasonable DPI value
-            width_inches = width_pixels / dpi
-            height_inches = height_pixels / dpi
+            image = cv2.imread(image_path)
+            if image is None:
+                print(f"Warning: Could not read image: {image_path}")
+                continue
+            height_pixels = image.shape[0]
             
-            fig, ax = plt.subplots(figsize=(width_inches, height_inches), dpi=dpi)
-            # Set extent to match 1-based coordinates (starts at 0.5)
-            # origin='upper' implies extent=(left, right, bottom, top)
-            ax.imshow(image, extent=[0.5, width_pixels + 0.5, height_pixels + 0.5, 0.5])
-            ax.axis('off')
-            
-            # Ensure equal aspect ratio ("even zoom in")
-            ax.set_aspect('equal')
-            
-            print(f"Plotting {len(x_coords)} points")
-            
-            # TPS stores Y with 0 at the bottom (math convention), but the image
-            # extent above has Y increasing downward (0.5 at top). Flip Y so
-            # landmarks are plotted in the correct position.
+            # TPS stores Y with 0 at bottom; flip Y for image coordinates
             y_coords_img = [height_pixels - y for y in y_coords]
             
-            # Plot points
-            ax.scatter(x_coords, y_coords_img, s=50, color='red', marker='o', edgecolors='black')
+            for x, y in zip(x_coords, y_coords_img):
+                pt = (int(round(x)), int(round(y)))
+                cv2.circle(image, pt, 6, (0, 0, 0), -1, lineType=cv2.LINE_AA)
+                cv2.circle(image, pt, 4, (0, 0, 255), -1, lineType=cv2.LINE_AA)
             
-            # Add point labels - Commented out as per user request ("numbers blocking view")
-            # for j, (x, y) in enumerate(zip(x_coords, y_coords)):
-            #     ax.text(x + 5, y - 5, str(j + 1), color='white', fontsize=8, 
-            #            bbox=dict(facecolor='black', alpha=0.7, pad=1))
-            
-            # Save the image
             output_basename = os.path.splitext(os.path.basename(image_name))[0]
             output_path = os.path.join(output_folder, f"annotated_{output_basename}.png")
             
             print(f"Saving annotated image to: {output_path}")
-            
-            # Set transparency
-            fig.patch.set_facecolor('none')
-            ax.patch.set_facecolor('none')
-            
-            fig.savefig(output_path, bbox_inches='tight', pad_inches=0, dpi=dpi, transparent=True)
-            plt.close(fig)
-            
+            cv2.imwrite(output_path, image)
             output_image_paths.append(output_path)
             
         except Exception as e:

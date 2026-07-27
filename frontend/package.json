@@ -9,9 +9,14 @@
     "build:version": "npm version patch && tsc -b && vite build",
     "build:timestamp": "tsc -b && vite build --mode production",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.2.0",
+    "@tauri-apps/plugin-shell": "^2.2.0",
     "d3": "^7.9.0",
     "jszip": "^3.10.1",
     "onnxruntime-common": "^1.22.0",
@@ -23,6 +28,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
+    "@tauri-apps/cli": "^2.2.0",
     "@types/d3": "^7.4.3",
     "@types/node": "^20",
     "@types/react": "^19.1.2",

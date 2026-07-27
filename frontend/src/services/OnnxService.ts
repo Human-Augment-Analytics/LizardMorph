@@ -17,8 +17,8 @@ export class OnnxService {
 
   private static get MODEL_PATH() {
     return window.electronAPI?.isElectron
-      ? "./models/yolo_obb_6class_h7.onnx"
-      : "/models/yolo_obb_6class_h7.onnx";
+      ? "./models/yolo_obb_6class_h7_int8.onnx"
+      : "/models/yolo_obb_6class_h7_int8.onnx";
   }
 
   private static readonly INPUT_SIZE = 1280;
