@@ -2541,6 +2541,7 @@ def extract_id():
 
 
 
+@app.route("/predict", methods=["POST"])
 @app.route("/api/predict", methods=["POST"])
 @cross_origin()
 @track_metrics
@@ -2598,6 +2599,7 @@ def api_predict():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/models", methods=["GET"])
 @app.route("/api/models", methods=["GET"])
 @cross_origin()
 @track_metrics
@@ -2654,6 +2656,7 @@ def api_list_models():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/projects", methods=["POST"])
 @app.route("/api/projects", methods=["POST"])
 @cross_origin()
 @track_metrics
@@ -2682,6 +2685,7 @@ def api_create_project():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/projects", methods=["GET"])
 @app.route("/api/projects", methods=["GET"])
 @cross_origin()
 @track_metrics
@@ -2704,6 +2708,7 @@ def api_list_projects():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/train", methods=["POST"])
 @app.route("/api/train", methods=["POST"])
 @cross_origin()
 @track_metrics
@@ -2754,6 +2759,7 @@ def api_train():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/train/<job_id>", methods=["GET"])
 @app.route("/api/train/<job_id>", methods=["GET"])
 @cross_origin()
 @track_metrics
@@ -2774,6 +2780,7 @@ def api_train_job_status(job_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/dataset/derive-boxes", methods=["POST"])
 @app.route("/api/dataset/derive-boxes", methods=["POST"])
 @cross_origin()
 @track_metrics
