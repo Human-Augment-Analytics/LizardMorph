@@ -2615,6 +2615,39 @@ def api_list_models():
             }
             for mv in model_versions
         ]
+
+        # Include custom predictors from predictor library as custom built models
+        try:
+            custom_preds = predictor_library.list_predictors(PREDICTOR_LIBRARY_INDEX)
+            for cp in custom_preds:
+                if not any(m["id"] == cp.id for m in models_data):
+                    manifest = Manifest(
+                        schema_version=1,
+                        id=cp.id,
+                        name=cp.display_name,
+                        description=f"Custom predictor model ({cp.num_parts or 'variable'} landmarks)",
+                        detector=DetectorConfig(artifact="", geometry="aabb", confidence=0.25),
+                        classes=[
+                            ClassConfig(
+                                id=0,
+                                name="custom",
+                                landmark_schema="custom",
+                                predictor=os.path.join("custom_predictors", "files", cp.stored_filename),
+                                crop_padding=0.2,
+                            )
+                        ],
+                        landmark_schemas={"custom": LandmarkSchemaConfig(points=[f"pt_{i}" for i in range(cp.num_parts or 0)])}
+                    )
+                    models_data.append({
+                        "id": cp.id,
+                        "project_id": "custom",
+                        "name": cp.display_name,
+                        "created_at": cp.uploaded_at,
+                        "manifest": manifest.to_dict(),
+                    })
+        except Exception as err:
+            logger.warning(f"Could not load custom predictor library in /api/models: {err}")
+
         return jsonify({"success": True, "models": models_data}), 200
     except Exception as e:
         logger.error(f"Error listing models: {e}", exc_info=True)

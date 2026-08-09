@@ -249,7 +249,7 @@ export const LandingPage: React.FC = () => {
 
       <h1 style={LandingPageStyles.title}>LizardMorph</h1>
       <p style={LandingPageStyles.subtitle}>
-        Select the type of lizard x-ray images or custom project model you want to analyze
+        Select a preinstalled lizard model or one of your custom built models to analyze
       </p>
 
       <div style={LandingPageStyles.optionsContainer}>
