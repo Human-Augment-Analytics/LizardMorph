@@ -40,7 +40,23 @@ class ProjectRepository:
                     organism=row["organism"],
                     created_at=row["created_at"],
                 )
-        return None
+    def list_projects(self) -> List[Project]:
+        with self.db_mgr.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, name, organism, created_at FROM projects"
+            )
+            rows = cursor.fetchall()
+            return [
+                Project(
+                    id=row["id"],
+                    name=row["name"],
+                    organism=row["organism"],
+                    created_at=row["created_at"],
+                )
+                for row in rows
+            ]
+
 
 
 class ModelRegistryRepository:

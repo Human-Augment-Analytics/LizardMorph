@@ -350,6 +350,152 @@ export class ApiService {
     }
     return response.json();
   }
+
+  static async getModels(): Promise<ModelVersionItem[]> {
+    const base = await apiUrl();
+    const response = await fetch(`${base}/api/models`, {
+      headers: {
+        ...SessionService.getSessionHeaders(),
+      },
+    });
+    if (!response.ok) {
+      throw new Error("Failed to fetch models");
+    }
+    const data = await response.json();
+    return data.models || [];
+  }
+
+  static async createProject(name: string, organism: string): Promise<ProjectItem> {
+    const base = await apiUrl();
+    const response = await fetch(`${base}/api/projects`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...SessionService.getSessionHeaders(),
+      },
+      body: JSON.stringify({ name, organism }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: "Failed to create project" }));
+      throw new Error(err.error || "Failed to create project");
+    }
+    const data = await response.json();
+    return data.project;
+  }
+
+  static async listProjects(): Promise<ProjectItem[]> {
+    const base = await apiUrl();
+    const response = await fetch(`${base}/api/projects`, {
+      headers: {
+        ...SessionService.getSessionHeaders(),
+      },
+    });
+    if (!response.ok) {
+      throw new Error("Failed to fetch projects");
+    }
+    const data = await response.json();
+    return data.projects || [];
+  }
+
+  static async submitTrain(projectId: string, dataset: any, config: any): Promise<{ job_id: string }> {
+    const base = await apiUrl();
+    const response = await fetch(`${base}/api/train`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...SessionService.getSessionHeaders(),
+      },
+      body: JSON.stringify({ project_id: projectId, dataset, config }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: "Failed to submit training" }));
+      throw new Error(err.error || "Failed to submit training");
+    }
+    return response.json();
+  }
+
+  static async getTrainJobStatus(jobId: string): Promise<TrainJobStatusResult> {
+    const base = await apiUrl();
+    const response = await fetch(`${base}/api/train/${encodeURIComponent(jobId)}`, {
+      headers: {
+        ...SessionService.getSessionHeaders(),
+      },
+    });
+    if (!response.ok) {
+      throw new Error("Failed to fetch train job status");
+    }
+    return response.json();
+  }
+
+  static async deriveBoxes(tpsContent: string, padding: number): Promise<DeriveBoxesResult> {
+    const base = await apiUrl();
+    const response = await fetch(`${base}/api/dataset/derive-boxes`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...SessionService.getSessionHeaders(),
+      },
+      body: JSON.stringify({ tps_content: tpsContent, padding }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: "Failed to derive boxes" }));
+      throw new Error(err.error || "Failed to derive boxes");
+    }
+    return response.json();
+  }
+}
+
+export interface ModelVersionItem {
+  id: string;
+  project_id: string;
+  name: string;
+  created_at: string;
+  manifest: {
+    schema_version: number;
+    id: string;
+    name: string;
+    description: string;
+    detector: { artifact: string; geometry: string; confidence: number; iou: number };
+    classes: Array<{ id: number; name: string; landmark_schema?: string; predictor?: string; crop_padding?: number }>;
+    landmark_schemas: Record<string, { points: string[] }>;
+    evaluation?: Record<string, any>;
+  };
+}
+
+export interface ProjectItem {
+  id: string;
+  name: string;
+  organism: string;
+  created_at: string;
+}
+
+export interface TrainJobStatusResult {
+  success: boolean;
+  job_id: string;
+  status: string;
+  stage: string;
+  progress: number;
+  metrics: Record<string, any>;
+}
+
+export interface DeriveBoxesResult {
+  success: boolean;
+  padding: number;
+  images: Array<{
+    image_id: string;
+    file_path: string;
+    width: number;
+    height: number;
+    objects: Array<{
+      object_id: string;
+      class_name: string;
+      obb: number[];
+      landmarks: Array<{ name: string; x: number; y: number }>;
+      specimen_id?: string;
+    }>;
+  }>;
+  total_images: number;
+  total_objects: number;
 }
 
 interface ExtractIdResult {

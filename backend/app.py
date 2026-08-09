@@ -42,14 +42,20 @@ import uuid
 
 try:
     from backend.storage.db import DatabaseManager
-    from backend.storage.repository import ModelRegistryRepository
+    from backend.storage.repository import ModelRegistryRepository, ProjectRepository
     from backend.domain.models import Manifest, DetectorConfig, ClassConfig, LandmarkSchemaConfig
     from backend.inference.engine import GenericPipelineEngine
+    from backend.training.orchestration import TrainingOrchestrator
+    from backend.datasets.canonical import CanonicalDataset
+    from backend.datasets.importers import TPSImporter, DlibXMLImporter
 except ImportError:
     from storage.db import DatabaseManager
-    from storage.repository import ModelRegistryRepository
+    from storage.repository import ModelRegistryRepository, ProjectRepository
     from domain.models import Manifest, DetectorConfig, ClassConfig, LandmarkSchemaConfig
     from inference.engine import GenericPipelineEngine
+    from training.orchestration import TrainingOrchestrator
+    from datasets.canonical import CanonicalDataset
+    from datasets.importers import TPSImporter, DlibXMLImporter
 
 
 # prometheus_client is optional in some environments (e.g. minimal installs, tests)
@@ -135,6 +141,9 @@ db_mgr.init_db()
 MODELS_DIR = get_model_path(os.getenv("MODELS_DIR", "../models"))
 model_registry_repo = ModelRegistryRepository(db_mgr, models_dir=MODELS_DIR)
 generic_pipeline_engine = GenericPipelineEngine(model_registry_repo, models_dir=MODELS_DIR)
+project_repo = ProjectRepository(db_mgr)
+RUNS_DIR = get_model_path(os.getenv("RUNS_DIR", "../runs"))
+training_orchestrator = TrainingOrchestrator(runs_dir=RUNS_DIR)
 
 
 def register_built_in_legacy_models(repo: ModelRegistryRepository):
@@ -2587,6 +2596,206 @@ def api_predict():
 
     except Exception as e:
         logger.error(f"Error in /api/predict: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/models", methods=["GET"])
+@cross_origin()
+@track_metrics
+def api_list_models():
+    """Returns list of published model versions & preinstalled bundles."""
+    try:
+        model_versions = model_registry_repo.list_model_versions()
+        models_data = [
+            {
+                "id": mv.id,
+                "project_id": mv.project_id,
+                "name": mv.name,
+                "created_at": mv.created_at,
+                "manifest": mv.manifest.to_dict(),
+            }
+            for mv in model_versions
+        ]
+        return jsonify({"success": True, "models": models_data}), 200
+    except Exception as e:
+        logger.error(f"Error listing models: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/projects", methods=["POST"])
+@cross_origin()
+@track_metrics
+def api_create_project():
+    """Creates a new project in ProjectRepository."""
+    try:
+        req_data = request.get_json(silent=True) or {}
+        name = req_data.get("name") or request.form.get("name")
+        organism = req_data.get("organism") or request.form.get("organism", "Generic")
+
+        if not name:
+            return jsonify({"success": False, "error": "Project name is required"}), 400
+
+        proj = project_repo.create_project(name, organism)
+        return jsonify({
+            "success": True,
+            "project": {
+                "id": proj.id,
+                "name": proj.name,
+                "organism": proj.organism,
+                "created_at": proj.created_at,
+            }
+        }), 201
+    except Exception as e:
+        logger.error(f"Error creating project: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/projects", methods=["GET"])
+@cross_origin()
+@track_metrics
+def api_list_projects():
+    """Lists registered projects."""
+    try:
+        projects = project_repo.list_projects()
+        projects_data = [
+            {
+                "id": p.id,
+                "name": p.name,
+                "organism": p.organism,
+                "created_at": p.created_at,
+            }
+            for p in projects
+        ]
+        return jsonify({"success": True, "projects": projects_data}), 200
+    except Exception as e:
+        logger.error(f"Error listing projects: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/train", methods=["POST"])
+@cross_origin()
+@track_metrics
+def api_train():
+    """Submits training job using TrainingOrchestrator."""
+    try:
+        req_data = request.get_json(silent=True) or {}
+        project_id = (
+            req_data.get("project_id")
+            or request.form.get("project_id")
+            or "default"
+        )
+        dataset_dict = req_data.get("dataset")
+        config = req_data.get("config") or {}
+
+        if not dataset_dict and "dataset" in request.form:
+            try:
+                dataset_dict = json.loads(request.form["dataset"])
+            except Exception:
+                dataset_dict = None
+
+        if not dataset_dict:
+            f = request.files.get("dataset") or request.files.get("file")
+            if f:
+                content = f.read().decode("utf-8", errors="ignore")
+                if "<dataset>" in content or "<xml" in content:
+                    canonical_ds = DlibXMLImporter.parse_string(content)
+                    dataset_dict = canonical_ds.to_dict()
+                elif "LM=" in content or "lm=" in content or "IMAGE=" in content:
+                    canonical_ds = TPSImporter.parse_string(content)
+                    dataset_dict = canonical_ds.to_dict()
+
+        if not dataset_dict:
+            dataset_dict = CanonicalDataset(images=[]).to_dict()
+
+        job_id = training_orchestrator.submit_job(
+            project_id=project_id,
+            dataset_dict=dataset_dict,
+            config=config,
+        )
+        return jsonify({
+            "success": True,
+            "job_id": job_id,
+            "message": "Training job submitted successfully",
+        }), 200
+    except Exception as e:
+        logger.error(f"Error submitting training job: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/train/<job_id>", methods=["GET"])
+@cross_origin()
+@track_metrics
+def api_train_job_status(job_id):
+    """Returns training job status (status, stage, progress, metrics)."""
+    try:
+        status_info = training_orchestrator.get_status(job_id)
+        return jsonify({
+            "success": True,
+            "job_id": job_id,
+            "status": status_info.get("status", "unknown"),
+            "stage": status_info.get("stage", ""),
+            "progress": status_info.get("progress", 0.0),
+            "metrics": status_info.get("metrics", {}),
+        }), 200
+    except Exception as e:
+        logger.error(f"Error getting train status for job {job_id}: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/dataset/derive-boxes", methods=["POST"])
+@cross_origin()
+@track_metrics
+def api_derive_boxes():
+    """Previews padded bounding box extents for TPS datasets."""
+    try:
+        padding = 0.2
+        content = None
+
+        if request.is_json:
+            req_data = request.get_json() or {}
+            content = req_data.get("tps_content") or req_data.get("content")
+            if "padding" in req_data:
+                padding = float(req_data["padding"])
+        else:
+            content = request.form.get("tps_content") or request.form.get("content")
+            if "padding" in request.form:
+                padding = float(request.form["padding"])
+
+            f = request.files.get("file") or request.files.get("dataset")
+            if f:
+                content = f.read().decode("utf-8", errors="ignore")
+
+        if not content:
+            return jsonify({"success": False, "error": "No TPS content or file provided"}), 400
+
+        dataset = TPSImporter.parse_string(content)
+
+        derived_images = []
+        for img in dataset.images:
+            img_objs = []
+            for obj in img.objects:
+                pts = [(lm.x, lm.y) for lm in obj.landmarks]
+                obb = CanonicalDataset.derive_obb_from_landmarks(pts, padding=padding)
+                obj_dict = obj.to_dict()
+                obj_dict["obb"] = obb
+                img_objs.append(obj_dict)
+            derived_images.append({
+                "image_id": img.image_id,
+                "file_path": img.file_path,
+                "width": img.width,
+                "height": img.height,
+                "objects": img_objs,
+            })
+
+        return jsonify({
+            "success": True,
+            "padding": padding,
+            "images": derived_images,
+            "total_images": len(derived_images),
+            "total_objects": sum(len(img["objects"]) for img in derived_images),
+        }), 200
+    except Exception as e:
+        logger.error(f"Error deriving boxes: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
 

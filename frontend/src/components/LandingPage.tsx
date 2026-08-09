@@ -1,7 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../contexts/ThemeContext";
 import { getTokens } from "../contexts/themeTokens";
+import { ApiService } from "../services/ApiService";
+import type { ModelVersionItem } from "../services/ApiService";
 import lizard_logo from "../../public/lizard.svg";
 
 export type LizardViewType = "dorsal" | "lateral" | "toepads" | "custom" | "free";
@@ -57,17 +59,6 @@ function getLandingPageStyles(isDark: boolean) {
       boxShadow: `0 20px 40px ${isDark ? "rgba(0,0,0,0.4)" : "rgba(0,0,0,0.2)"}`,
       borderColor: "#4CAF50",
     },
-    optionCardActive: {
-      transform: "translateY(-4px) scale(1.01)",
-      boxShadow: `0 12px 30px ${isDark ? "rgba(0,0,0,0.35)" : "rgba(0,0,0,0.15)"}`,
-      borderColor: "#45a049",
-    },
-    optionCardDisabled: {
-      backgroundColor: isDark ? "#1e2a3a" : "#f8f8f8",
-      cursor: "not-allowed",
-      opacity: 0.7,
-      transform: "none",
-    },
     optionTitle: {
       fontSize: "1.8rem",
       fontWeight: "bold" as const,
@@ -84,13 +75,6 @@ function getLandingPageStyles(isDark: boolean) {
       marginBottom: "1rem",
       lineHeight: "1.6",
     },
-    comingSoon: {
-      fontSize: "1rem",
-      color: "#ff9800",
-      fontWeight: "bold" as const,
-      textTransform: "uppercase" as const,
-      letterSpacing: "1px",
-    },
     icon: {
       fontSize: "4rem",
       height: "4rem",
@@ -101,7 +85,6 @@ function getLandingPageStyles(isDark: boolean) {
       justifyContent: "center",
       color: "#4F7942",
       transition: "all 0.3s ease",
-      filter: "brightness(0) invert(41%) sepia(10%) saturate(2258%) hue-rotate(58deg) brightness(96%) contrast(84%)",
     },
     iconLogo: {
       fontSize: "4rem",
@@ -116,10 +99,6 @@ function getLandingPageStyles(isDark: boolean) {
     iconHover: {
       transform: "scale(1.1)",
       color: "#45a049",
-    },
-    iconDisabled: {
-      color: isDark ? "#555" : "#ccc",
-      transform: "none",
     },
     cardContent: {
       textAlign: "center" as const,
@@ -199,9 +178,26 @@ export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
   const [isSecondaryHovered, setIsSecondaryHovered] = useState(false);
+  const [models, setModels] = useState<ModelVersionItem[]>([]);
   const { resolved, preference, setPreference } = useTheme();
   const isDark = resolved === "dark";
   const LandingPageStyles = getLandingPageStyles(isDark);
+
+  useEffect(() => {
+    let isMounted = true;
+    ApiService.getModels()
+      .then((fetchedModels) => {
+        if (isMounted && fetchedModels.length > 0) {
+          setModels(fetchedModels);
+        }
+      })
+      .catch(() => {
+        // Fallback to built-in rendering if backend API fails
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleOptionClick = (viewType: LizardViewType) => {
     navigate(`/${viewType}`);
@@ -250,11 +246,12 @@ export const LandingPage: React.FC = () => {
           Auto
         </button>
       </div>
+
       <h1 style={LandingPageStyles.title}>LizardMorph</h1>
       <p style={LandingPageStyles.subtitle}>
-        Select the type of lizard x-ray images you want to analyze
+        Select the type of lizard x-ray images or custom project model you want to analyze
       </p>
-      
+
       <div style={LandingPageStyles.optionsContainer}>
         {/* Dorsal View */}
         <div
@@ -267,10 +264,12 @@ export const LandingPage: React.FC = () => {
           onMouseLeave={handleMouseLeave}
         >
           <div style={LandingPageStyles.cardContent}>
-            <div style={{
-              ...LandingPageStyles.iconLogo,
-              ...(hoveredCard === "dorsal" ? LandingPageStyles.iconHover : {})
-            }}>
+            <div
+              style={{
+                ...LandingPageStyles.iconLogo,
+                ...(hoveredCard === "dorsal" ? LandingPageStyles.iconHover : {}),
+              }}
+            >
               <img
                 src={lizard_logo}
                 alt="Dorsal View"
@@ -281,14 +280,16 @@ export const LandingPage: React.FC = () => {
                 }}
               />
             </div>
-            <h3 style={{
-              ...LandingPageStyles.optionTitle,
-              ...(hoveredCard === "dorsal" ? LandingPageStyles.optionTitleHover : {})
-            }}>
+            <h3
+              style={{
+                ...LandingPageStyles.optionTitle,
+                ...(hoveredCard === "dorsal" ? LandingPageStyles.optionTitleHover : {}),
+              }}
+            >
               Dorsal View
             </h3>
             <p style={LandingPageStyles.optionDescription}>
-              Analyze lizard x-ray images from the top view
+              Analyze lizard x-ray images from the top view (`lizard-dorsal-v1`)
             </p>
           </div>
         </div>
@@ -304,20 +305,24 @@ export const LandingPage: React.FC = () => {
           onMouseLeave={handleMouseLeave}
         >
           <div style={LandingPageStyles.cardContent}>
-            <div style={{
-              ...LandingPageStyles.icon,
-              ...(hoveredCard === "lateral" ? LandingPageStyles.iconHover : {})
-            }}>
+            <div
+              style={{
+                ...LandingPageStyles.icon,
+                ...(hoveredCard === "lateral" ? LandingPageStyles.iconHover : {}),
+              }}
+            >
               🦖
             </div>
-            <h3 style={{
-              ...LandingPageStyles.optionTitle,
-              ...(hoveredCard === "lateral" ? LandingPageStyles.optionTitleHover : {})
-            }}>
+            <h3
+              style={{
+                ...LandingPageStyles.optionTitle,
+                ...(hoveredCard === "lateral" ? LandingPageStyles.optionTitleHover : {}),
+              }}
+            >
               Lateral View
             </h3>
             <p style={LandingPageStyles.optionDescription}>
-              Analyze lizard x-ray images from the side view
+              Analyze lizard x-ray images from the side view (`lizard-lateral-v1`)
             </p>
           </div>
         </div>
@@ -333,23 +338,68 @@ export const LandingPage: React.FC = () => {
           onMouseLeave={handleMouseLeave}
         >
           <div style={LandingPageStyles.cardContent}>
-            <div style={{
-              ...LandingPageStyles.icon,
-              ...(hoveredCard === "toepads" ? LandingPageStyles.iconHover : {})
-            }}>
+            <div
+              style={{
+                ...LandingPageStyles.icon,
+                ...(hoveredCard === "toepads" ? LandingPageStyles.iconHover : {}),
+              }}
+            >
               🦶
             </div>
-            <h3 style={{
-              ...LandingPageStyles.optionTitle,
-              ...(hoveredCard === "toepads" ? LandingPageStyles.optionTitleHover : {})
-            }}>
+            <h3
+              style={{
+                ...LandingPageStyles.optionTitle,
+                ...(hoveredCard === "toepads" ? LandingPageStyles.optionTitleHover : {}),
+              }}
+            >
               Toepad View
             </h3>
             <p style={LandingPageStyles.optionDescription}>
-              Analyze lizard toe pad structures using YOLO detection and landmark prediction
+              Analyze lizard toe pad structures using YOLO OBB detection & ML-Morph (`lizard-toepad-v1`)
             </p>
           </div>
         </div>
+
+        {/* Custom User-Trained Models Dynamic Cards */}
+        {models
+          .filter(
+            (m) =>
+              !["lizard-dorsal-v1", "lizard-lateral-v1", "lizard-toepad-v1"].includes(m.id)
+          )
+          .map((m) => (
+            <div
+              key={m.id}
+              style={{
+                ...LandingPageStyles.optionCard,
+                ...(hoveredCard === m.id ? LandingPageStyles.optionCardHover : {}),
+              }}
+              onClick={() => handleOptionClick("custom")}
+              onMouseEnter={() => handleMouseEnter(m.id)}
+              onMouseLeave={handleMouseLeave}
+            >
+              <div style={LandingPageStyles.cardContent}>
+                <div
+                  style={{
+                    ...LandingPageStyles.icon,
+                    ...(hoveredCard === m.id ? LandingPageStyles.iconHover : {}),
+                  }}
+                >
+                  🧬
+                </div>
+                <h3
+                  style={{
+                    ...LandingPageStyles.optionTitle,
+                    ...(hoveredCard === m.id ? LandingPageStyles.optionTitleHover : {}),
+                  }}
+                >
+                  {m.name}
+                </h3>
+                <p style={LandingPageStyles.optionDescription}>
+                  {m.manifest?.description || `Custom project model (${m.id})`}
+                </p>
+              </div>
+            </div>
+          ))}
 
         {/* Free Mode */}
         <div
@@ -362,16 +412,20 @@ export const LandingPage: React.FC = () => {
           onMouseLeave={handleMouseLeave}
         >
           <div style={LandingPageStyles.cardContent}>
-            <div style={{
-              ...LandingPageStyles.icon,
-              ...((hoveredCard === "free") ? LandingPageStyles.iconHover : {})
-            }}>
+            <div
+              style={{
+                ...LandingPageStyles.icon,
+                ...(hoveredCard === "free" ? LandingPageStyles.iconHover : {}),
+              }}
+            >
               📌
             </div>
-            <h3 style={{
-              ...LandingPageStyles.optionTitle,
-              ...((hoveredCard === "free") ? LandingPageStyles.optionTitleHover : {})
-            }}>
+            <h3
+              style={{
+                ...LandingPageStyles.optionTitle,
+                ...(hoveredCard === "free" ? LandingPageStyles.optionTitleHover : {}),
+              }}
+            >
               Free Mode
             </h3>
             <p style={LandingPageStyles.optionDescription}>
@@ -384,7 +438,7 @@ export const LandingPage: React.FC = () => {
       {/* Train Custom Model Segmented Section */}
       <div style={LandingPageStyles.secondaryContainer}>
         <span style={LandingPageStyles.secondaryText}>
-          Want to use your own landmark configuration?
+          Want to create a custom project model for your species?
         </span>
         <button
           onClick={() => handleOptionClick("custom")}
@@ -392,12 +446,12 @@ export const LandingPage: React.FC = () => {
           onMouseLeave={() => setIsSecondaryHovered(false)}
           style={{
             ...LandingPageStyles.secondaryButton,
-            ...(isSecondaryHovered ? LandingPageStyles.secondaryButtonHover : {})
+            ...(isSecondaryHovered ? LandingPageStyles.secondaryButtonHover : {}),
           }}
         >
-          Train Custom Model
+          Train Custom Model Wizard
         </button>
       </div>
     </div>
   );
-}; 
+};
