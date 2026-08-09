@@ -2581,7 +2581,6 @@ def api_predict():
         if img is None:
             image_path = request.form.get("image_path") or req_data.get("image_path")
             if image_path and os.path.exists(image_path):
-                import cv2
                 img = cv2.imread(image_path)
 
         if img is None:
