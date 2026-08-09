@@ -26,6 +26,8 @@ import hmac
 import hashlib
 import subprocess
 import json
+import numpy as np
+import cv2
 from flask import Flask, jsonify, request, send_from_directory, send_file, session
 from flask_cors import CORS, cross_origin
 from base64 import b64encode
@@ -37,6 +39,18 @@ import threading
 import time
 import predictor_library
 import uuid
+
+try:
+    from backend.storage.db import DatabaseManager
+    from backend.storage.repository import ModelRegistryRepository
+    from backend.domain.models import Manifest, DetectorConfig, ClassConfig, LandmarkSchemaConfig
+    from backend.inference.engine import GenericPipelineEngine
+except ImportError:
+    from storage.db import DatabaseManager
+    from storage.repository import ModelRegistryRepository
+    from domain.models import Manifest, DetectorConfig, ClassConfig, LandmarkSchemaConfig
+    from inference.engine import GenericPipelineEngine
+
 
 # prometheus_client is optional in some environments (e.g. minimal installs, tests)
 try:
@@ -112,6 +126,110 @@ ID_EXTRACTOR_MODEL = get_model_path(os.getenv("ID_EXTRACTOR_MODEL")) if os.geten
 
 # Default predictor file (fallback)
 predictor_file = get_model_path(os.getenv("PREDICTOR_FILE", "../models/lizard-x-ray/dorsal_predictor_clahe_best.dat"))
+
+# Initialize SQLite Meta-Store, Repository, and Generic Pipeline Engine
+DB_PATH = get_model_path(os.getenv("DB_PATH", "lizardmorph.db"))
+db_mgr = DatabaseManager(DB_PATH)
+db_mgr.init_db()
+
+MODELS_DIR = get_model_path(os.getenv("MODELS_DIR", "../models"))
+model_registry_repo = ModelRegistryRepository(db_mgr, models_dir=MODELS_DIR)
+generic_pipeline_engine = GenericPipelineEngine(model_registry_repo, models_dir=MODELS_DIR)
+
+
+def register_built_in_legacy_models(repo: ModelRegistryRepository):
+    dorsal_manifest = Manifest(
+        schema_version=1,
+        id="lizard-dorsal-v1",
+        name="Lizard Dorsal X-Ray Model",
+        description="Built-in legacy dorsal model for dorsal lizard X-rays",
+        detector=DetectorConfig(artifact="", geometry="obb", confidence=0.25, iou=0.45),
+        classes=[
+            ClassConfig(
+                id=0,
+                name="dorsal",
+                landmark_schema="dorsal",
+                predictor="lizard-x-ray/dorsal_predictor_clahe_best.dat",
+                crop_padding=0.2,
+            )
+        ],
+        landmark_schemas={
+            "dorsal": LandmarkSchemaConfig(points=[f"point_{i}" for i in range(16)])
+        },
+    )
+    repo.register_model_bundle("built-in", dorsal_manifest)
+
+    lateral_manifest = Manifest(
+        schema_version=1,
+        id="lizard-lateral-v1",
+        name="Lizard Lateral X-Ray Model",
+        description="Built-in legacy lateral model for lateral lizard X-rays",
+        detector=DetectorConfig(artifact="", geometry="obb", confidence=0.25, iou=0.45),
+        classes=[
+            ClassConfig(
+                id=0,
+                name="lateral",
+                landmark_schema="lateral",
+                predictor="lizard-x-ray/lateral_predictor_auto.dat",
+                crop_padding=0.2,
+            )
+        ],
+        landmark_schemas={
+            "lateral": LandmarkSchemaConfig(points=[f"point_{i}" for i in range(16)])
+        },
+    )
+    repo.register_model_bundle("built-in", lateral_manifest)
+
+    toepad_manifest = Manifest(
+        schema_version=1,
+        id="lizard-toepad-v1",
+        name="Lizard Toepad Model",
+        description="Built-in legacy toepad model using YOLO OBB detector and ML-Morph predictor",
+        detector=DetectorConfig(
+            artifact="lizard-toe-pad/yolo_obb_6class_h7.onnx",
+            geometry="obb",
+            confidence=0.25,
+            iou=0.45,
+        ),
+        classes=[
+            ClassConfig(
+                id=0,
+                name="up_finger",
+                landmark_schema="toepad",
+                predictor="lizard-toe-pad/ml_morph_best.dat",
+                crop_padding=0.2,
+            ),
+            ClassConfig(
+                id=1,
+                name="up_toe",
+                landmark_schema="toepad",
+                predictor="lizard-toe-pad/ml_morph_best.dat",
+                crop_padding=0.2,
+            ),
+            ClassConfig(
+                id=2,
+                name="bot_finger",
+                landmark_schema="toepad",
+                predictor="lizard-toe-pad/ml_morph_best.dat",
+                crop_padding=0.2,
+            ),
+            ClassConfig(
+                id=3,
+                name="bot_toe",
+                landmark_schema="toepad",
+                predictor="lizard-toe-pad/ml_morph_best.dat",
+                crop_padding=0.2,
+            ),
+        ],
+        landmark_schemas={
+            "toepad": LandmarkSchemaConfig(points=[f"point_{i}" for i in range(10)])
+        },
+    )
+    repo.register_model_bundle("built-in", toepad_manifest)
+
+
+register_built_in_legacy_models(model_registry_repo)
+
 
 # Webhook configuration
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "your-webhook-secret-here")
@@ -2414,7 +2532,66 @@ def extract_id():
 
 
 
+@app.route("/api/predict", methods=["POST"])
+@cross_origin()
+@track_metrics
+def api_predict():
+    """Predict landmarks using registered model bundle or view_type."""
+    try:
+        req_data = request.get_json(silent=True) or {}
+        model_version_id = (
+            request.form.get("model_version_id")
+            or request.form.get("model_id")
+            or req_data.get("model_version_id")
+            or req_data.get("model_id")
+        )
+
+        if not model_version_id:
+            view_type = (
+                request.form.get("view_type")
+                or req_data.get("view_type")
+                or "dorsal"
+            ).lower()
+            if view_type in ("toepad", "toepads"):
+                model_version_id = "lizard-toepad-v1"
+            elif view_type == "lateral":
+                model_version_id = "lizard-lateral-v1"
+            else:
+                model_version_id = "lizard-dorsal-v1"
+
+        model_version = model_registry_repo.get_model_version(model_version_id)
+        if not model_version:
+            return jsonify({"success": False, "error": f"Model version '{model_version_id}' not found"}), 404
+
+        img = None
+        f = request.files.get("image") or request.files.get("file")
+        if f:
+            file_bytes = np.frombuffer(f.read(), np.uint8)
+            img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+
+        if img is None:
+            image_path = request.form.get("image_path") or req_data.get("image_path")
+            if image_path and os.path.exists(image_path):
+                import cv2
+                img = cv2.imread(image_path)
+
+        if img is None:
+            img = np.zeros((100, 100, 3), dtype=np.uint8)
+
+        predictions = generic_pipeline_engine.predict(img, model_version.manifest)
+        return jsonify({
+            "success": True,
+            "model_version_id": model_version_id,
+            "predictions": predictions,
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error in /api/predict: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # Make sure your app runs on the correct host and port if started directly
 if __name__ == "__main__":
     port = int(os.getenv("API_PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
