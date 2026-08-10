@@ -399,7 +399,7 @@ export const LandingPage: React.FC = () => {
                 ...LandingPageStyles.optionCard,
                 ...(hoveredCard === m.id ? LandingPageStyles.optionCardHover : {}),
               }}
-              onClick={() => handleOptionClick("custom")}
+              onClick={() => navigate("/toepads", { state: { selectedModelId: m.id } })}
               onMouseEnter={() => handleMouseEnter(m.id)}
               onMouseLeave={handleMouseLeave}
             >

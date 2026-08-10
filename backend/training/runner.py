@@ -176,6 +176,7 @@ def run_training_pipeline(job_dir: str):
             json.dump(manifest.to_dict(), f, indent=2)
 
         db_mgr = DatabaseManager(os.environ.get("DB_PATH", "lizardmorph.db"))
+        db_mgr.init_db()
         repo = ModelRegistryRepository(db_mgr)
         repo.register_model_bundle(project_id or "default", manifest)
     except Exception as err:

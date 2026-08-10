@@ -105,26 +105,86 @@ class ModelRegistryRepository:
         return None
 
     def list_model_versions(self) -> List[ModelVersion]:
-        with self.db_mgr.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT id, project_id, name, created_at, manifest_json FROM model_versions"
-            )
-            rows = cursor.fetchall()
-            results = []
-            for row in rows:
-                manifest_dict = json.loads(row["manifest_json"])
-                manifest = Manifest.from_dict(manifest_dict)
-                results.append(
-                    ModelVersion(
-                        id=row["id"],
-                        project_id=row["project_id"],
-                        name=row["name"],
-                        created_at=row["created_at"],
-                        manifest=manifest,
-                    )
+        import os
+        results = []
+        existing_ids = set()
+
+        # 1. Query SQLite DB
+        try:
+            with self.db_mgr.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT id, project_id, name, created_at, manifest_json FROM model_versions"
                 )
-            return results
+                rows = cursor.fetchall()
+                for row in rows:
+                    manifest_dict = json.loads(row["manifest_json"])
+                    manifest = Manifest.from_dict(manifest_dict)
+                    existing_ids.add(row["id"])
+                    results.append(
+                        ModelVersion(
+                            id=row["id"],
+                            project_id=row["project_id"],
+                            name=row["name"],
+                            created_at=row["created_at"],
+                            manifest=manifest,
+                        )
+                    )
+        except Exception:
+            pass
+
+        # 2. Scan runs/ directory for completed training job manifests
+        runs_dirs = [
+            os.environ.get("RUNS_DIR", "runs"),
+            "runs",
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "runs"),
+        ]
+        
+        for runs_dir in runs_dirs:
+            if not os.path.exists(runs_dir):
+                continue
+            try:
+                for entry in os.listdir(runs_dir):
+                    if entry.startswith("job_"):
+                        job_path = os.path.join(runs_dir, entry)
+                        manifest_path = os.path.join(job_path, "manifest.json")
+                        status_path = os.path.join(job_path, "status.json")
+                        
+                        if os.path.exists(manifest_path):
+                            try:
+                                is_completed = True
+                                if os.path.exists(status_path):
+                                    with open(status_path, "r", encoding="utf-8") as sf:
+                                        st_data = json.load(sf)
+                                        if st_data.get("status") != "completed":
+                                            is_completed = False
+                                
+                                if is_completed:
+                                    with open(manifest_path, "r", encoding="utf-8") as mf:
+                                        m_dict = json.load(mf)
+                                    manifest = Manifest.from_dict(m_dict)
+                                    if manifest.id not in existing_ids:
+                                        existing_ids.add(manifest.id)
+                                        # Self-heal / register in SQLite
+                                        try:
+                                            self.register_model_bundle("default", manifest)
+                                        except Exception:
+                                            pass
+                                        results.append(
+                                            ModelVersion(
+                                                id=manifest.id,
+                                                project_id="default",
+                                                name=manifest.name,
+                                                created_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                                                manifest=manifest,
+                                            )
+                                        )
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+
+        return results
 
     def delete_model_version(self, model_id: str) -> bool:
         with self.db_mgr.get_connection() as conn:
