@@ -794,6 +794,7 @@ def get_view_type_config(view_type):
 
 
 @app.route("/predictors", methods=["GET"])
+@app.route("/api/predictors", methods=["GET"])
 @cross_origin()
 @track_metrics
 def list_predictors():
@@ -826,6 +827,7 @@ def list_predictors():
 
 
 @app.route("/predictors", methods=["POST"])
+@app.route("/api/predictors", methods=["POST"])
 @cross_origin()
 @track_metrics
 def upload_predictor():
@@ -872,6 +874,7 @@ def upload_predictor():
 
 
 @app.route("/predictors/<predictor_id>", methods=["DELETE"])
+@app.route("/api/predictors/<predictor_id>", methods=["DELETE"])
 @cross_origin()
 @track_metrics
 def delete_predictor(predictor_id):
@@ -1027,6 +1030,7 @@ def get_train_status(job_id):
 
 
 @app.route("/free_autoplace", methods=["POST"])
+@app.route("/api/free_autoplace", methods=["POST"])
 @cross_origin()
 @track_metrics
 def free_autoplace():
@@ -2673,7 +2677,7 @@ def api_delete_model(model_id):
         try:
             deleted_lib = predictor_library.delete_predictor(
                 index_path=PREDICTOR_LIBRARY_INDEX,
-                files_dir=PREDICTOR_LIBRARY_FILES_DIR,
+                files_dir=PREDICTOR_LIBRARY_FILES,
                 predictor_id=model_id,
             )
         except Exception as err:

@@ -225,7 +225,8 @@ export class ApiService {
 
   static async listPredictors(): Promise<PredictorMeta[]> {
     const base = await apiUrl();
-    const res = await fetch(`${base}/predictors`, {
+    const url = buildEndpointUrl(base, "/api/predictors");
+    const res = await fetch(url, {
       method: "GET",
       headers: {
         ...SessionService.getSessionHeaders(),
@@ -245,7 +246,8 @@ export class ApiService {
     const formData = new FormData();
     formData.append("predictor", file);
     const base = await apiUrl();
-    const res = await fetch(`${base}/predictors`, {
+    const url = buildEndpointUrl(base, "/api/predictors");
+    const res = await fetch(url, {
       method: "POST",
       headers: {
         ...SessionService.getSessionHeaders(),
@@ -265,7 +267,8 @@ export class ApiService {
 
   static async deletePredictor(id: string): Promise<void> {
     const base = await apiUrl();
-    const res = await fetch(`${base}/predictors/${encodeURIComponent(id)}`, {
+    const url = buildEndpointUrl(base, `/api/predictors/${encodeURIComponent(id)}`);
+    const res = await fetch(url, {
       method: "DELETE",
       headers: {
         ...SessionService.getSessionHeaders(),
@@ -282,7 +285,7 @@ export class ApiService {
     predictorId: string
   ): Promise<AnnotationsData> {
     const base = await apiUrl();
-    const url = `${base}/free_autoplace?filename=${encodeURIComponent(filename)}`;
+    const url = buildEndpointUrl(base, `/api/free_autoplace?filename=${encodeURIComponent(filename)}`);
     const res = await fetch(url, {
       method: "POST",
       headers: {
