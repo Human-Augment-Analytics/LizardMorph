@@ -198,13 +198,13 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
   };
 
   const steps = [
-    { num: 1, label: "Create Project", icon: "📁" },
-    { num: 2, label: "Add Data", icon: "📤" },
-    { num: 3, label: "Check Data", icon: "🔍" },
-    { num: 4, label: "Train Model", icon: "⚙️" },
-    { num: 5, label: "Follow Progress", icon: "📊" },
-    { num: 6, label: "Review Results", icon: "🏆" },
-    { num: 7, label: "Publish & Use", icon: "🚀" },
+    { num: 1, label: "Create Project" },
+    { num: 2, label: "Add Data" },
+    { num: 3, label: "Check Data" },
+    { num: 4, label: "Train Model" },
+    { num: 5, label: "Follow Progress" },
+    { num: 6, label: "Review Results" },
+    { num: 7, label: "Publish & Use" },
   ];
 
   const styles = useMemo(() => `
@@ -400,7 +400,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
 
       {error && (
         <div className="alert-banner alert-error" style={{ marginTop: "16px" }}>
-          ⚠️ {error}
+          {error}
         </div>
       )}
 
@@ -423,7 +423,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
                 {isCompleted ? "✓" : s.num}
               </div>
               <span className="step-label">
-                {s.icon} {s.label}
+                {s.label}
               </span>
             </div>
           );
@@ -519,7 +519,6 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
                   }}
                 />
                 <label htmlFor="dataset-file-input" style={{ cursor: "pointer" }}>
-                  <div style={{ fontSize: "36px", marginBottom: "8px" }}>📁</div>
                   <div style={{ fontWeight: 700, fontSize: "15px" }}>
                     {datasetFile ? datasetFile.name : "Click or Drag & Drop Dataset File"}
                   </div>
@@ -580,7 +579,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
               marginBottom: "24px",
             }}>
               <h3 style={{ fontSize: "16px", fontWeight: 700, marginBottom: "12px", color: "#4CAF50" }}>
-                ✓ Dataset Health Check Passed
+                Dataset Health Check Passed
               </h3>
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginTop: "16px" }}>
@@ -634,7 +633,6 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
                 className={`preset-card ${trainingPreset === "fast" ? "selected" : ""}`}
                 onClick={() => setTrainingPreset("fast")}
               >
-                <div style={{ fontSize: "28px", marginBottom: "6px" }}>⚡</div>
                 <div style={{ fontWeight: 700, fontSize: "16px" }}>Fast Training</div>
                 <div style={{ fontSize: "12px", opacity: 0.7, marginTop: "4px" }}>
                   ~10 Epochs • Quick Preview
@@ -645,7 +643,6 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
                 className={`preset-card ${trainingPreset === "standard" ? "selected" : ""}`}
                 onClick={() => setTrainingPreset("standard")}
               >
-                <div style={{ fontSize: "28px", marginBottom: "6px" }}>🎯</div>
                 <div style={{ fontWeight: 700, fontSize: "16px" }}>Standard</div>
                 <div style={{ fontSize: "12px", opacity: 0.7, marginTop: "4px" }}>
                   ~50 Epochs • Balanced Performance
@@ -656,7 +653,6 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
                 className={`preset-card ${trainingPreset === "accurate" ? "selected" : ""}`}
                 onClick={() => setTrainingPreset("accurate")}
               >
-                <div style={{ fontSize: "28px", marginBottom: "6px" }}>🔬</div>
                 <div style={{ fontWeight: 700, fontSize: "16px" }}>High Accuracy</div>
                 <div style={{ fontSize: "12px", opacity: 0.7, marginTop: "4px" }}>
                   ~100 Epochs • Maximum Precision
@@ -753,7 +749,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
                 ← Back
               </button>
               <button onClick={handleStartTraining} className="btn-action">
-                🚀 Start Training Job →
+                Start Training Job →
               </button>
             </div>
           </div>
@@ -826,7 +822,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
 
               <div style={{ background: isDark ? "#2a3a4e" : "#f5f5f5", padding: "20px", borderRadius: "12px", textAlign: "center" }}>
                 <div style={{ fontSize: "28px", fontWeight: 800, color: "#4CAF50" }}>
-                  ✓ Passed
+                  Passed
                 </div>
                 <div style={{ fontSize: "12px", opacity: 0.7, marginTop: "4px" }}>Validation Status</div>
               </div>
@@ -852,7 +848,6 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
         {/* STEP 7: Publish & Use */}
         {currentStep === 7 && (
           <div style={{ textAlign: "center", padding: "20px 0" }}>
-            <div style={{ fontSize: "48px", marginBottom: "12px" }}>🎉</div>
             <h2 style={{ fontSize: "24px", fontWeight: 800, marginBottom: "8px", color: "#4CAF50" }}>
               Model Ready & Registered!
             </h2>
