@@ -8,6 +8,25 @@ from typing import Dict, Any, Optional
 from backend.datasets.canonical import CanonicalDataset
 
 
+def resolve_image_path(file_path: Optional[str]) -> Optional[str]:
+    if not file_path:
+        return None
+    if os.path.exists(file_path):
+        return os.path.abspath(file_path)
+    base = os.path.basename(file_path)
+    candidates = [
+        os.path.join("uploads", base),
+        os.path.join("uploads", file_path),
+        os.path.join("ml_morph_examples", "image-examples", base),
+        os.path.join("data", base),
+        os.path.join("backend", base),
+    ]
+    for cand in candidates:
+        if os.path.exists(cand):
+            return os.path.abspath(cand)
+    return None
+
+
 class YoloOBBTrainer:
     """Trainer adapter for formatting CanonicalDataset into YOLO OBB format and running detector training."""
 
@@ -57,11 +76,12 @@ class YoloOBBTrainer:
             lbl_dir = train_lbl_dir if split == "train" else val_lbl_dir
 
             base_name = f"image_{idx + 1}"
-            if cimg.file_path and os.path.exists(cimg.file_path):
-                ext = os.path.splitext(cimg.file_path)[1] or ".jpg"
+            actual_img_path = resolve_image_path(cimg.file_path)
+            if actual_img_path and os.path.exists(actual_img_path):
+                ext = os.path.splitext(actual_img_path)[1] or ".jpg"
                 dest_img_name = f"{base_name}{ext}"
                 dest_img_path = os.path.join(img_dir, dest_img_name)
-                shutil.copy(cimg.file_path, dest_img_path)
+                shutil.copy(actual_img_path, dest_img_path)
             else:
                 dest_img_name = f"{base_name}.jpg"
                 dest_img_path = os.path.join(img_dir, dest_img_name)

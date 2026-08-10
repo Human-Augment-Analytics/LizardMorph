@@ -154,18 +154,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
       const projId = createdProject ? createdProject.id : "default";
       const datasetDict = derivedBoxes ? { images: derivedBoxes.images } : { content: datasetContent };
 
-      let res: { job_id: string };
-      if (datasetFile) {
-        const trainRes = await ApiService.trainPredictor(
-          projectName,
-          datasetFile,
-          config
-        );
-        res = { job_id: trainRes.job_id };
-      } else {
-        res = await ApiService.submitTrain(projId, datasetDict, config);
-      }
-
+      const res = await ApiService.submitTrain(projId, datasetDict, config);
       setActiveJobId(res.job_id);
 
       // Start polling status
@@ -195,7 +184,8 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
           } else if (statusRes.status === "failed") {
             stopPolling();
             setIsTraining(false);
-            setError(`Training job failed`);
+            const detail = statusRes.stage || (statusRes as any).error || "Training process failed";
+            setError(`Training job failed: ${detail}`);
           }
         } catch (pollErr: any) {
           // Keep polling unless explicit error

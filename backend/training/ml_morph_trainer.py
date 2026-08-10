@@ -11,6 +11,24 @@ try:
 except ImportError:
     dlib = None
 
+def resolve_image_path(file_path: Optional[str]) -> Optional[str]:
+    if not file_path:
+        return None
+    if os.path.exists(file_path):
+        return os.path.abspath(file_path)
+    base = os.path.basename(file_path)
+    candidates = [
+        os.path.join("uploads", base),
+        os.path.join("uploads", file_path),
+        os.path.join("ml_morph_examples", "image-examples", base),
+        os.path.join("data", base),
+        os.path.join("backend", base),
+    ]
+    for cand in candidates:
+        if os.path.exists(cand):
+            return os.path.abspath(cand)
+    return None
+
 
 class MLMorphTrainer:
     """Trainer adapter for cropping landmark regions with box jitter and training dlib shape predictors."""
@@ -52,8 +70,9 @@ class MLMorphTrainer:
             img_w = cimg.width if cimg.width > 0 else 100
             img_h = cimg.height if cimg.height > 0 else 100
 
-            if cimg.file_path and os.path.exists(cimg.file_path):
-                img = cv2.imread(cimg.file_path)
+            actual_img_path = resolve_image_path(cimg.file_path)
+            if actual_img_path and os.path.exists(actual_img_path):
+                img = cv2.imread(actual_img_path)
                 if img is None:
                     img = np.ones((img_h, img_w, 3), dtype=np.uint8) * 128
                 else:

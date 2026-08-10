@@ -2724,6 +2724,16 @@ def api_train():
         dataset_dict = req_data.get("dataset")
         config = req_data.get("config") or {}
 
+        if isinstance(dataset_dict, dict) and "content" in dataset_dict and not dataset_dict.get("images"):
+            content = dataset_dict["content"]
+            if content and isinstance(content, str):
+                if "<dataset>" in content or "<xml" in content:
+                    canonical_ds = DlibXMLImporter.parse_string(content)
+                    dataset_dict = canonical_ds.to_dict()
+                elif "LM=" in content or "lm=" in content or "IMAGE=" in content:
+                    canonical_ds = TPSImporter.parse_string(content)
+                    dataset_dict = canonical_ds.to_dict()
+
         if not dataset_dict and "dataset" in request.form:
             try:
                 dataset_dict = json.loads(request.form["dataset"])
