@@ -3,7 +3,7 @@ import sqlite3
 
 
 class DatabaseManager:
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str = "lizardmorph.db"):
         self.db_path = db_path
 
     def get_connection(self) -> sqlite3.Connection:
