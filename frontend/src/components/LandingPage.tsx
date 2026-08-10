@@ -177,8 +177,13 @@ function getLandingPageStyles(isDark: boolean) {
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
+  const [hoveredDelete, setHoveredDelete] = useState<string | null>(null);
   const [isSecondaryHovered, setIsSecondaryHovered] = useState(false);
   const [models, setModels] = useState<ModelVersionItem[]>([]);
+  const [modelToDelete, setModelToDelete] = useState<ModelVersionItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const { resolved, preference, setPreference } = useTheme();
   const isDark = resolved === "dark";
   const LandingPageStyles = getLandingPageStyles(isDark);
@@ -209,6 +214,27 @@ export const LandingPage: React.FC = () => {
 
   const handleMouseLeave = () => {
     setHoveredCard(null);
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, model: ModelVersionItem) => {
+    e.stopPropagation();
+    setModelToDelete(model);
+    setDeleteError(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!modelToDelete) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await ApiService.deleteModel(modelToDelete.id);
+      setModels((prev) => prev.filter((m) => m.id !== modelToDelete.id));
+      setModelToDelete(null);
+    } catch (err: any) {
+      setDeleteError(err.message || "Failed to delete model");
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -377,6 +403,34 @@ export const LandingPage: React.FC = () => {
               onMouseEnter={() => handleMouseEnter(m.id)}
               onMouseLeave={handleMouseLeave}
             >
+              {/* Delete Button for Custom Models */}
+              <button
+                onClick={(e) => handleDeleteClick(e, m)}
+                onMouseEnter={() => setHoveredDelete(m.id)}
+                onMouseLeave={() => setHoveredDelete(null)}
+                title={`Delete ${m.name}`}
+                style={{
+                  position: "absolute",
+                  top: "12px",
+                  right: "12px",
+                  backgroundColor: hoveredDelete === m.id ? "#e63946" : isDark ? "rgba(220,53,69,0.25)" : "rgba(220,53,69,0.1)",
+                  color: hoveredDelete === m.id ? "#ffffff" : "#e63946",
+                  border: "1px solid rgba(230,57,70,0.4)",
+                  borderRadius: "8px",
+                  width: "32px",
+                  height: "32px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  transition: "all 0.2s ease",
+                  zIndex: 5,
+                }}
+              >
+                🗑️
+              </button>
+
               <div style={LandingPageStyles.cardContent}>
                 <div
                   style={{
@@ -452,6 +506,98 @@ export const LandingPage: React.FC = () => {
           Train Custom Model Wizard
         </button>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {modelToDelete && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            backdropFilter: "blur(4px)",
+          }}
+          onClick={() => !isDeleting && setModelToDelete(null)}
+        >
+          <div
+            style={{
+              backgroundColor: isDark ? "#1e293b" : "#ffffff",
+              color: isDark ? "#f8fafc" : "#0f172a",
+              padding: "28px 32px",
+              borderRadius: "16px",
+              maxWidth: "420px",
+              width: "90%",
+              boxShadow: "0 20px 50px rgba(0,0,0,0.3)",
+              border: `1px solid ${isDark ? "#334155" : "#e2e8f0"}`,
+              textAlign: "center",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: "2.5rem", marginBottom: "12px" }}>🗑️</div>
+            <h3 style={{ fontSize: "1.4rem", fontWeight: "bold", marginBottom: "8px" }}>
+              Delete Model?
+            </h3>
+            <p style={{ fontSize: "1rem", color: isDark ? "#94a3b8" : "#64748b", marginBottom: "20px" }}>
+              Are you sure you want to delete <strong>{modelToDelete.name}</strong>? This action cannot be undone.
+            </p>
+
+            {deleteError && (
+              <div
+                style={{
+                  backgroundColor: "rgba(239, 68, 68, 0.1)",
+                  color: "#ef4444",
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  fontSize: "0.9rem",
+                  marginBottom: "16px",
+                }}
+              >
+                {deleteError}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+              <button
+                onClick={() => setModelToDelete(null)}
+                disabled={isDeleting}
+                style={{
+                  backgroundColor: "transparent",
+                  color: isDark ? "#cbd5e1" : "#475569",
+                  border: `1px solid ${isDark ? "#475569" : "#cbd5e1"}`,
+                  padding: "10px 20px",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  fontWeight: "600",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                style={{
+                  backgroundColor: "#ef4444",
+                  color: "#ffffff",
+                  border: "none",
+                  padding: "10px 20px",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  fontWeight: "600",
+                  boxShadow: "0 4px 12px rgba(239, 68, 68, 0.3)",
+                }}
+              >
+                {isDeleting ? "Deleting..." : "Delete Model"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

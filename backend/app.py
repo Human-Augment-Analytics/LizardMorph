@@ -2656,6 +2656,46 @@ def api_list_models():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/models/<model_id>", methods=["DELETE"])
+@app.route("/api/models/<model_id>", methods=["DELETE"])
+@cross_origin()
+@track_metrics
+def api_delete_model(model_id):
+    """Deletes a custom model version from ModelRegistryRepository or PredictorLibrary."""
+    try:
+        builtin_ids = {"lizard-dorsal-v1", "lizard-lateral-v1", "lizard-toepad-v1"}
+        if model_id in builtin_ids:
+            return jsonify({"success": False, "error": "Built-in preinstalled models cannot be deleted"}), 400
+
+        deleted_repo = model_registry_repo.delete_model_version(model_id)
+
+        deleted_lib = False
+        try:
+            deleted_lib = predictor_library.delete_predictor(
+                index_path=PREDICTOR_LIBRARY_INDEX,
+                files_dir=PREDICTOR_LIBRARY_FILES_DIR,
+                predictor_id=model_id,
+            )
+        except Exception as err:
+            logger.warning(f"Error deleting predictor from library index: {err}")
+
+        # Remove run execution directory if present
+        run_dir = os.path.join("runs", f"job_{model_id}")
+        if os.path.exists(run_dir):
+            try:
+                shutil.rmtree(run_dir)
+            except Exception:
+                pass
+
+        if deleted_repo or deleted_lib:
+            return jsonify({"success": True, "message": f"Model {model_id} deleted successfully"}), 200
+        else:
+            return jsonify({"success": False, "error": "Model not found"}), 404
+    except Exception as e:
+        logger.error(f"Error deleting model {model_id}: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/projects", methods=["POST"])
 @app.route("/api/projects", methods=["POST"])
 @cross_origin()

@@ -375,6 +375,21 @@ export class ApiService {
     return data.models || [];
   }
 
+  static async deleteModel(modelId: string): Promise<void> {
+    const base = await apiUrl();
+    const url = buildEndpointUrl(base, `/api/models/${encodeURIComponent(modelId)}`);
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        ...SessionService.getSessionHeaders(),
+      },
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: "Failed to delete model" }));
+      throw new Error(err.error || "Failed to delete model");
+    }
+  }
+
   static async createProject(name: string, organism: string): Promise<ProjectItem> {
     const base = await apiUrl();
     const url = buildEndpointUrl(base, "/api/projects");

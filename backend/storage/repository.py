@@ -125,3 +125,11 @@ class ModelRegistryRepository:
                     )
                 )
             return results
+
+    def delete_model_version(self, model_id: str) -> bool:
+        with self.db_mgr.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM model_versions WHERE id = ?", (model_id,))
+            deleted = cursor.rowcount > 0
+            conn.commit()
+            return deleted
