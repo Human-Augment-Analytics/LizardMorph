@@ -54,8 +54,24 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
   const [predictors, setPredictors] = useState<PredictorMeta[]>([]);
   const [loadingPredictors, setLoadingPredictors] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   const pollIntervalRef = useRef<number | null>(null);
+
+  const handleCancelJob = async () => {
+    if (!activeJobId) return;
+    setIsCancelling(true);
+    try {
+      await ApiService.cancelTrainJob(activeJobId);
+      stopPolling();
+      setIsTraining(false);
+      setError("Training job cancelled by user.");
+    } catch (err: any) {
+      setError(`Failed to cancel training job: ${err.message || err}`);
+    } finally {
+      setIsCancelling(false);
+    }
+  };
 
   const fetchPredictors = async () => {
     setLoadingPredictors(true);
@@ -788,6 +804,17 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
               )}
 
               <div style={{ display: "flex", justifyContent: "center", gap: "12px" }}>
+                {isTraining && displayProg < 100 && (
+                  <button
+                    type="button"
+                    onClick={handleCancelJob}
+                    className="btn-action btn-secondary"
+                    disabled={isCancelling}
+                    style={{ background: isDark ? "#c62828" : "#d32f2f", color: "white", border: "none" }}
+                  >
+                    {isCancelling ? "Cancelling..." : "Cancel Training Job"}
+                  </button>
+                )}
                 <button
                   onClick={() => setCurrentStep(6)}
                   className="btn-action"

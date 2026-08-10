@@ -473,6 +473,23 @@ export class ApiService {
     }
     return response.json();
   }
+
+  static async cancelTrainJob(jobId: string): Promise<{ success: boolean; message: string }> {
+    const base = await apiUrl();
+    const url = buildEndpointUrl(base, `/api/train/${jobId}/cancel`);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        ...SessionService.getSessionHeaders(),
+        "Content-Type": "application/json",
+      },
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: "Failed to cancel training job" }));
+      throw new Error(err.error || "Failed to cancel training job");
+    }
+    return response.json();
+  }
 }
 
 export interface ModelVersionItem {

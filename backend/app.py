@@ -2851,6 +2851,24 @@ def api_train_job_status(job_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/train/<job_id>/cancel", methods=["POST"])
+@app.route("/api/train/<job_id>/cancel", methods=["POST"])
+@cross_origin()
+@track_metrics
+def api_cancel_train_job(job_id):
+    """Cancels a running training job."""
+    try:
+        success = training_orchestrator.cancel_job(job_id)
+        return jsonify({
+            "success": success,
+            "job_id": job_id,
+            "message": "Training job cancelled successfully" if success else "Job not found or already finished",
+        }), 200
+    except Exception as e:
+        logger.error(f"Error cancelling train job {job_id}: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/dataset/derive-boxes", methods=["POST"])
 @app.route("/api/dataset/derive-boxes", methods=["POST"])
 @cross_origin()

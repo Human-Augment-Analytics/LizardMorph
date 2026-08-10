@@ -95,3 +95,24 @@ ID=Anolis_001
     objs = data["images"][0]["objects"]
     assert len(objs) == 1
     assert len(objs[0]["obb"]) == 5
+
+
+def test_api_cancel_training_endpoint(client):
+    # Submit job
+    train_res = client.post(
+        "/api/train",
+        json={
+            "project_id": "test_cancel_proj",
+            "dataset": {"images": []},
+            "config": {"epochs": 10, "mock": True},
+        },
+    )
+    assert train_res.status_code == 200
+    job_id = train_res.get_json()["job_id"]
+
+    # Cancel job
+    cancel_res = client.post(f"/api/train/{job_id}/cancel")
+    assert cancel_res.status_code == 200
+    cancel_data = cancel_res.get_json()
+    assert cancel_data["success"] is True
+    assert cancel_data["job_id"] == job_id
