@@ -2574,7 +2574,21 @@ def api_predict():
                 model_version_id = "lizard-dorsal-v1"
 
         model_version = model_registry_repo.get_model_version(model_version_id)
-        if not model_version:
+        manifest = None
+        if model_version:
+            manifest = model_version.manifest
+        else:
+            job_manifest_path = os.path.join("runs", f"job_{model_version_id}", "manifest.json")
+            if not os.path.exists(job_manifest_path):
+                job_manifest_path = os.path.join("runs", model_version_id, "manifest.json")
+            if os.path.exists(job_manifest_path):
+                try:
+                    with open(job_manifest_path, "r", encoding="utf-8") as mf:
+                        manifest = Manifest.from_dict(json.load(mf))
+                except Exception as err:
+                    logger.warning(f"Failed loading job manifest {job_manifest_path}: {err}")
+
+        if not manifest:
             return jsonify({"success": False, "error": f"Model version '{model_version_id}' not found"}), 404
 
         img = None
@@ -2591,7 +2605,7 @@ def api_predict():
         if img is None:
             img = np.zeros((100, 100, 3), dtype=np.uint8)
 
-        predictions = generic_pipeline_engine.predict(img, model_version.manifest)
+        predictions = generic_pipeline_engine.predict(img, manifest)
         return jsonify({
             "success": True,
             "model_version_id": model_version_id,

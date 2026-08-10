@@ -143,30 +143,43 @@ def run_training_pipeline(job_dir: str):
     # STAGE 5: Ready - Generate final manifest and bundle artifacts
     all_metrics = {**det_metrics, **lm_metrics}
     
-    # Generate manifest
+    job_id = os.path.basename(job_dir).replace("job_", "")
     rel_det_weights = os.path.relpath(det_weights, job_dir) if det_weights else ""
     rel_lm_model = os.path.relpath(lm_model, job_dir) if lm_model else ""
 
-    manifest_data = {
-        "manifest_version": "1.0",
-        "project_id": project_id,
-        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "detector": {
-            "type": "yolo_obb",
-            "weights": rel_det_weights,
-        },
-        "predictors": [
-            {
-                "class_name": "object",
-                "file": rel_lm_model,
-            }
-        ],
-        "metrics": all_metrics,
-    }
+    try:
+        from domain.models import Manifest, DetectorConfig, ClassConfig, LandmarkSchemaConfig
+        from storage.db import DatabaseManager
+        from storage.repository import ModelRegistryRepository
 
-    manifest_path = os.path.join(job_dir, "manifest.json")
-    with open(manifest_path, "w", encoding="utf-8") as f:
-        json.dump(manifest_data, f, indent=2)
+        manifest = Manifest(
+            schema_version=1,
+            id=job_id,
+            name=f"Custom Model {job_id[:8]}",
+            description="User-trained generic YOLO OBB + ML-Morph model",
+            detector=DetectorConfig(artifact=os.path.join("runs", f"job_{job_id}", rel_det_weights), geometry="obb", confidence=0.25),
+            classes=[
+                ClassConfig(
+                    id=0,
+                    name="object",
+                    landmark_schema="default",
+                    predictor=os.path.join("runs", f"job_{job_id}", rel_lm_model),
+                    crop_padding=0.2,
+                )
+            ],
+            landmark_schemas={"default": LandmarkSchemaConfig(points=[f"pt_{i}" for i in range(12)])},
+            evaluation=all_metrics,
+        )
+
+        manifest_path = os.path.join(job_dir, "manifest.json")
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(manifest.to_dict(), f, indent=2)
+
+        db_mgr = DatabaseManager()
+        repo = ModelRegistryRepository(db_mgr)
+        repo.register_model_bundle(project_id or "default", manifest)
+    except Exception as err:
+        print(f"Warning registering model bundle: {err}")
 
     update_status(
         job_dir,
