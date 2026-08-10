@@ -1121,6 +1121,7 @@ def cleanup_on_startup():
 
 
 @app.route("/session/start", methods=["POST"])
+@app.route("/api/session/start", methods=["POST"])
 @cross_origin()
 @track_metrics
 def start_session():
@@ -1152,6 +1153,7 @@ def start_session():
 
 
 @app.route("/session/info", methods=["GET"])
+@app.route("/api/session/info", methods=["GET"])
 @cross_origin()
 @track_metrics
 def get_session_info():
@@ -1195,6 +1197,7 @@ def get_session_info():
 
 
 @app.route("/session/list", methods=["GET"])
+@app.route("/api/session/list", methods=["GET"])
 @cross_origin()
 @track_metrics
 def list_sessions():
