@@ -183,6 +183,28 @@ names:
             from ultralytics import YOLO
 
             model = YOLO("yolov8n-obb.pt")
+
+            def on_epoch_end(trainer):
+                try:
+                    curr_epoch = getattr(trainer, "epoch", 0) + 1
+                    tot_epochs = getattr(trainer, "epochs", epochs) or epochs
+                    sub_prog = 0.10 + (curr_epoch / float(tot_epochs)) * 0.30
+                    status_path = os.path.join(self.job_dir, "status.json")
+                    import json
+                    from datetime import datetime
+                    with open(status_path, "w", encoding="utf-8") as f:
+                        json.dump({
+                            "status": "running",
+                            "stage": f"Training detector (Epoch {curr_epoch}/{tot_epochs})",
+                            "progress": round(sub_prog, 3),
+                            "metrics": {},
+                            "updated_at": datetime.utcnow().isoformat() + "Z"
+                        }, f, indent=2)
+                except Exception:
+                    pass
+
+            model.add_callback("on_train_epoch_end", on_epoch_end)
+
             results = model.train(
                 data=data_yaml_path,
                 epochs=epochs,

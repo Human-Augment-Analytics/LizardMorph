@@ -756,44 +756,49 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
         )}
 
         {/* STEP 5: Follow Progress */}
-        {currentStep === 5 && (
-          <div style={{ textAlign: "center", padding: "20px 0" }}>
-            <h2 style={{ fontSize: "22px", fontWeight: 700, marginBottom: "8px" }}>
-              Step 5: Training Progress & Live Monitor
-            </h2>
-            <p style={{ fontSize: "14px", opacity: 0.7, marginBottom: "24px" }}>
-              {jobStatus?.stage || "Initializing training execution engine..."}
-            </p>
+        {currentStep === 5 && (() => {
+          const rawProg = jobStatus?.progress ?? 0.2;
+          const displayProg = rawProg <= 1.0 ? rawProg * 100 : rawProg;
 
-            <div className="progress-bar-bg">
-              <div
-                className="progress-bar-fill"
-                style={{ width: `${Math.min(100, jobStatus?.progress ?? 20)}%` }}
-              />
-            </div>
+          return (
+            <div style={{ textAlign: "center", padding: "20px 0" }}>
+              <h2 style={{ fontSize: "22px", fontWeight: 700, marginBottom: "8px" }}>
+                Step 5: Training Progress & Live Monitor
+              </h2>
+              <p style={{ fontSize: "14px", opacity: 0.7, marginBottom: "24px" }}>
+                {jobStatus?.stage || "Initializing training execution engine..."}
+              </p>
 
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", fontWeight: 700, marginBottom: "24px" }}>
-              <span>Stage: {jobStatus?.stage || "Checking data"}</span>
-              <span>{(jobStatus?.progress ?? 20).toFixed(1)}%</span>
-            </div>
-
-            {activeJobId && (
-              <div style={{ fontSize: "12px", opacity: 0.6, marginBottom: "24px" }}>
-                Job Identifier: <code style={{ fontFamily: "monospace" }}>{activeJobId}</code>
+              <div className="progress-bar-bg">
+                <div
+                  className="progress-bar-fill"
+                  style={{ width: `${Math.min(100, displayProg)}%` }}
+                />
               </div>
-            )}
 
-            <div style={{ display: "flex", justifyContent: "center", gap: "12px" }}>
-              <button
-                onClick={() => setCurrentStep(6)}
-                className="btn-action"
-                disabled={isTraining && (jobStatus?.progress ?? 0) < 100}
-              >
-                Review Results →
-              </button>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", fontWeight: 700, marginBottom: "24px" }}>
+                <span>Stage: {jobStatus?.stage || "Checking data"}</span>
+                <span>{displayProg.toFixed(1)}%</span>
+              </div>
+
+              {activeJobId && (
+                <div style={{ fontSize: "12px", opacity: 0.6, marginBottom: "24px" }}>
+                  Job Identifier: <code style={{ fontFamily: "monospace" }}>{activeJobId}</code>
+                </div>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "center", gap: "12px" }}>
+                <button
+                  onClick={() => setCurrentStep(6)}
+                  className="btn-action"
+                  disabled={isTraining && displayProg < 100}
+                >
+                  Review Results →
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* STEP 6: Review Results */}
         {currentStep === 6 && (
