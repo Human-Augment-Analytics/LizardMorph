@@ -66,9 +66,12 @@ function resolveReleaseVersion(packageSemver: string): string {
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-    const env = loadEnv(mode, process.cwd() + "/../", '');
+    const env = {
+        ...loadEnv(mode, path.resolve(__dirname, '..'), ''),
+        ...loadEnv(mode, process.cwd(), ''),
+    };
 
-    const apiPort = env.VITE_API_PORT || env.API_PORT || '5000';
+    const apiPort = env.VITE_API_PORT || env.API_PORT || '3005';
     const baseURL = env.VITE_BASE_URL || './';
     
     const packageJson = JSON.parse(readFileSync('./package.json', 'utf-8'));

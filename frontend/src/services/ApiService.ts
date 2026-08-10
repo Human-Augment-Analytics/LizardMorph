@@ -11,6 +11,15 @@ async function apiUrl(): Promise<string> {
   return API_URL;
 }
 
+function buildEndpointUrl(base: string, endpoint: string): string {
+  const cleanBase = base.replace(/\/+$/, "");
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  if (cleanBase.endsWith("/api") && cleanEndpoint.startsWith("/api/")) {
+    return `${cleanBase}${cleanEndpoint.slice(4)}`;
+  }
+  return `${cleanBase}${cleanEndpoint}`;
+}
+
 export class ApiService {
   /**
    * Initialize session before making API calls
@@ -353,7 +362,8 @@ export class ApiService {
 
   static async getModels(): Promise<ModelVersionItem[]> {
     const base = await apiUrl();
-    const response = await fetch(`${base}/api/models`, {
+    const url = buildEndpointUrl(base, "/api/models");
+    const response = await fetch(url, {
       headers: {
         ...SessionService.getSessionHeaders(),
       },
@@ -367,7 +377,8 @@ export class ApiService {
 
   static async createProject(name: string, organism: string): Promise<ProjectItem> {
     const base = await apiUrl();
-    const response = await fetch(`${base}/api/projects`, {
+    const url = buildEndpointUrl(base, "/api/projects");
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -385,7 +396,8 @@ export class ApiService {
 
   static async listProjects(): Promise<ProjectItem[]> {
     const base = await apiUrl();
-    const response = await fetch(`${base}/api/projects`, {
+    const url = buildEndpointUrl(base, "/api/projects");
+    const response = await fetch(url, {
       headers: {
         ...SessionService.getSessionHeaders(),
       },
@@ -399,7 +411,8 @@ export class ApiService {
 
   static async submitTrain(projectId: string, dataset: any, config: any): Promise<{ job_id: string }> {
     const base = await apiUrl();
-    const response = await fetch(`${base}/api/train`, {
+    const url = buildEndpointUrl(base, "/api/train");
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -416,7 +429,8 @@ export class ApiService {
 
   static async getTrainJobStatus(jobId: string): Promise<TrainJobStatusResult> {
     const base = await apiUrl();
-    const response = await fetch(`${base}/api/train/${encodeURIComponent(jobId)}`, {
+    const url = buildEndpointUrl(base, `/api/train/${encodeURIComponent(jobId)}`);
+    const response = await fetch(url, {
       headers: {
         ...SessionService.getSessionHeaders(),
       },
@@ -429,7 +443,8 @@ export class ApiService {
 
   static async deriveBoxes(tpsContent: string, padding: number): Promise<DeriveBoxesResult> {
     const base = await apiUrl();
-    const response = await fetch(`${base}/api/dataset/derive-boxes`, {
+    const url = buildEndpointUrl(base, "/api/dataset/derive-boxes");
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
