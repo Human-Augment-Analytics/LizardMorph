@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "LizardMorph",
+  "productName": "AutoMorph",
   "version": "1.0.8",
-  "identifier": "com.humanaugmentanalytics.lizardmorph",
+  "identifier": "com.humanaugmentanalytics.automorph",
   "build": {
     "beforeDevCommand": "npm run dev --prefix ../frontend",
     "devUrl": "http://localhost:5173",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "LizardMorph",
+        "title": "AutoMorph",
         "width": 1280,
         "height": 800,
         "resizable": true
