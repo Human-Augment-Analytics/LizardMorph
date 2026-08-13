@@ -1,4 +1,4 @@
-# React + Flask LizardMorph App
+# React + Flask AutoMorph App
 
 **Live Tryout:** [https://haag-1.cc.gatech.edu/](https://haag-1.cc.gatech.edu/)
 
