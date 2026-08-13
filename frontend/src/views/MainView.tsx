@@ -137,7 +137,7 @@ export class MainView extends Component<MainProps, MainState> {
   }
   private async initializeApp(): Promise<void> {
     try {
-      console.log("Initializing LizardMorph app...");
+      console.log("Initializing AutoMorph app...");
 
       // Initialize session management (will reuse existing session if available)
       await ApiService.initialize();

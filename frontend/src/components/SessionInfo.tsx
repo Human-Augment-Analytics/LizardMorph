@@ -132,7 +132,7 @@ export class SessionInfo extends Component<SessionInfoProps, SessionInfoState> {
         >
           <img
             src={lizard_logo}
-            alt="LizardMorph Logo"
+            alt="AutoMorph Logo"
             style={{
               height: "24px",
               width: "24px",
