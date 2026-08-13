@@ -2235,7 +2235,7 @@ def verify_webhook_signature(payload, signature):
 
 
 DEPLOY_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "deploy.sh")
-DEPLOY_LOG_PATH = "/var/log/lizardmorph/deploy.log"
+DEPLOY_LOG_PATH = "/var/log/automorph/deploy.log" if os.path.exists("/var/log/automorph") else "/var/log/lizardmorph/deploy.log"
 
 
 @app.route("/webhook", methods=["POST"])

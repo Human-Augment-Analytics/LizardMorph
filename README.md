@@ -23,8 +23,8 @@ Porto, A. and Voje, K.L., 2020. ML‐morph: A fast, accurate and general approac
 ## 1. Clone the Repo
 
 ```bash
-git clone <repo-url> LizardMorph
-cd LizardMorph
+git clone <repo-url> AutoMorph
+cd AutoMorph
 ```
 
 ## 2. Setup utilizing Make + uv
@@ -72,7 +72,7 @@ Copy the example and fill in any missing paths:
 cp .env.example .env   # if it exists, otherwise create .env at the repo root
 ```
 
-The `.env` file must live at the **repo root** (`LizardMorph/.env`), not inside `backend/`.
+The `.env` file must live at the **repo root** (`AutoMorph/.env`), not inside `backend/`.
 
 ### Required variables
 
@@ -97,7 +97,7 @@ The `.env` file must live at the **repo root** (`LizardMorph/.env`), not inside 
 | `VITE_BASE_URL` | Frontend base path (default: empty) |
 | `VITE_ALLOWED_HOSTS` | Comma-separated allowed ngrok/proxy hosts |
 | `WEBHOOK_SECRET` | GitHub webhook secret for auto-deploy |
-| `LIZARDMORPH_HOSTED` | Set to `true` to enforce strict safety size/count limits on training uploads in shared public servers (default: `false`) |
+| `AUTOMORPH_HOSTED` | Set to `true` to enforce strict safety size/count limits on training uploads in shared public servers (default: `false`). `LIZARDMORPH_HOSTED` is supported for backward compatibility. |
 
 ### Full working `.env` example
 
@@ -188,10 +188,10 @@ To set up and run the application on the current production server:
    ```
 4. Install the systemd service:
    ```bash
-   sudo bash /var/www/LizardMorph/systemd/setup.sh
+   sudo bash /var/www/AutoMorph/systemd/setup.sh
    ```
 
-The backend service is defined in `systemd/lizardmorph-backend.service` and runs from `/var/www/LizardMorph/backend`. Backend logs go to `/var/log/lizardmorph/`.
+The backend service is defined in `systemd/lizardmorph-backend.service` and runs from `/var/www/AutoMorph/backend`. Backend logs go to `/var/log/automorph/` (or `/var/log/lizardmorph/`).
 
 ### GitHub CI/CD (auto-deploy on push to `main`)
 
@@ -200,12 +200,12 @@ This repo supports a simple webhook-driven deployment flow (pull latest `main`, 
 - **One-time server setup** (installs systemd unit + sudoers rule):
 
 ```bash
-sudo bash /var/www/LizardMorph/systemd/setup.sh
+sudo bash /var/www/AutoMorph/systemd/setup.sh
 ```
 
 - **Deploy script** (what the webhook runs):
   - `./deploy.sh` (repo root)
-  - Logs to `/var/log/lizardmorph/deploy.log`
+  - Logs to `/var/log/automorph/deploy.log` (or `/var/log/lizardmorph/deploy.log`)
 
 - **GitHub webhook**:
   - Add a webhook in the GitHub repo settings
@@ -217,7 +217,7 @@ sudo bash /var/www/LizardMorph/systemd/setup.sh
 After setup, every push to `main` triggers a deploy. To inspect the last run:
 
 ```bash
-tail -n 200 /var/log/lizardmorph/deploy.log
+tail -n 200 /var/log/automorph/deploy.log
 ```
 
 ## Vignette
