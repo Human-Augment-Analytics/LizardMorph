@@ -1995,6 +1995,11 @@ def split_dlib_dataset(xml_path, test_ratio=0.2, seed=42):
         return xml_path, None
 
 
+def is_hosted():
+    """Check whether the application is running in a hosted environment."""
+    return (os.getenv("AUTOMORPH_HOSTED") or os.getenv("LIZARDMORPH_HOSTED", "false")).lower() in ("true", "1", "yes")
+
+
 def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, files_dir, custom_options=None, index_lock=None):
     """
     Extracts a ZIP containing images and annotations, formats a dlib dataset, trains
@@ -2011,8 +2016,7 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
             members = z.infolist()
             
             # Cap limits to prevent Zip Bombs / DoS
-            is_hosted = (os.getenv("AUTOMORPH_HOSTED") or os.getenv("LIZARDMORPH_HOSTED", "false")).lower() in ("true", "1", "yes")
-            if is_hosted:
+            if is_hosted():
                 MAX_ZIP_MEMBER_COUNT = 500
                 MAX_SINGLE_FILE_SIZE = 20 * 1024 * 1024  # 20MB
                 MAX_TOTAL_UNCOMPRESSED_SIZE = 100 * 1024 * 1024  # 100MB

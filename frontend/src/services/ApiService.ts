@@ -91,7 +91,10 @@ export class ApiService {
         ...SessionService.getSessionHeaders(),
       },
     });
-    if (!res.ok) throw new Error("Failed to fetch uploaded files");
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || "Failed to fetch uploaded files");
+    }
     return res.json();
   }
 
@@ -112,7 +115,10 @@ export class ApiService {
         ...SessionService.getSessionHeaders(),
       },
     });
-    if (!res.ok) throw new Error("Failed to process existing image");
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Failed to process existing image (${res.status} ${res.statusText})`);
+    }
     return res.json();
   }
 
@@ -128,7 +134,10 @@ export class ApiService {
       },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error("Failed to save annotations");
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || "Failed to save annotations");
+    }
     return res.json();
   }
 
