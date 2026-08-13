@@ -2011,7 +2011,7 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
             members = z.infolist()
             
             # Cap limits to prevent Zip Bombs / DoS
-            is_hosted = os.getenv("LIZARDMORPH_HOSTED", "false").lower() in ("true", "1", "yes")
+            is_hosted = (os.getenv("AUTOMORPH_HOSTED") or os.getenv("LIZARDMORPH_HOSTED", "false")).lower() in ("true", "1", "yes")
             if is_hosted:
                 MAX_ZIP_MEMBER_COUNT = 500
                 MAX_SINGLE_FILE_SIZE = 20 * 1024 * 1024  # 20MB

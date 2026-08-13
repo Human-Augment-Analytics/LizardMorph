@@ -75,7 +75,7 @@ PREDICTOR_LIBRARY_DIR = get_model_path(
 PREDICTOR_LIBRARY_INDEX = os.path.join(PREDICTOR_LIBRARY_DIR, "predictors.json")
 PREDICTOR_LIBRARY_FILES = os.path.join(PREDICTOR_LIBRARY_DIR, "files")
 
-IS_HOSTED = os.getenv("LIZARDMORPH_HOSTED", "false").lower() in ("true", "1", "yes")
+IS_HOSTED = (os.getenv("AUTOMORPH_HOSTED") or os.getenv("LIZARDMORPH_HOSTED", "false")).lower() in ("true", "1", "yes")
 if IS_HOSTED:
     PREDICTOR_MAX_BYTES = int(os.getenv("PREDICTOR_MAX_BYTES", str(100 * 1024 * 1024)))
 else:
@@ -115,7 +115,7 @@ predictor_file = get_model_path(os.getenv("PREDICTOR_FILE", "../models/lizard-x-
 
 # Webhook configuration
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "your-webhook-secret-here")
-REPO_NAME = os.getenv("REPO_NAME", "LizardMorph")
+REPO_NAME = os.getenv("REPO_NAME", "AutoMorph")
 MAIN_BRANCH = os.getenv("MAIN_BRANCH", "main")
 VERIFY_SIGNATURE = os.getenv("VERIFY_SIGNATURE", "true").lower() == "true"
 
@@ -650,6 +650,10 @@ def get_view_type_config(view_type):
     elif view_type == "custom":
         predictor_file = CUSTOM_PREDICTOR_FILE
         detector_file = CUSTOM_DETECTOR_FILE
+        yolo_model = None
+    elif view_type == "free":
+        predictor_file = None
+        detector_file = None
         yolo_model = None
     else:
         # Default to dorsal if unknown view type
@@ -1244,11 +1248,28 @@ def upload():
                         utils.predictions_to_xml_single_with_detector(
                             predictor_file_path, image_path, xml_output_path, detector_file_path
                         )
-                    else:
-                        logger.warning(f"Not using YOLO - view_type={view_type}, yolo_model_path={yolo_model_path}, exists={os.path.exists(yolo_model_path) if yolo_model_path else False}")
+                    elif predictor_file_path and os.path.exists(predictor_file_path):
+                        logger.info(f"Using single predictor for view_type={view_type}: {predictor_file_path}")
                         utils.predictions_to_xml_single(
                             predictor_file_path, image_path, xml_output_path
                         )
+                    else:
+                        logger.warning(f"No valid predictor model file available for view_type={view_type} (predictor={predictor_file_path}). Creating minimal XML.")
+                        import cv2 as _cv2
+                        _img = _cv2.imread(image_path)
+                        _h, _w = _img.shape[:2] if _img is not None else (0, 0)
+                        _xml = f'''<?xml version="1.0" ?>
+<dataset>
+   <name/>
+   <comment/>
+   <images>
+      <image file="{image_path}">
+         <box top="1" left="1" width="{_w}" height="{_h}"/>
+      </image>
+   </images>
+</dataset>'''
+                        with open(xml_output_path, 'w') as _f:
+                            _f.write(_xml)
 
                     # Generate CSV and TPS output files in the session outputs folder
                     csv_output_path = os.path.join(
@@ -1704,8 +1725,24 @@ def process_existing():
 
         # Generate XML if it doesn't exist
         if not os.path.exists(xml_path):
+            if view_type.lower() == "free":
+                import cv2 as _cv2
+                _img = _cv2.imread(image_path)
+                _h, _w = _img.shape[:2] if _img is not None else (0, 0)
+                _xml = f'''<?xml version="1.0" ?>
+<dataset>
+   <name/>
+   <comment/>
+   <images>
+      <image file="{image_path}">
+         <box top="1" left="1" width="{_w}" height="{_h}"/>
+      </image>
+   </images>
+</dataset>'''
+                with open(xml_path, 'w') as _f:
+                    _f.write(_xml)
             # Use YOLO-based prediction for toepad, detector-based for others, or original function
-            if view_type.lower() == "toepad" and yolo_model_path and os.path.exists(yolo_model_path):
+            elif view_type.lower() == "toepad" and yolo_model_path and os.path.exists(yolo_model_path):
                 utils.predictions_to_xml_single_with_yolo(
                     image_path, 
                     xml_path, 
@@ -1717,7 +1754,7 @@ def process_existing():
                     cached_yolo_model=get_cached_yolo_model(),
                     cached_dlib_predictors=get_cached_dlib_predictors()
                 )
-            elif view_type.lower() == "dorsal":
+            elif view_type.lower() == "dorsal" and DORSAL_PREDICTOR_FILE and os.path.exists(DORSAL_PREDICTOR_FILE):
                 logger.info(f"Using Hybrid Best-Performance prediction for dorsal view (existing image)")
                 utils.predictions_to_xml_dorsal_hybrid(
                     image_path,
@@ -1730,12 +1767,47 @@ def process_existing():
                 utils.predictions_to_xml_single_with_detector(
                     predictor_file_path, image_path, xml_path, detector_file_path
                 )
-            else:
+            elif predictor_file_path and os.path.exists(predictor_file_path):
                 utils.predictions_to_xml_single(
                     predictor_file_path, image_path, xml_path
                 )
+            else:
+                logger.warning(f"No valid predictor model file available for view_type={view_type} (predictor={predictor_file_path}). Creating minimal XML.")
+                import cv2 as _cv2
+                _img = _cv2.imread(image_path)
+                _h, _w = _img.shape[:2] if _img is not None else (0, 0)
+                _xml = f'''<?xml version="1.0" ?>
+<dataset>
+   <name/>
+   <comment/>
+   <images>
+      <image file="{image_path}">
+         <box top="1" left="1" width="{_w}" height="{_h}"/>
+      </image>
+   </images>
+</dataset>'''
+                with open(xml_path, 'w') as _f:
+                    _f.write(_xml)
+
             utils.dlib_xml_to_pandas(xml_path)
             utils.dlib_xml_to_tps(xml_path)
+
+        csv_path = os.path.join(
+            session_data["outputs_folder"], f"output_{filename}.csv"
+        )
+        tps_path = os.path.join(
+            session_data["outputs_folder"], f"output_{filename}.tps"
+        )
+        if not os.path.exists(csv_path) and os.path.exists(xml_path):
+            try:
+                utils.dlib_xml_to_pandas(xml_path)
+            except Exception as _e:
+                logger.warning(f"Failed to generate csv from xml: {_e}")
+        if not os.path.exists(tps_path) and os.path.exists(xml_path):
+            try:
+                utils.dlib_xml_to_tps(xml_path)
+            except Exception as _e:
+                logger.warning(f"Failed to generate tps from xml: {_e}")
 
         # Copy all files to export directory
         export_handler.copy_file_to_export(image_path, export_dir)
