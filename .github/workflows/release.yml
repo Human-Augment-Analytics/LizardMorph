@@ -191,7 +191,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name || github.event.inputs.version }}
-          name: LizardMorph ${{ github.ref_name || github.event.inputs.version }}
+          name: AutoMorph ${{ github.ref_name || github.event.inputs.version }}
           draft: true
           files: |
             artifacts/dmg-arm64/*.dmg
@@ -202,9 +202,9 @@ jobs:
 
             | Platform | File | Notes |
             |----------|------|-------|
-            | macOS (Apple Silicon) | `LizardMorph-*-arm64.dmg` | M1/M2/M3/M4 Macs |
-            | macOS (Intel) | `LizardMorph-*-x64.dmg` | 2015–2020 Intel Macs |
-            | Windows | `LizardMorph.Setup.*.exe` | Windows 10+ |
+            | macOS (Apple Silicon) | `AutoMorph-*-arm64.dmg` | M1/M2/M3/M4 Macs |
+            | macOS (Intel) | `AutoMorph-*-x64.dmg` | 2015–2020 Intel Macs |
+            | Windows | `AutoMorph.Setup.*.exe` | Windows 10+ |
 
             ### macOS: Which download do I need?
             - Click  → **About This Mac**

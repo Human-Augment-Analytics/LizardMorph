@@ -272,8 +272,7 @@ export const LandingPage: React.FC = () => {
           Auto
         </button>
       </div>
-
-      <h1 style={LandingPageStyles.title}>LizardMorph</h1>
+      <h1 style={LandingPageStyles.title}>AutoMorph</h1>
       <p style={LandingPageStyles.subtitle}>
         Select a preinstalled lizard model or one of your custom built models to analyze
       </p>

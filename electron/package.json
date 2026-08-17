@@ -1,7 +1,7 @@
 {
-  "name": "lizardmorph",
+  "name": "automorph",
   "version": "1.0.8",
-  "description": "LizardMorph - Automated lizard morphology analysis",
+  "description": "AutoMorph - Automated lizard morphology analysis",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -18,7 +18,7 @@
   },
   "build": {
     "appId": "com.lizardmorph.desktop",
-    "productName": "LizardMorph",
+    "productName": "AutoMorph",
     "directories": {
       "output": "release"
     },

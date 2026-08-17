@@ -190,7 +190,7 @@ export class Header extends Component<HeaderProps, HeaderState> {
               >
                 <img
                   src={lizard_logo}
-                  alt="LizardMorph Logo"
+                  alt="AutoMorph Logo"
                   style={{
                     height: "40px",
                     width: "40px",
@@ -201,7 +201,7 @@ export class Header extends Component<HeaderProps, HeaderState> {
               <h2 style={styles.title}>
                 {isFree
                   ? "Free Mode — Manual Landmarking"
-                  : "Lizard Anolis X-Ray Auto-Annotator"}
+                  : "AutoMorph Auto-Annotator"}
               </h2>
             </div>
             <p style={styles.viewType}>

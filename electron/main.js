@@ -4,8 +4,8 @@ const path = require("path");
 const fs = require("fs");
 const { startBackend, stopBackend } = require("./python-backend");
 
-// File logger — writes to ~/Library/Logs/LizardMorph/main.log
-const logDir = path.join(app.getPath("home"), "Library", "Logs", "LizardMorph");
+// File logger — writes to ~/Library/Logs/AutoMorph/main.log
+const logDir = path.join(app.getPath("home"), "Library", "Logs", "AutoMorph");
 fs.mkdirSync(logDir, { recursive: true });
 const logFile = path.join(logDir, "main.log");
 const logStream = fs.createWriteStream(logFile, { flags: "a" });
@@ -42,7 +42,7 @@ async function createWindow() {
   });
 
   mainWindow.loadURL(
-    "data:text/html,<html><body style='display:flex;justify-content:center;align-items:center;height:100vh;font-family:system-ui;background:%23f5f5f5'><div style='text-align:center'><h1>LizardMorph</h1><p>Starting backend server...</p></div></body></html>"
+    "data:text/html,<html><body style='display:flex;justify-content:center;align-items:center;height:100vh;font-family:system-ui;background:%23f5f5f5'><div style='text-align:center'><h1>AutoMorph</h1><p>Starting backend server...</p></div></body></html>"
   );
 
   try {
@@ -59,7 +59,7 @@ async function createWindow() {
           `data:text/html,<html><body style='padding:40px;font-family:system-ui'>` +
           `<h1>Backend Crashed</h1>` +
           `<p>The backend process exited with code ${code}.</p>` +
-          `<p>Please restart LizardMorph.</p>` +
+          `<p>Please restart AutoMorph.</p>` +
           `</body></html>`
         );
       }
@@ -124,7 +124,7 @@ autoUpdater.on("update-downloaded", (info) => {
     .showMessageBox({
       type: "info",
       title: "Update Ready",
-      message: "A new version of LizardMorph has been downloaded. Restart the application to apply the updates.",
+      message: "A new version of AutoMorph has been downloaded. Restart the application to apply the updates.",
       buttons: ["Restart", "Later"],
     })
     .then((result) => {

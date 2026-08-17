@@ -28,6 +28,7 @@ import subprocess
 import json
 import numpy as np
 import cv2
+import xml.etree.ElementTree as ET
 from flask import Flask, jsonify, request, send_from_directory, send_file, session
 from flask_cors import CORS, cross_origin
 from base64 import b64encode
@@ -36,7 +37,6 @@ import logging
 import shutil
 import psutil
 import threading
-import time
 import predictor_library
 import uuid
 
@@ -95,7 +95,7 @@ PREDICTOR_LIBRARY_DIR = get_model_path(
 PREDICTOR_LIBRARY_INDEX = os.path.join(PREDICTOR_LIBRARY_DIR, "predictors.json")
 PREDICTOR_LIBRARY_FILES = os.path.join(PREDICTOR_LIBRARY_DIR, "files")
 
-IS_HOSTED = os.getenv("LIZARDMORPH_HOSTED", "false").lower() in ("true", "1", "yes")
+IS_HOSTED = (os.getenv("AUTOMORPH_HOSTED") or os.getenv("LIZARDMORPH_HOSTED", "false")).lower() in ("true", "1", "yes")
 if IS_HOSTED:
     PREDICTOR_MAX_BYTES = int(os.getenv("PREDICTOR_MAX_BYTES", str(100 * 1024 * 1024)))
 else:
@@ -242,7 +242,7 @@ register_built_in_legacy_models(model_registry_repo)
 
 # Webhook configuration
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "your-webhook-secret-here")
-REPO_NAME = os.getenv("REPO_NAME", "LizardMorph")
+REPO_NAME = os.getenv("REPO_NAME", "AutoMorph")
 MAIN_BRANCH = os.getenv("MAIN_BRANCH", "main")
 VERIFY_SIGNATURE = os.getenv("VERIFY_SIGNATURE", "true").lower() == "true"
 
@@ -424,7 +424,6 @@ def _supplement_client_annotations_with_yolo(client_ann, image_path, yolo_model)
 
     try:
         import numpy as np
-        import cv2
         from PIL import Image as PILImage
 
         PILImage.MAX_IMAGE_PIXELS = None
@@ -778,6 +777,10 @@ def get_view_type_config(view_type):
         predictor_file = CUSTOM_PREDICTOR_FILE
         detector_file = CUSTOM_DETECTOR_FILE
         yolo_model = None
+    elif view_type == "free":
+        predictor_file = None
+        detector_file = None
+        yolo_model = None
     else:
         # Default to dorsal if unknown view type
         logger.warning(f"Unknown view type '{view_type}', using dorsal configuration")
@@ -791,6 +794,24 @@ def get_view_type_config(view_type):
     logger.info(f"  - YOLO model: {yolo_model}")
     
     return predictor_file, detector_file, yolo_model
+
+
+def _create_minimal_xml(image_path, xml_output_path):
+    """Create a minimal dlib XML dataset file for an image with an un-annotated full bounding box."""
+    img = cv2.imread(image_path)
+    h, w = img.shape[:2] if img is not None else (0, 0)
+    xml_content = f'''<?xml version="1.0" ?>
+<dataset>
+   <name/>
+   <comment/>
+   <images>
+      <image file="{image_path}">
+         <box top="1" left="1" width="{w}" height="{h}"/>
+      </image>
+   </images>
+</dataset>'''
+    with open(xml_output_path, 'w') as f:
+        f.write(xml_content)
 
 
 @app.route("/predictors", methods=["GET"])
@@ -1288,21 +1309,7 @@ def upload():
                         xml_output_path = os.path.join(
                             session_data["outputs_folder"], f"output_{unique_name}.xml"
                         )
-                        import cv2 as _cv2
-                        _img = _cv2.imread(image_path)
-                        _h, _w = _img.shape[:2] if _img is not None else (0, 0)
-                        _xml = f'''<?xml version="1.0" ?>
-<dataset>
-   <name/>
-   <comment/>
-   <images>
-      <image file="{image_path}">
-         <box top="1" left="1" width="{_w}" height="{_h}"/>
-      </image>
-   </images>
-</dataset>'''
-                        with open(xml_output_path, 'w') as _f:
-                            _f.write(_xml)
+                        _create_minimal_xml(image_path, xml_output_path)
 
                         all_data.append({
                             "name": unique_name,
@@ -1324,9 +1331,8 @@ def upload():
                         logger.info(f"Using client-provided ONNX Web annotations for {unique_name}")
                         # TEMP DEBUG: dump client_ann to file
                         try:
-                            import json as _json
                             with open('/tmp/debug_client_ann.json', 'w') as _f:
-                                _json.dump(client_ann, _f, indent=2)
+                                json.dump(client_ann, _f, indent=2)
                             logger.info(f"DEBUG: Wrote client_ann to /tmp/debug_client_ann.json")
                         except Exception as _e:
                             logger.error(f"DEBUG dump failed: {_e}")
@@ -1348,7 +1354,6 @@ def upload():
                         )
 
                         # Set root and images_e for further processing
-                        import xml.etree.ElementTree as ET
                         root = ET.parse(xml_output_path).getroot()
                         images_e = root.findall('.//image')
                         utils.pretty_xml(root, xml_output_path)
@@ -1378,11 +1383,14 @@ def upload():
                         utils.predictions_to_xml_single_with_detector(
                             predictor_file_path, image_path, xml_output_path, detector_file_path
                         )
-                    else:
-                        logger.warning(f"Not using YOLO - view_type={view_type}, yolo_model_path={yolo_model_path}, exists={os.path.exists(yolo_model_path) if yolo_model_path else False}")
+                    elif predictor_file_path and os.path.exists(predictor_file_path):
+                        logger.info(f"Using single predictor for view_type={view_type}: {predictor_file_path}")
                         utils.predictions_to_xml_single(
                             predictor_file_path, image_path, xml_output_path
                         )
+                    else:
+                        logger.warning(f"No valid predictor model file available for view_type={view_type} (predictor={predictor_file_path}). Creating minimal XML.")
+                        _create_minimal_xml(image_path, xml_output_path)
 
                     # Generate CSV and TPS output files in the session outputs folder
                     csv_output_path = os.path.join(
@@ -1838,8 +1846,10 @@ def process_existing():
 
         # Generate XML if it doesn't exist
         if not os.path.exists(xml_path):
+            if view_type.lower() == "free":
+                _create_minimal_xml(image_path, xml_path)
             # Use YOLO-based prediction for toepad, detector-based for others, or original function
-            if view_type.lower() == "toepad" and yolo_model_path and os.path.exists(yolo_model_path):
+            elif view_type.lower() == "toepad" and yolo_model_path and os.path.exists(yolo_model_path):
                 utils.predictions_to_xml_single_with_yolo(
                     image_path, 
                     xml_path, 
@@ -1851,7 +1861,7 @@ def process_existing():
                     cached_yolo_model=get_cached_yolo_model(),
                     cached_dlib_predictors=get_cached_dlib_predictors()
                 )
-            elif view_type.lower() == "dorsal":
+            elif view_type.lower() == "dorsal" and DORSAL_PREDICTOR_FILE and os.path.exists(DORSAL_PREDICTOR_FILE):
                 logger.info(f"Using Hybrid Best-Performance prediction for dorsal view (existing image)")
                 utils.predictions_to_xml_dorsal_hybrid(
                     image_path,
@@ -1864,12 +1874,33 @@ def process_existing():
                 utils.predictions_to_xml_single_with_detector(
                     predictor_file_path, image_path, xml_path, detector_file_path
                 )
-            else:
+            elif predictor_file_path and os.path.exists(predictor_file_path):
                 utils.predictions_to_xml_single(
                     predictor_file_path, image_path, xml_path
                 )
+            else:
+                logger.warning(f"No valid predictor model file available for view_type={view_type} (predictor={predictor_file_path}). Creating minimal XML.")
+                _create_minimal_xml(image_path, xml_path)
+
             utils.dlib_xml_to_pandas(xml_path)
             utils.dlib_xml_to_tps(xml_path)
+
+        csv_path = os.path.join(
+            session_data["outputs_folder"], f"output_{filename}.csv"
+        )
+        tps_path = os.path.join(
+            session_data["outputs_folder"], f"output_{filename}.tps"
+        )
+        if not os.path.exists(csv_path) and os.path.exists(xml_path):
+            try:
+                utils.dlib_xml_to_pandas(xml_path)
+            except Exception as _e:
+                logger.warning(f"Failed to generate csv from xml: {_e}")
+        if not os.path.exists(tps_path) and os.path.exists(xml_path):
+            try:
+                utils.dlib_xml_to_tps(xml_path)
+            except Exception as _e:
+                logger.warning(f"Failed to generate tps from xml: {_e}")
 
         # Copy all files to export directory
         export_handler.copy_file_to_export(image_path, export_dir)
@@ -2337,7 +2368,7 @@ def verify_webhook_signature(payload, signature):
 
 
 DEPLOY_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "deploy.sh")
-DEPLOY_LOG_PATH = "/var/log/lizardmorph/deploy.log"
+DEPLOY_LOG_PATH = "/var/log/automorph/deploy.log" if os.path.exists("/var/log/automorph") else "/var/log/lizardmorph/deploy.log"
 
 
 @app.route("/webhook", methods=["POST"])
@@ -2437,7 +2468,6 @@ def extract_id():
 
         if id_box_json:
             # Client provided the ID box — use it directly (no server-side YOLO needed)
-            import cv2
             id_box = json.loads(id_box_json)
             img = cv2.imread(image_path)
             if img is None:
@@ -2467,7 +2497,6 @@ def extract_id():
                 }), 404
 
         # Fallback: use server-side YOLO via OrtYoloDetector (no ultralytics needed)
-        import cv2
         yolo_model = get_cached_yolo_model()
         if yolo_model is None:
             return jsonify({"error": "No ID box provided and YOLO model not available"}), 501
