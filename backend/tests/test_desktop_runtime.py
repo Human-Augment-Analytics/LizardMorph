@@ -298,7 +298,7 @@ def test_hosted_backend_keeps_answering_every_origin(hosted_cors):
         assert origin_case["preflight"] in allowed
 
 
-def test_configured_origins_override_the_desktop_allowlist(tmp_path):
+def test_configured_origins_extend_the_desktop_allowlist(tmp_path):
     payload = _cors_probe(
         tmp_path,
         {
@@ -309,11 +309,11 @@ def test_configured_origins_override_the_desktop_allowlist(tmp_path):
 
     assert payload["foreign"]["simple"] == "https://evil.test"
     assert payload["foreign"]["preflight"] == "https://evil.test"
-    assert payload["custom_scheme"]["simple"] is None
-    assert payload["custom_scheme"]["preflight"] is None
+    assert payload["custom_scheme"]["simple"] == "tauri://localhost"
+    assert payload["custom_scheme"]["preflight"] == "tauri://localhost"
 
 
-def test_a_data_root_file_overrides_the_desktop_allowlist(tmp_path):
+def test_a_data_root_file_still_admits_the_desktop_webview(tmp_path):
     (tmp_path / "cors-origins.txt").write_text(
         "# support override\nhttps://evil.test\n", encoding="utf-8"
     )
@@ -322,23 +322,24 @@ def test_a_data_root_file_overrides_the_desktop_allowlist(tmp_path):
 
     assert payload["foreign"]["simple"] == "https://evil.test"
     assert payload["foreign"]["preflight"] == "https://evil.test"
-    assert payload["custom_scheme"]["simple"] is None
-    assert payload["desktop"]["simple"] is None
+    assert payload["custom_scheme"]["simple"] == "tauri://localhost"
+    assert payload["desktop"]["simple"] == "http://tauri.localhost"
 
 
-def test_the_environment_override_wins_over_the_data_root_file(tmp_path):
-    (tmp_path / "cors-origins.txt").write_text("https://replacement.test\n", encoding="utf-8")
+def test_the_environment_override_replaces_the_data_root_file(tmp_path):
+    (tmp_path / "cors-origins.txt").write_text("https://evil.test\n", encoding="utf-8")
 
     payload = _cors_probe(
         tmp_path,
         {
             "AUTOMORPH_PARENT_PID": "4242",
-            "AUTOMORPH_CORS_ORIGINS": "https://evil.test",
+            "AUTOMORPH_CORS_ORIGINS": "https://replacement.test",
         },
     )
 
-    assert payload["foreign"]["simple"] == "https://evil.test"
-    assert payload["custom_scheme"]["simple"] is None
+    assert payload["foreign"]["simple"] is None
+    assert payload["foreign"]["preflight"] is None
+    assert payload["custom_scheme"]["simple"] == "tauri://localhost"
 
 
 def test_a_data_root_file_does_not_widen_a_hosted_deployment(tmp_path):

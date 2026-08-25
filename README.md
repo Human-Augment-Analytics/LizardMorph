@@ -284,8 +284,10 @@ AutoMorph's data folder is `~/Library/Application Support/AutoMorph` on macOS,
 `~/.local/share/AutoMorph`) on Linux; `AUTOMORPH_DATA_DIR` overrides it.
 `cors-origins.txt` holds one origin per line, `#` starts a comment, and commas
 separate several origins on a line. The file must be plain UTF-8 text — an
-unreadable file is ignored and the built-in allowlist stays in force. The
-`AUTOMORPH_CORS_ORIGINS` environment variable overrides the file.
+unreadable file is ignored. Origins listed there are added to AutoMorph's own
+window origins, which stay allowed either way, so an override can never lock
+the app out of its own backend. The `AUTOMORPH_CORS_ORIGINS` environment
+variable is read instead of the file when it is set.
 
 ## ⚠️ Known Issues and Limitations
 

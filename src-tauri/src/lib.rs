@@ -275,6 +275,12 @@ fn report_backend_unavailable(app_handle: &tauri::AppHandle, message: &'static s
     }
 }
 
+/// A sidecar started while the app is tearing down is orphaned immediately and
+/// keeps the port until its parent watchdog fires, so a quit outranks a retry.
+fn respawn_permitted(respawns_left: u32, shutting_down: bool) -> bool {
+    respawns_left > 0 && !shutting_down
+}
+
 fn supervise_backend(app_handle: tauri::AppHandle, supervisor: Option<String>) {
     tauri::async_runtime::spawn_blocking(move || {
         let address = SocketAddr::from(([127, 0, 0, 1], BACKEND_PORT));
@@ -305,12 +311,27 @@ fn supervise_backend(app_handle: tauri::AppHandle, supervisor: Option<String>) {
             let Some(token) = supervisor.as_deref() else {
                 break;
             };
-            if respawns_left == 0 {
+            if !respawn_permitted(
+                respawns_left,
+                app_handle
+                    .state::<BackendProcess>()
+                    .shutting_down
+                    .load(Ordering::SeqCst),
+            ) {
                 break;
             }
             respawns_left -= 1;
             thread::sleep(BACKEND_RESPAWN_DELAY);
             if Instant::now() >= deadline {
+                break;
+            }
+            if !respawn_permitted(
+                1,
+                app_handle
+                    .state::<BackendProcess>()
+                    .shutting_down
+                    .load(Ordering::SeqCst),
+            ) {
                 break;
             }
             eprintln!("AutoMorph backend sidecar exited before becoming ready; retrying");
@@ -773,6 +794,18 @@ mod tests {
             BACKEND_START_FAILED_MESSAGE
         );
         drop(listener);
+    }
+
+    #[test]
+    fn a_quit_during_startup_outranks_a_remaining_respawn() {
+        assert!(!respawn_permitted(BACKEND_SPAWN_RETRIES, true));
+        assert!(respawn_permitted(BACKEND_SPAWN_RETRIES, false));
+    }
+
+    #[test]
+    fn an_exhausted_respawn_budget_stops_the_supervisor() {
+        assert!(!respawn_permitted(0, false));
+        assert!(!respawn_permitted(0, true));
     }
 
     #[test]

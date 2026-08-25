@@ -144,11 +144,14 @@ def read_cors_origins_override():
 
 def get_cors_origins():
     configured = parse_cors_origins(os.getenv("AUTOMORPH_CORS_ORIGINS"))
-    if configured:
-        return configured
     if get_bind_host() != "127.0.0.1":
+        return configured or "*"
+    override = configured or read_cors_origins_override()
+    if override == "*":
         return "*"
-    return read_cors_origins_override() or list(DESKTOP_WEBVIEW_ORIGINS)
+    return list(DESKTOP_WEBVIEW_ORIGINS) + [
+        origin for origin in (override or []) if origin not in DESKTOP_WEBVIEW_ORIGINS
+    ]
 
 
 def get_model_path(relative_path):
