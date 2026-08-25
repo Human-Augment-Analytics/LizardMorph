@@ -3,9 +3,9 @@
   "version": "1.0.8",
   "private": true,
   "scripts": {
-    "tauri": "node frontend/node_modules/@tauri-apps/cli/tauri.js",
-    "tauri:dev": "node frontend/node_modules/@tauri-apps/cli/tauri.js dev",
-    "tauri:build": "node frontend/node_modules/@tauri-apps/cli/tauri.js build",
+    "tauri": "node node_modules/@tauri-apps/cli/tauri.js",
+    "tauri:dev": "node node_modules/@tauri-apps/cli/tauri.js dev",
+    "tauri:build": "node node_modules/@tauri-apps/cli/tauri.js build",
     "sidecar:build": "bash scripts/build-tauri-sidecar.sh",
     "dev": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build",

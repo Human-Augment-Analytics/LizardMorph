@@ -122,7 +122,11 @@ def resolve_source_image(image_name, source_folder):
     if os.path.isfile(direct):
         return direct
 
-    stem = os.path.splitext(basename)[0].lower()
+    stem, ext = os.path.splitext(basename)
+    wanted = {basename.lower()}
+    if ext.lower() in SOURCE_IMAGE_EXTENSIONS:
+        wanted.add(stem.lower())
+
     try:
         entries = sorted(os.listdir(source_folder))
     except OSError:
@@ -130,7 +134,7 @@ def resolve_source_image(image_name, source_folder):
 
     for entry in entries:
         entry_stem, entry_ext = os.path.splitext(entry)
-        if entry_stem.lower() == stem and entry_ext.lower() in SOURCE_IMAGE_EXTENSIONS:
+        if entry_stem.lower() in wanted and entry_ext.lower() in SOURCE_IMAGE_EXTENSIONS:
             candidate = os.path.join(source_folder, entry)
             if os.path.isfile(candidate):
                 return candidate

@@ -68,6 +68,22 @@ class SessionManager:
 
         return "_".join(parts[1:-1]), parts[-1]
 
+    def find_session_folder(self, session_id_short: str) -> Optional[str]:
+        """Locate a session folder by the short ID its image URLs carry."""
+        if not os.path.exists(self.base_sessions_dir):
+            return None
+
+        for folder_name in os.listdir(self.base_sessions_dir):
+            parsed = self.parse_session_folder_name(folder_name)
+            if not parsed or parsed[1] != session_id_short:
+                continue
+
+            session_folder = os.path.join(self.base_sessions_dir, folder_name)
+            if os.path.isdir(session_folder):
+                return session_folder
+
+        return None
+
     def create_session(self, session_id: str = None) -> str:
         """
         Create a new session with a unique session ID.

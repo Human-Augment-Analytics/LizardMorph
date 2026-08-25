@@ -1612,7 +1612,7 @@ def process_scatter_data():
         session_data = get_session_folders(session_id)
 
         # Remove file extension if present
-        base_name = name.split(".")[0] if "." in name else name
+        base_name = os.path.splitext(name)[0]
 
         # Create export directory for this output
         export_dir = export_handler.create_export_directory(name)
@@ -1711,17 +1711,11 @@ def process_scatter_data():
 def serve_session_image(session_id_short, filename):
     """Serve images from session-specific folders."""
     try:
-        # Find session by short ID
-        sessions = session_manager.list_sessions()
-        session_data = None
-
-        for session in sessions:
-            if session["session_id_short"] == session_id_short:
-                session_folder = session["session_folder"]
-                image_download_folder = os.path.join(session_folder, "annotated")
-                if os.path.exists(os.path.join(image_download_folder, filename)):
-                    return send_from_directory(image_download_folder, filename)
-                break
+        session_folder = session_manager.find_session_folder(session_id_short)
+        if session_folder:
+            image_download_folder = os.path.join(session_folder, "annotated")
+            if os.path.exists(os.path.join(image_download_folder, filename)):
+                return send_from_directory(image_download_folder, filename)
 
         # Fallback to global folder for backward compatibility
         return send_from_directory(IMAGE_DOWNLOAD_FOLDER, filename)
@@ -1989,7 +1983,7 @@ def save_annotations():
         session_data = get_session_folders(session_id)
 
         # Remove file extension if present for base name
-        base_name = name.split(".")[0] if "." in name else name
+        base_name = os.path.splitext(name)[0]
 
         # Create timestamp for version control
         timestamp = int(time.time())
@@ -2134,58 +2128,6 @@ def save_annotations():
                     "message": "Annotations saved but image creation failed",
                     "export_dir": export_dir,
                     "session_id": session_id,
-                    "error": str(img_e),
-                }
-            )
-
-    except Exception as e:
-        logger.error(f"Error saving annotations: {str(e)}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-
-        logger.info(f"Created TPS file at: {tps_file_path}")
-        logger.info(f"Created TPS file in export directory: {export_tps_path}")
-
-        # Generate annotated image with updated points
-        try:
-            output_paths = visual_individual_performance.create_image(
-                tps_file_path, IMAGE_DOWNLOAD_FOLDER, session_data["upload_folder"]
-            )
-
-            # Copy all generated files to the export directory
-            if os.path.exists(xml_path):
-                export_handler.copy_file_to_export(
-                    xml_path, export_dir, os.path.basename(xml_path)
-                )
-            if os.path.exists(csv_path):
-                export_handler.copy_file_to_export(
-                    csv_path, export_dir, os.path.basename(csv_path)
-                )
-
-            # Copy the annotated images
-            for path in output_paths:
-                export_handler.copy_file_to_export(path, export_dir)
-
-            logger.info(f"Annotations saved successfully for {name}")
-
-            return jsonify(
-                {
-                    "message": "Annotations saved successfully",
-                    "export_dir": export_dir,
-                    "files": {
-                        "xml": xml_path if os.path.exists(xml_path) else None,
-                        "csv": csv_path if os.path.exists(csv_path) else None,
-                        "tps": tps_path if os.path.exists(tps_path) else None,
-                        "images": output_paths,
-                    },
-                }
-            )
-
-        except Exception as img_e:
-            logger.error(f"Error creating annotated image: {str(img_e)}", exc_info=True)
-            return jsonify(
-                {
-                    "message": "Annotations saved but image creation failed",
-                    "export_dir": export_dir,
                     "error": str(img_e),
                 }
             )
