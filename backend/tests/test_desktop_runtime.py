@@ -1,5 +1,7 @@
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -7,6 +9,8 @@ import pytest
 import app as app_module
 import predictor_library
 from session_manager import SessionManager
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 
 def test_bind_host_is_loopback_when_supervised_by_the_tauri_sidecar(monkeypatch):
@@ -133,8 +137,35 @@ def test_clear_session_sweeps_the_injected_runtime_root_not_the_sessions_parent(
     assert stray_in_sessions_parent.exists()
 
 
-def test_app_session_manager_sweeps_the_configured_runtime_root():
-    assert app_module.session_manager.runtime_root == os.path.abspath(app_module.RUNTIME_ROOT)
+def test_app_session_manager_sweeps_the_runtime_root_when_sessions_are_nested(tmp_path):
+    probe = (
+        "import json, sys;"
+        " import app;"
+        " sys.stdout.write("
+        "'<<<' + json.dumps({"
+        "'runtime_root': app.session_manager.runtime_root,"
+        " 'expected': app.RUNTIME_ROOT,"
+        " 'sessions_folder': app.SESSIONS_FOLDER}) + '>>>')"
+    )
+    environment = dict(os.environ)
+    environment["SESSION_DIR"] = os.path.join("data", "sessions")
+    environment["PYTHONPATH"] = str(BACKEND_DIR)
+
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=str(tmp_path),
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout.split("<<<", 1)[1].split(">>>", 1)[0])
+
+    assert payload["sessions_folder"] == str(tmp_path / "data" / "sessions")
+    assert payload["runtime_root"] == os.path.abspath(payload["expected"])
+    assert payload["runtime_root"] != os.path.dirname(payload["sessions_folder"])
 
 
 TAURI_ORIGIN = "http://tauri.localhost"

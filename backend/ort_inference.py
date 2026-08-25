@@ -9,6 +9,8 @@ all 6 classes: up_finger, up_toe, bot_finger, bot_toe, ruler, id.
 """
 
 import math
+import threading
+
 import numpy as np
 import cv2
 import onnxruntime as ort
@@ -58,31 +60,47 @@ class OrtYoloDetector:
         """
         self.model_path = model_path
         providers = _get_execution_providers()
-        self.session = ort.InferenceSession(
-            model_path,
-            providers=providers,
+        self._session_lock = threading.Lock()
+        self._install_session(
+            ort.InferenceSession(model_path, providers=providers),
+            providers == ["CPUExecutionProvider"],
         )
-        self.input_name = self.session.get_inputs()[0].name
-        self.output_name = self.session.get_outputs()[0].name
         print(f"[OrtYoloDetector] Loaded model from {model_path}")
 
+    def _install_session(self, session, cpu_only: bool):
+        self.session = session
+        self.input_name = session.get_inputs()[0].name
+        self.output_name = session.get_outputs()[0].name
+        self._cpu_only = cpu_only
+
+    def _current_session(self):
+        with self._session_lock:
+            return self.session, self.input_name, self.output_name, self._cpu_only
+
+    def _cpu_session(self):
+        with self._session_lock:
+            if not self._cpu_only:
+                print(
+                    "[OrtYoloDetector] Non-finite accelerator output; retrying with CPUExecutionProvider"
+                )
+                self._install_session(
+                    ort.InferenceSession(
+                        self.model_path,
+                        providers=["CPUExecutionProvider"],
+                    ),
+                    True,
+                )
+            return self.session, self.input_name, self.output_name
+
     def _run(self, tensor: np.ndarray) -> np.ndarray:
-        output = self.session.run([self.output_name], {self.input_name: tensor})[0]
+        session, input_name, output_name, cpu_only = self._current_session()
+        output = session.run([output_name], {input_name: tensor})[0]
         if np.all(np.isfinite(output)):
             return output
 
-        active_providers = self.session.get_providers()
-        if active_providers != ["CPUExecutionProvider"]:
-            print(
-                "[OrtYoloDetector] Non-finite accelerator output; retrying with CPUExecutionProvider"
-            )
-            self.session = ort.InferenceSession(
-                self.model_path,
-                providers=["CPUExecutionProvider"],
-            )
-            self.input_name = self.session.get_inputs()[0].name
-            self.output_name = self.session.get_outputs()[0].name
-            output = self.session.run([self.output_name], {self.input_name: tensor})[0]
+        if not cpu_only:
+            session, input_name, output_name = self._cpu_session()
+            output = session.run([output_name], {input_name: tensor})[0]
 
         if not np.all(np.isfinite(output)):
             raise RuntimeError("ONNX detector produced non-finite output")
