@@ -111,6 +111,19 @@ def get_bind_host():
     return "0.0.0.0"
 
 
+DESKTOP_WEBVIEW_ORIGINS = [
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "https://tauri.localhost",
+]
+
+
+def get_cors_origins():
+    if get_bind_host() == "127.0.0.1":
+        return list(DESKTOP_WEBVIEW_ORIGINS)
+    return "*"
+
+
 def get_model_path(relative_path):
     if relative_path is None:
         return None
@@ -430,13 +443,21 @@ app.secret_key = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 app.config["SESSION_TYPE"] = "filesystem"
 
 
+CORS_ORIGINS = get_cors_origins()
+CORS_ALLOW_HEADERS = ["Content-Type", "X-Session-ID"]
+CORS_METHODS = ["GET", "HEAD", "POST", "DELETE", "OPTIONS"]
+
+app.config["CORS_ORIGINS"] = CORS_ORIGINS
+app.config["CORS_ALLOW_HEADERS"] = CORS_ALLOW_HEADERS
+app.config["CORS_METHODS"] = CORS_METHODS
+
 CORS(
     app,
     resources={
         r"/*": {
-            "origins": "*",  # Allow all origins during development
-            "methods": ["GET", "POST", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "X-Session-ID"],
+            "origins": CORS_ORIGINS,
+            "methods": CORS_METHODS,
+            "allow_headers": CORS_ALLOW_HEADERS,
         }
     },
 )

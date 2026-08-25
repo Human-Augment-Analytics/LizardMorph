@@ -93,8 +93,12 @@ if [[ -z "${BACKEND_PYTHON}" || ! -x "${BACKEND_PYTHON}" ]]; then
   exit 1
 fi
 
-"${BACKEND_PYTHON}" -c 'import cv2, dlib, flask, numpy, onnxruntime, PIL, psutil' || {
-  echo "The selected Python environment is missing backend dependencies. Run 'make setup-backend'." >&2
+PREFLIGHT_MODULES='cv2, dlib, flask, numpy, onnxruntime, PIL, psutil'
+if [[ "${TARGET_TRIPLE}" == *darwin* ]]; then
+  PREFLIGHT_MODULES="${PREFLIGHT_MODULES}, Vision, Quartz, objc"
+fi
+"${BACKEND_PYTHON}" -c "import ${PREFLIGHT_MODULES}" || {
+  echo "The selected Python environment is missing backend dependencies (${PREFLIGHT_MODULES}). Run 'make setup-backend'." >&2
   exit 1
 }
 

@@ -1,9 +1,28 @@
 import cv2
+import logging
 import numpy as np
 import re
 import math
 
+_logger = logging.getLogger(__name__)
+
 _reader = None
+
+
+def _build_fallback_reader(native_error):
+    """Return an OCR reader for runtimes where the native backend is unusable."""
+    try:
+        import easyocr
+    except ImportError:
+        from native_ocr import _NullReader
+
+        _logger.warning(
+            "No OCR backend is available (native OCR failed: %s; easyocr is not "
+            "installed). ID extraction will return no text.",
+            native_error,
+        )
+        return _NullReader()
+    return easyocr.Reader(["en"], gpu=False)
 
 
 def _get_reader():
@@ -15,10 +34,8 @@ def _get_reader():
         from native_ocr import _create_reader
 
         _reader = _create_reader()
-    except Exception:
-        import easyocr
-
-        _reader = easyocr.Reader(["en"], gpu=False)
+    except Exception as native_error:
+        _reader = _build_fallback_reader(native_error)
     return _reader
 
 def crop_from_yolo_box(image, x_center, y_center, box_width, box_height, enhance=True, target_size=(128, 64)):

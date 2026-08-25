@@ -224,3 +224,69 @@ def test_cross_origin_delete_response_is_readable_by_the_desktop_webview(client,
     assert all(
         tmp_path.resolve() in ensured_dir.parents for ensured_dir in ensured_dirs
     )
+
+
+CORS_PROBE = (
+    "import json, sys;"
+    " import app;"
+    " client = app.app.test_client();"
+    " probe = lambda origin: {"
+    "'origin': origin,"
+    " 'simple': client.get('/health', headers={'Origin': origin}).headers.get("
+    "'Access-Control-Allow-Origin'),"
+    " 'preflight': client.options('/list_uploads', headers={"
+    "'Origin': origin,"
+    " 'Access-Control-Request-Method': 'GET',"
+    " 'Access-Control-Request-Headers': 'x-session-id'}).headers.get("
+    "'Access-Control-Allow-Origin')};"
+    " sys.stdout.write('<<<' + json.dumps({"
+    "'desktop': probe('http://tauri.localhost'),"
+    " 'custom_scheme': probe('tauri://localhost'),"
+    " 'foreign': probe('https://evil.test')}) + '>>>')"
+)
+
+
+def _cors_probe(tmp_path, supervised):
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = str(BACKEND_DIR)
+    if supervised:
+        environment["AUTOMORPH_PARENT_PID"] = "4242"
+    else:
+        environment.pop("AUTOMORPH_PARENT_PID", None)
+
+    completed = subprocess.run(
+        [sys.executable, "-c", CORS_PROBE],
+        cwd=str(tmp_path),
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(completed.stdout.split("<<<", 1)[1].split(">>>", 1)[0])
+
+
+def test_desktop_backend_answers_its_own_webview_across_origins(tmp_path):
+    payload = _cors_probe(tmp_path, supervised=True)
+
+    assert payload["desktop"]["simple"] == "http://tauri.localhost"
+    assert payload["desktop"]["preflight"] == "http://tauri.localhost"
+    assert payload["custom_scheme"]["simple"] == "tauri://localhost"
+    assert payload["custom_scheme"]["preflight"] == "tauri://localhost"
+
+
+def test_desktop_backend_is_unreadable_by_a_foreign_web_page(tmp_path):
+    payload = _cors_probe(tmp_path, supervised=True)
+
+    assert payload["foreign"]["simple"] is None
+    assert payload["foreign"]["preflight"] is None
+
+
+def test_hosted_backend_keeps_answering_every_origin(tmp_path):
+    payload = _cors_probe(tmp_path, supervised=False)
+
+    for origin_case in payload.values():
+        allowed = ("*", origin_case["origin"])
+        assert origin_case["simple"] in allowed
+        assert origin_case["preflight"] in allowed

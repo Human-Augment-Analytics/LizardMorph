@@ -221,72 +221,74 @@ export class SessionService {
   }
 
   /**
+   * Local storage accessors that tolerate runtimes without a DOM (SSR, tests)
+   */
+  private static readStored(key: string): string | null {
+    if (this.useCookies) {
+      return CookieUtils.getCookie(key);
+    }
+    if (typeof localStorage === "undefined") {
+      return null;
+    }
+    return localStorage.getItem(key);
+  }
+
+  private static writeStored(key: string, value: string): void {
+    if (this.useCookies) {
+      CookieUtils.setCookie(key, value, this.COOKIE_EXPIRY_DAYS);
+      return;
+    }
+    if (typeof localStorage === "undefined") {
+      return;
+    }
+    localStorage.setItem(key, value);
+  }
+
+  private static removeStored(key: string): void {
+    if (this.useCookies) {
+      CookieUtils.deleteCookie(key);
+      return;
+    }
+    if (typeof localStorage === "undefined") {
+      return;
+    }
+    localStorage.removeItem(key);
+  }
+
+  /**
    * Get stored session ID from cookies or sessionStorage
    */
   private static getStoredSessionId(): string | null {
-    if (this.useCookies) {
-      return CookieUtils.getCookie(this.SESSION_KEY);
-    }
-    return localStorage.getItem(this.SESSION_KEY);
+    return this.readStored(this.SESSION_KEY);
   }
 
   /**
    * Get stored timestamp from cookies or sessionStorage
    */
   private static getStoredTimestamp(): string | null {
-    if (this.useCookies) {
-      return CookieUtils.getCookie(this.SESSION_TIMESTAMP_KEY);
-    }
-    return localStorage.getItem(this.SESSION_TIMESTAMP_KEY);
+    return this.readStored(this.SESSION_TIMESTAMP_KEY);
   }
 
   /**
    * Store session ID and timestamp
    */
   private static storeSession(sessionId: string): void {
-    if (this.useCookies) {
-      CookieUtils.setCookie(
-        this.SESSION_KEY,
-        sessionId,
-        this.COOKIE_EXPIRY_DAYS
-      );
-      CookieUtils.setCookie(
-        this.SESSION_TIMESTAMP_KEY,
-        Date.now().toString(),
-        this.COOKIE_EXPIRY_DAYS
-      );
-    } else {
-      localStorage.setItem(this.SESSION_KEY, sessionId);
-      localStorage.setItem(this.SESSION_TIMESTAMP_KEY, Date.now().toString());
-    }
+    this.writeStored(this.SESSION_KEY, sessionId);
+    this.writeStored(this.SESSION_TIMESTAMP_KEY, Date.now().toString());
   }
 
   /**
    * Update stored timestamp
    */
   private static updateStoredTimestamp(): void {
-    const now = Date.now().toString();
-    if (this.useCookies) {
-      CookieUtils.setCookie(
-        this.SESSION_TIMESTAMP_KEY,
-        now,
-        this.COOKIE_EXPIRY_DAYS
-      );
-    } else {
-      localStorage.setItem(this.SESSION_TIMESTAMP_KEY, now);
-    }
+    this.writeStored(this.SESSION_TIMESTAMP_KEY, Date.now().toString());
   }
 
   /**
    * Remove stored session data
    */
   private static removeStoredSession(): void {
-    if (this.useCookies) {
-      CookieUtils.deleteCookie(this.SESSION_KEY);
-      CookieUtils.deleteCookie(this.SESSION_TIMESTAMP_KEY);
-    } else {
-      localStorage.removeItem(this.SESSION_KEY);
-      localStorage.removeItem(this.SESSION_TIMESTAMP_KEY);
-    }
+    this.removeStored(this.SESSION_KEY);
+    this.removeStored(this.SESSION_TIMESTAMP_KEY);
   }
 }
