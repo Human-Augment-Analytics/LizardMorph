@@ -5,10 +5,8 @@ from pathlib import Path
 import pytest
 
 import app as app_module
+import predictor_library
 from session_manager import SessionManager
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_PREDICTOR_LIBRARY = REPO_ROOT / "models" / "custom_predictors"
 
 
 def test_bind_host_is_loopback_when_supervised_by_the_tauri_sidecar(monkeypatch):
@@ -175,8 +173,15 @@ def test_cross_origin_preflight_allows_every_method_the_desktop_frontend_uses(cl
     assert method in _allowed_methods(response)
 
 
-def test_cross_origin_delete_response_is_readable_by_the_desktop_webview(client, tmp_path):
-    default_library_existed = DEFAULT_PREDICTOR_LIBRARY.exists()
+def test_cross_origin_delete_response_is_readable_by_the_desktop_webview(client, tmp_path, monkeypatch):
+    ensured_dirs = []
+    real_ensure_dir = predictor_library.ensure_dir
+
+    def recording_ensure_dir(path):
+        ensured_dirs.append(Path(path).resolve())
+        real_ensure_dir(path)
+
+    monkeypatch.setattr(predictor_library, "ensure_dir", recording_ensure_dir)
 
     response = client.delete(
         "/predictors/does-not-exist",
@@ -184,5 +189,7 @@ def test_cross_origin_delete_response_is_readable_by_the_desktop_webview(client,
     )
 
     assert response.headers.get("Access-Control-Allow-Origin") in (TAURI_ORIGIN, "*")
-    assert (tmp_path / "custom_predictors" / "files").is_dir()
-    assert DEFAULT_PREDICTOR_LIBRARY.exists() is default_library_existed
+    assert ensured_dirs
+    assert all(
+        tmp_path.resolve() in ensured_dir.parents for ensured_dir in ensured_dirs
+    )

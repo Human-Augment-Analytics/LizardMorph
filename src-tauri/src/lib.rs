@@ -17,6 +17,7 @@ use tauri_plugin_shell::{
 
 const BACKEND_PORT: u16 = 3005;
 const BACKEND_READY_TIMEOUT: Duration = Duration::from_secs(180);
+const BACKEND_UNSUPERVISED_READY_TIMEOUT: Duration = Duration::from_secs(60);
 const BACKEND_RESPAWN_DELAY: Duration = Duration::from_millis(1500);
 const BACKEND_SPAWN_RETRIES: u32 = 2;
 const PROBE_CONNECT_TIMEOUT: Duration = Duration::from_millis(150);
@@ -30,6 +31,7 @@ const BACKEND_START_FAILED_MESSAGE: &str =
     "AutoMorph could not start its analysis backend. Restart AutoMorph; if this keeps happening, reinstall it.";
 const BACKEND_STOPPED_MESSAGE: &str =
     "AutoMorph's analysis backend stopped unexpectedly. Restart AutoMorph to continue.";
+const BACKEND_NOT_RUNNING_MESSAGE: &str = "AutoMorph's analysis backend is not answering on 127.0.0.1:3005. Start it with 'make dev' (or 'make dev-backend') and reload this window.";
 
 #[derive(Default)]
 struct BackendProcess {
@@ -125,6 +127,23 @@ fn backend_failure_message(address: &SocketAddr) -> &'static str {
     }
 }
 
+/// Without a supervisor token this app did not spawn the backend, so the wait is
+/// sized for a developer-run server and the copy points at it instead of the bundle.
+fn readiness_timeout(supervisor: Option<&str>) -> Duration {
+    if supervisor.is_some() {
+        BACKEND_READY_TIMEOUT
+    } else {
+        BACKEND_UNSUPERVISED_READY_TIMEOUT
+    }
+}
+
+fn unavailable_message(supervisor: Option<&str>, address: &SocketAddr) -> &'static str {
+    if supervisor.is_none() {
+        return BACKEND_NOT_RUNNING_MESSAGE;
+    }
+    backend_failure_message(address)
+}
+
 fn report_backend_unavailable(app_handle: &tauri::AppHandle, message: &'static str) {
     *app_handle
         .state::<BackendProcess>()
@@ -141,7 +160,8 @@ fn report_backend_unavailable(app_handle: &tauri::AppHandle, message: &'static s
 fn supervise_backend(app_handle: tauri::AppHandle, supervisor: Option<String>) {
     tauri::async_runtime::spawn_blocking(move || {
         let address = SocketAddr::from(([127, 0, 0, 1], BACKEND_PORT));
-        let deadline = Instant::now() + BACKEND_READY_TIMEOUT;
+        let ready_timeout = readiness_timeout(supervisor.as_deref());
+        let deadline = Instant::now() + ready_timeout;
         let mut respawns_left = if supervisor.is_some() {
             BACKEND_SPAWN_RETRIES
         } else {
@@ -200,9 +220,12 @@ fn supervise_backend(app_handle: tauri::AppHandle, supervisor: Option<String>) {
         } else {
             eprintln!(
                 "AutoMorph backend never answered /health on 127.0.0.1:{BACKEND_PORT} within {} seconds",
-                BACKEND_READY_TIMEOUT.as_secs()
+                ready_timeout.as_secs()
             );
-            report_backend_unavailable(&app_handle, backend_failure_message(&address));
+            report_backend_unavailable(
+                &app_handle,
+                unavailable_message(supervisor.as_deref(), &address),
+            );
         }
 
         if let Some(window) = app_handle.get_webview_window("main") {
@@ -448,6 +471,36 @@ mod tests {
             backend_failure_message(&closed_port()),
             BACKEND_START_FAILED_MESSAGE
         );
+    }
+
+    #[test]
+    fn an_unsupervised_backend_is_never_blamed_on_the_bundle() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let occupied = listener.local_addr().unwrap();
+
+        assert_eq!(
+            unavailable_message(None, &occupied),
+            BACKEND_NOT_RUNNING_MESSAGE
+        );
+        assert_eq!(
+            unavailable_message(None, &closed_port()),
+            BACKEND_NOT_RUNNING_MESSAGE
+        );
+        assert_eq!(
+            unavailable_message(Some("4242"), &occupied),
+            BACKEND_PORT_IN_USE_MESSAGE
+        );
+        assert_eq!(
+            unavailable_message(Some("4242"), &closed_port()),
+            BACKEND_START_FAILED_MESSAGE
+        );
+        drop(listener);
+    }
+
+    #[test]
+    fn an_unsupervised_backend_is_not_waited_on_for_the_packaged_timeout() {
+        assert_eq!(readiness_timeout(Some("4242")), BACKEND_READY_TIMEOUT);
+        assert!(readiness_timeout(None) < BACKEND_READY_TIMEOUT);
     }
 
     #[test]
