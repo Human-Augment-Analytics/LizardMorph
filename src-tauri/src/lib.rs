@@ -25,7 +25,6 @@ const PROBE_IO_TIMEOUT: Duration = Duration::from_millis(1000);
 const PROBE_TOTAL_TIMEOUT: Duration = Duration::from_millis(2000);
 const PROBE_INTERVAL: Duration = Duration::from_millis(250);
 const PROBE_RESPONSE_LIMIT: usize = 4096;
-const ORIGIN_PROBE_ATTEMPTS: u32 = 3;
 
 const BACKEND_PORT_IN_USE_MESSAGE: &str = "AutoMorph could not start its analysis backend because another program is already using port 3005. Quit that program — including any earlier copy of AutoMorph — and open AutoMorph again.";
 const BACKEND_START_FAILED_MESSAGE: &str =
@@ -33,25 +32,6 @@ const BACKEND_START_FAILED_MESSAGE: &str =
 const BACKEND_STOPPED_MESSAGE: &str =
     "AutoMorph's analysis backend stopped unexpectedly. Restart AutoMorph to continue.";
 const BACKEND_NOT_RUNNING_MESSAGE: &str = "AutoMorph's analysis backend is not answering on 127.0.0.1:3005. Start it with 'make dev' (or 'make dev-backend') and reload this window.";
-#[cfg(windows)]
-macro_rules! desktop_webview_origin {
-    () => {
-        "http://tauri.localhost"
-    };
-}
-#[cfg(not(windows))]
-macro_rules! desktop_webview_origin {
-    () => {
-        "tauri://localhost"
-    };
-}
-
-const DESKTOP_WEBVIEW_ORIGIN: &str = desktop_webview_origin!();
-const BACKEND_ORIGIN_REJECTED_MESSAGE: &str = concat!(
-    "AutoMorph's analysis backend refused this window's requests from ",
-    desktop_webview_origin!(),
-    ". Put that origin in a file named cors-origins.txt inside AutoMorph's data folder and reopen AutoMorph; if this keeps happening, reinstall it."
-);
 
 #[derive(Default)]
 struct BackendProcess {
@@ -71,7 +51,7 @@ fn overlay_script(message: &str) -> String {
 }
 
 /// Performs one bounded `GET /health` exchange and returns the raw response.
-fn probe_health_endpoint(address: &SocketAddr, origin: Option<&str>) -> Option<String> {
+fn probe_health_endpoint(address: &SocketAddr) -> Option<String> {
     let probe_deadline = Instant::now() + PROBE_TOTAL_TIMEOUT;
 
     let mut stream = TcpStream::connect_timeout(address, PROBE_CONNECT_TIMEOUT).ok()?;
@@ -81,12 +61,8 @@ fn probe_health_endpoint(address: &SocketAddr, origin: Option<&str>) -> Option<S
         return None;
     }
 
-    let origin_header = match origin {
-        Some(origin) => format!("Origin: {origin}\r\n"),
-        None => String::new(),
-    };
     let request = format!(
-        "GET /health HTTP/1.1\r\nHost: 127.0.0.1:{BACKEND_PORT}\r\n{origin_header}Connection: close\r\n\r\n"
+        "GET /health HTTP/1.1\r\nHost: 127.0.0.1:{BACKEND_PORT}\r\nConnection: close\r\n\r\n"
     );
     if stream.write_all(request.as_bytes()).is_err() {
         return None;
@@ -120,17 +96,10 @@ fn http_status_is_ok(head: &str) -> bool {
     status_line.starts_with("HTTP/1.") && status_line.contains(" 200")
 }
 
-fn http_header<'a>(head: &'a str, name: &str) -> Option<&'a str> {
-    head.lines().skip(1).find_map(|line| {
-        let (key, value) = line.split_once(':')?;
-        key.trim().eq_ignore_ascii_case(name).then(|| value.trim())
-    })
-}
-
 /// Confirms the listener on `address` is this app's own backend: it must answer
 /// `/health` with `status: ok` and echo `expected_supervisor` when one is given.
 fn backend_is_healthy(address: &SocketAddr, expected_supervisor: Option<&str>) -> bool {
-    let Some(response) = probe_health_endpoint(address, None) else {
+    let Some(response) = probe_health_endpoint(address) else {
         return false;
     };
     let (head, raw_body) = split_http_response(&response);
@@ -157,47 +126,6 @@ fn backend_is_healthy(address: &SocketAddr, expected_supervisor: Option<&str>) -
         }
         None => true,
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OriginVerdict {
-    Allowed,
-    Rejected,
-    Inconclusive,
-}
-
-/// A healthy backend that rejects this webview's `Origin` leaves the window
-/// visible but unable to complete a single request, so it is checked explicitly.
-fn probe_webview_origin(address: &SocketAddr) -> OriginVerdict {
-    let Some(response) = probe_health_endpoint(address, Some(DESKTOP_WEBVIEW_ORIGIN)) else {
-        return OriginVerdict::Inconclusive;
-    };
-    let (head, _) = split_http_response(&response);
-    if !http_status_is_ok(head) {
-        return OriginVerdict::Inconclusive;
-    }
-    match http_header(head, "access-control-allow-origin") {
-        Some(allowed)
-            if allowed == "*" || allowed.eq_ignore_ascii_case(DESKTOP_WEBVIEW_ORIGIN) =>
-        {
-            OriginVerdict::Allowed
-        }
-        _ => OriginVerdict::Rejected,
-    }
-}
-
-fn webview_origin_verdict(address: &SocketAddr) -> OriginVerdict {
-    for attempt in 0..ORIGIN_PROBE_ATTEMPTS {
-        match probe_webview_origin(address) {
-            OriginVerdict::Inconclusive => {
-                if attempt + 1 < ORIGIN_PROBE_ATTEMPTS {
-                    thread::sleep(PROBE_INTERVAL);
-                }
-            }
-            verdict => return verdict,
-        }
-    }
-    OriginVerdict::Inconclusive
 }
 
 /// A listener still holding the port after the sidecar gave up means the port is
@@ -227,41 +155,6 @@ fn unavailable_message(supervisor: Option<&str>, address: &SocketAddr) -> &'stat
     backend_failure_message(address)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ReadinessVerdict {
-    Ready,
-    Unavailable(&'static str),
-}
-
-/// Without a supervisor token this app neither spawned the backend nor loads the
-/// custom-scheme document, so the webview origin it would assert is not this
-/// window's own origin and the check is not applicable.
-fn readiness_verdict(
-    supervisor: Option<&str>,
-    healthy: bool,
-    address: &SocketAddr,
-) -> ReadinessVerdict {
-    if !healthy {
-        return ReadinessVerdict::Unavailable(unavailable_message(supervisor, address));
-    }
-    if supervisor.is_none() {
-        return ReadinessVerdict::Ready;
-    }
-    match webview_origin_verdict(address) {
-        OriginVerdict::Allowed => ReadinessVerdict::Ready,
-        OriginVerdict::Rejected => {
-            eprintln!(
-                "AutoMorph backend is healthy but rejects the webview origin {DESKTOP_WEBVIEW_ORIGIN}"
-            );
-            ReadinessVerdict::Unavailable(BACKEND_ORIGIN_REJECTED_MESSAGE)
-        }
-        OriginVerdict::Inconclusive => {
-            eprintln!("AutoMorph backend stopped answering before its origin policy could be checked");
-            ReadinessVerdict::Unavailable(unavailable_message(supervisor, address))
-        }
-    }
-}
-
 fn report_backend_unavailable(app_handle: &tauri::AppHandle, message: &'static str) {
     *app_handle
         .state::<BackendProcess>()
@@ -275,10 +168,48 @@ fn report_backend_unavailable(app_handle: &tauri::AppHandle, message: &'static s
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SupervisorStep {
+    KeepProbing,
+    Respawn,
+    Stop,
+}
+
 /// A sidecar started while the app is tearing down is orphaned immediately and
 /// keeps the port until its parent watchdog fires, so a quit outranks a retry.
-fn respawn_permitted(respawns_left: u32, shutting_down: bool) -> bool {
-    respawns_left > 0 && !shutting_down
+fn supervisor_step(
+    supervised: bool,
+    stopped: bool,
+    shutting_down: bool,
+    respawns_left: u32,
+    expired: bool,
+) -> SupervisorStep {
+    if shutting_down || expired {
+        return SupervisorStep::Stop;
+    }
+    if !stopped {
+        return SupervisorStep::KeepProbing;
+    }
+    if !supervised || respawns_left == 0 {
+        return SupervisorStep::Stop;
+    }
+    SupervisorStep::Respawn
+}
+
+fn next_supervisor_step(
+    app_handle: &tauri::AppHandle,
+    supervisor: &Option<String>,
+    respawns_left: u32,
+    deadline: Instant,
+) -> SupervisorStep {
+    let state = app_handle.state::<BackendProcess>();
+    supervisor_step(
+        supervisor.is_some(),
+        state.stopped.load(Ordering::SeqCst),
+        state.shutting_down.load(Ordering::SeqCst),
+        respawns_left,
+        Instant::now() >= deadline,
+    )
 }
 
 fn supervise_backend(app_handle: tauri::AppHandle, supervisor: Option<String>) {
@@ -300,40 +231,22 @@ fn supervise_backend(app_handle: tauri::AppHandle, supervisor: Option<String>) {
             }
             thread::sleep(PROBE_INTERVAL);
 
-            if !app_handle
-                .state::<BackendProcess>()
-                .stopped
-                .load(Ordering::SeqCst)
-            {
-                continue;
+            match next_supervisor_step(&app_handle, &supervisor, respawns_left, deadline) {
+                SupervisorStep::KeepProbing => continue,
+                SupervisorStep::Stop => break,
+                SupervisorStep::Respawn => {}
             }
 
+            thread::sleep(BACKEND_RESPAWN_DELAY);
+            if next_supervisor_step(&app_handle, &supervisor, respawns_left, deadline)
+                != SupervisorStep::Respawn
+            {
+                break;
+            }
             let Some(token) = supervisor.as_deref() else {
                 break;
             };
-            if !respawn_permitted(
-                respawns_left,
-                app_handle
-                    .state::<BackendProcess>()
-                    .shutting_down
-                    .load(Ordering::SeqCst),
-            ) {
-                break;
-            }
             respawns_left -= 1;
-            thread::sleep(BACKEND_RESPAWN_DELAY);
-            if Instant::now() >= deadline {
-                break;
-            }
-            if !respawn_permitted(
-                1,
-                app_handle
-                    .state::<BackendProcess>()
-                    .shutting_down
-                    .load(Ordering::SeqCst),
-            ) {
-                break;
-            }
             eprintln!("AutoMorph backend sidecar exited before becoming ready; retrying");
             if let Err(error) = spawn_backend(&app_handle, token) {
                 eprintln!("Failed to restart the AutoMorph backend: {error}");
@@ -358,16 +271,16 @@ fn supervise_backend(app_handle: tauri::AppHandle, supervisor: Option<String>) {
             ready = false;
         }
 
-        match readiness_verdict(supervisor.as_deref(), ready, &address) {
-            ReadinessVerdict::Ready => {
-                app_handle
-                    .state::<BackendProcess>()
-                    .ready
-                    .store(true, Ordering::SeqCst);
-            }
-            ReadinessVerdict::Unavailable(message) => {
-                report_backend_unavailable(&app_handle, message);
-            }
+        if ready {
+            app_handle
+                .state::<BackendProcess>()
+                .ready
+                .store(true, Ordering::SeqCst);
+        } else {
+            report_backend_unavailable(
+                &app_handle,
+                unavailable_message(supervisor.as_deref(), &address),
+            );
         }
 
         if let Some(window) = app_handle.get_webview_window("main") {
@@ -498,19 +411,6 @@ mod tests {
         .into_bytes()
     }
 
-    fn cors_response(allow_origin: Option<&str>) -> Vec<u8> {
-        let body = r#"{"status":"ok"}"#;
-        let allow_header = match allow_origin {
-            Some(origin) => format!("Access-Control-Allow-Origin: {origin}\r\n"),
-            None => String::new(),
-        };
-        format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n{allow_header}Content-Length: {}\r\n\r\n{body}",
-            body.len()
-        )
-        .into_bytes()
-    }
-
     fn read_request(stream: &TcpStream) {
         let mut reader = BufReader::new(stream.try_clone().unwrap());
         let mut line = String::new();
@@ -541,125 +441,6 @@ mod tests {
         let address = listener.local_addr().unwrap();
         drop(listener);
         address
-    }
-
-    fn serve_responses(mut responses: Vec<Option<Vec<u8>>>) -> SocketAddr {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let address = listener.local_addr().unwrap();
-        responses.reverse();
-        thread::spawn(move || {
-            while let Some(response) = responses.pop() {
-                let Ok((mut stream, _)) = listener.accept() else {
-                    return;
-                };
-                read_request(&stream);
-                match response {
-                    Some(body) => {
-                        let _ = stream.write_all(&body);
-                    }
-                    None => drop(stream),
-                }
-            }
-        });
-        address
-    }
-
-    #[test]
-    fn origin_probe_accepts_a_backend_that_echoes_this_webview_origin() {
-        let address = spawn_listener(Some(cors_response(Some(DESKTOP_WEBVIEW_ORIGIN))));
-        assert_eq!(probe_webview_origin(&address), OriginVerdict::Allowed);
-    }
-
-    #[test]
-    fn origin_probe_accepts_a_backend_that_allows_every_origin() {
-        let address = spawn_listener(Some(cors_response(Some("*"))));
-        assert_eq!(probe_webview_origin(&address), OriginVerdict::Allowed);
-    }
-
-    #[test]
-    fn origin_probe_rejects_a_backend_that_omits_the_allow_origin_header() {
-        let address = spawn_listener(Some(cors_response(None)));
-        assert_eq!(probe_webview_origin(&address), OriginVerdict::Rejected);
-    }
-
-    #[test]
-    fn origin_probe_rejects_a_backend_that_allows_only_another_origin() {
-        let address = spawn_listener(Some(cors_response(Some("https://example.test"))));
-        assert_eq!(probe_webview_origin(&address), OriginVerdict::Rejected);
-    }
-
-    #[test]
-    fn origin_probe_reports_a_dead_port_as_inconclusive_not_rejected() {
-        assert_eq!(
-            probe_webview_origin(&closed_port()),
-            OriginVerdict::Inconclusive
-        );
-    }
-
-    #[test]
-    fn origin_probe_reports_a_dropped_connection_as_inconclusive_not_rejected() {
-        let address = spawn_listener(None);
-        assert_eq!(probe_webview_origin(&address), OriginVerdict::Inconclusive);
-    }
-
-    #[test]
-    fn origin_probe_reports_a_non_200_response_as_inconclusive_not_rejected() {
-        let address = spawn_listener(Some(
-            b"HTTP/1.1 503 SERVICE UNAVAILABLE\r\nContent-Length: 0\r\n\r\n".to_vec(),
-        ));
-        assert_eq!(probe_webview_origin(&address), OriginVerdict::Inconclusive);
-    }
-
-    #[test]
-    fn origin_verdict_retries_past_a_transient_transport_failure() {
-        let address = serve_responses(vec![
-            None,
-            None,
-            Some(cors_response(Some(DESKTOP_WEBVIEW_ORIGIN))),
-        ]);
-        assert_eq!(webview_origin_verdict(&address), OriginVerdict::Allowed);
-    }
-
-    #[test]
-    fn origin_verdict_stays_inconclusive_when_every_attempt_fails() {
-        assert_eq!(
-            webview_origin_verdict(&closed_port()),
-            OriginVerdict::Inconclusive
-        );
-    }
-
-    #[test]
-    fn origin_verdict_does_not_retry_a_completed_rejection() {
-        let address = serve_responses(vec![
-            Some(cors_response(Some("https://example.test"))),
-            Some(cors_response(Some(DESKTOP_WEBVIEW_ORIGIN))),
-        ]);
-        assert_eq!(webview_origin_verdict(&address), OriginVerdict::Rejected);
-    }
-
-    #[test]
-    fn origin_probe_sends_this_webview_origin() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let address = listener.local_addr().unwrap();
-        let handle = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut reader = BufReader::new(stream.try_clone().unwrap());
-            let mut request = String::new();
-            let mut line = String::new();
-            while reader.read_line(&mut line).unwrap_or(0) > 0 {
-                if line == "\r\n" {
-                    break;
-                }
-                request.push_str(&line);
-                line.clear();
-            }
-            let _ = stream.write_all(&cors_response(Some(DESKTOP_WEBVIEW_ORIGIN)));
-            request
-        });
-
-        assert_eq!(probe_webview_origin(&address), OriginVerdict::Allowed);
-        let request = handle.join().unwrap();
-        assert!(request.contains(&format!("Origin: {DESKTOP_WEBVIEW_ORIGIN}\r\n")));
     }
 
     #[test]
@@ -797,64 +578,54 @@ mod tests {
     }
 
     #[test]
-    fn a_quit_during_startup_outranks_a_remaining_respawn() {
-        assert!(!respawn_permitted(BACKEND_SPAWN_RETRIES, true));
-        assert!(respawn_permitted(BACKEND_SPAWN_RETRIES, false));
+    fn a_backend_that_has_not_answered_yet_keeps_being_probed() {
+        assert_eq!(
+            supervisor_step(true, false, false, BACKEND_SPAWN_RETRIES, false),
+            SupervisorStep::KeepProbing
+        );
+    }
+
+    #[test]
+    fn an_exited_sidecar_with_budget_left_is_respawned() {
+        assert_eq!(
+            supervisor_step(true, true, false, BACKEND_SPAWN_RETRIES, false),
+            SupervisorStep::Respawn
+        );
+    }
+
+    #[test]
+    fn a_quit_outranks_a_remaining_respawn_even_mid_probe() {
+        assert_eq!(
+            supervisor_step(true, true, true, BACKEND_SPAWN_RETRIES, false),
+            SupervisorStep::Stop
+        );
+        assert_eq!(
+            supervisor_step(true, false, true, BACKEND_SPAWN_RETRIES, false),
+            SupervisorStep::Stop
+        );
     }
 
     #[test]
     fn an_exhausted_respawn_budget_stops_the_supervisor() {
-        assert!(!respawn_permitted(0, false));
-        assert!(!respawn_permitted(0, true));
-    }
-
-    #[test]
-    fn a_developer_run_backend_is_ready_even_when_it_rejects_the_desktop_origin() {
-        let address = spawn_listener(Some(cors_response(None)));
-
         assert_eq!(
-            readiness_verdict(None, true, &address),
-            ReadinessVerdict::Ready
+            supervisor_step(true, true, false, 0, false),
+            SupervisorStep::Stop
         );
     }
 
     #[test]
-    fn a_supervised_backend_that_rejects_this_window_is_reported_as_such() {
-        let address = spawn_listener(Some(cors_response(None)));
-
+    fn an_unsupervised_run_never_respawns_a_backend_it_did_not_start() {
         assert_eq!(
-            readiness_verdict(Some("4242"), true, &address),
-            ReadinessVerdict::Unavailable(BACKEND_ORIGIN_REJECTED_MESSAGE)
+            supervisor_step(false, true, false, BACKEND_SPAWN_RETRIES, false),
+            SupervisorStep::Stop
         );
     }
 
     #[test]
-    fn a_supervised_backend_that_accepts_this_window_is_ready() {
-        let address = spawn_listener(Some(cors_response(Some(DESKTOP_WEBVIEW_ORIGIN))));
-
+    fn an_expired_readiness_deadline_stops_the_supervisor() {
         assert_eq!(
-            readiness_verdict(Some("4242"), true, &address),
-            ReadinessVerdict::Ready
-        );
-    }
-
-    #[test]
-    fn an_origin_check_that_never_completed_is_not_reported_as_a_rejection() {
-        assert_eq!(
-            readiness_verdict(Some("4242"), true, &closed_port()),
-            ReadinessVerdict::Unavailable(BACKEND_START_FAILED_MESSAGE)
-        );
-    }
-
-    #[test]
-    fn an_unhealthy_backend_keeps_its_own_diagnosis() {
-        assert_eq!(
-            readiness_verdict(None, false, &closed_port()),
-            ReadinessVerdict::Unavailable(BACKEND_NOT_RUNNING_MESSAGE)
-        );
-        assert_eq!(
-            readiness_verdict(Some("4242"), false, &closed_port()),
-            ReadinessVerdict::Unavailable(BACKEND_START_FAILED_MESSAGE)
+            supervisor_step(true, true, false, BACKEND_SPAWN_RETRIES, true),
+            SupervisorStep::Stop
         );
     }
 
