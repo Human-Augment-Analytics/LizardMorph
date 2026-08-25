@@ -19,21 +19,18 @@ elif sys.platform == "win32":
     hiddenimports += ["asyncio", "winocr"]
 
 datas = []
-model_candidates = [
-    ("models/lizard-x-ray/dorsal_predictor_clahe_best.dat", "models/lizard-x-ray"),
-    ("models/lizard-x-ray/scale_predictor_clahe.dat", "models/lizard-x-ray"),
-    ("models/lizard-x-ray/lateral_predictor_auto.dat", "models/lizard-x-ray"),
-    ("models/lizard-toe-pad/yolo_obb_6class_h7_int8.onnx", "models/lizard-toe-pad"),
-    ("models/lizard-toe-pad/yolo_obb_6class_h7.onnx", "models/lizard-toe-pad"),
-    ("models/lizard-toe-pad/ml_morph_best.dat", "models/lizard-toe-pad"),
-    ("models/lizard-toe-pad/toe_predictor_obb.dat", "models/lizard-toe-pad"),
-    ("models/lizard-toe-pad/finger_predictor_obb.dat", "models/lizard-toe-pad"),
-    ("models/lizard-toe-pad/lizard_scale.dat", "models/lizard-toe-pad"),
-]
-for relative_source, destination in model_candidates:
-    source = os.path.join(project_dir, relative_source)
-    if os.path.isfile(source):
-        datas.append((source, destination))
+manifest_path = os.path.join(project_dir, "src-tauri", "desktop-models.txt")
+with open(manifest_path, encoding="utf-8") as manifest:
+    for raw_entry in manifest:
+        entry = raw_entry.split("#", 1)[0].split()
+        if not entry:
+            continue
+        requirement, relative_source, destination = entry
+        source = os.path.join(project_dir, relative_source)
+        if os.path.isfile(source):
+            datas.append((source, destination))
+        elif requirement == "required":
+            raise SystemExit(f"Required desktop model is missing: {relative_source}")
 
 a = Analysis(
     [os.path.join(backend_dir, "app.py")],

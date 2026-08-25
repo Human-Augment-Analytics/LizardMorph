@@ -17,15 +17,20 @@ class SessionManager:
     and handling cleanup of session-specific files.
     """
 
-    def __init__(self, base_sessions_dir="sessions"):
+    def __init__(self, base_sessions_dir="sessions", runtime_root=None):
         """
         Initialize the session manager.
 
         Args:
             base_sessions_dir (str): Base directory for all session folders
+            runtime_root (str): Writable data root the session sweep operates on.
+                Defaults to the parent of base_sessions_dir.
         """
         self.base_sessions_dir = base_sessions_dir
-        self.runtime_root = os.path.dirname(os.path.abspath(base_sessions_dir))
+        if runtime_root:
+            self.runtime_root = os.path.abspath(runtime_root)
+        else:
+            self.runtime_root = os.path.dirname(os.path.abspath(base_sessions_dir))
         self.active_sessions = {}
         self.ensure_directory_exists(self.base_sessions_dir)
 

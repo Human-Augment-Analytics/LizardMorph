@@ -22,13 +22,30 @@ if [[ "${TARGET_TRIPLE}" == *linux* && "$(uname -s)" != Linux ]]; then
   exit 1
 fi
 
-REQUIRED_MODELS=(
-  "models/lizard-x-ray/dorsal_predictor_clahe_best.dat"
-  "models/lizard-x-ray/lateral_predictor_auto.dat"
-  "models/lizard-toe-pad/yolo_obb_6class_h7_int8.onnx"
-  "models/lizard-toe-pad/ml_morph_best.dat"
-  "models/lizard-toe-pad/lizard_scale.dat"
-)
+MODEL_MANIFEST="${PROJECT_DIR}/src-tauri/desktop-models.txt"
+if [[ ! -f "${MODEL_MANIFEST}" ]]; then
+  echo "Desktop model manifest is missing: ${MODEL_MANIFEST}" >&2
+  exit 1
+fi
+
+BUNDLED_MODELS=()
+REQUIRED_MODELS=()
+while read -r requirement relative_path _destination || [[ -n "${requirement:-}" ]]; do
+  requirement="${requirement%%#*}"
+  if [[ -z "${requirement}" ]]; then
+    continue
+  fi
+  BUNDLED_MODELS+=("${relative_path}")
+  if [[ "${requirement}" == "required" ]]; then
+    REQUIRED_MODELS+=("${relative_path}")
+  fi
+done < "${MODEL_MANIFEST}"
+
+if [[ "${#REQUIRED_MODELS[@]}" -eq 0 ]]; then
+  echo "Desktop model manifest lists no required models: ${MODEL_MANIFEST}" >&2
+  exit 1
+fi
+
 for relative_path in "${REQUIRED_MODELS[@]}"; do
   if [[ ! -f "${PROJECT_DIR}/${relative_path}" ]]; then
     echo "Required desktop model is missing: ${relative_path}" >&2
@@ -41,10 +58,10 @@ sidecar_is_current() {
   [[ -x "${TARGET_SIDECAR}" ]] || return 1
   [[ "$(wc -c < "${TARGET_SIDECAR}" | tr -d ' ')" -gt 10000000 ]] || return 1
   local input
-  for input in "${PROJECT_DIR}/src-tauri/python-backend.spec" "${PROJECT_DIR}/backend/requirements.txt"; do
+  for input in "${PROJECT_DIR}/src-tauri/python-backend.spec" "${PROJECT_DIR}/backend/requirements.txt" "${MODEL_MANIFEST}"; do
     [[ ! "${input}" -nt "${TARGET_SIDECAR}" ]] || return 1
   done
-  for input in "${REQUIRED_MODELS[@]}"; do
+  for input in "${BUNDLED_MODELS[@]}"; do
     [[ ! "${PROJECT_DIR}/${input}" -nt "${TARGET_SIDECAR}" ]] || return 1
   done
   if find "${PROJECT_DIR}/backend" \

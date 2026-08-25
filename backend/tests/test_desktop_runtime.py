@@ -1,10 +1,14 @@
 import json
 import os
+from pathlib import Path
 
 import pytest
 
 import app as app_module
 from session_manager import SessionManager
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_PREDICTOR_LIBRARY = REPO_ROOT / "models" / "custom_predictors"
 
 
 def test_bind_host_is_loopback_when_supervised_by_the_tauri_sidecar(monkeypatch):
@@ -110,6 +114,31 @@ def test_clear_session_sweeps_the_runtime_root_not_the_process_cwd(runtime_root)
     assert stray_in_cwd.exists()
 
 
+def test_clear_session_sweeps_the_injected_runtime_root_not_the_sessions_parent(tmp_path, monkeypatch):
+    root = tmp_path / "runtime"
+    sessions = root / "data" / "sessions"
+    sessions.mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+
+    manager = SessionManager(str(sessions), runtime_root=str(root))
+    session_id = manager.create_session()
+
+    stray_in_runtime_root = root / "output_1.xml"
+    stray_in_runtime_root.write_text("<x/>")
+    stray_in_sessions_parent = root / "data" / "output_1.xml"
+    stray_in_sessions_parent.write_text("<x/>")
+
+    result = manager.clear_session(session_id)
+
+    assert result["success"] is True
+    assert not stray_in_runtime_root.exists()
+    assert stray_in_sessions_parent.exists()
+
+
+def test_app_session_manager_sweeps_the_configured_runtime_root():
+    assert app_module.session_manager.runtime_root == os.path.abspath(app_module.RUNTIME_ROOT)
+
+
 TAURI_ORIGIN = "http://tauri.localhost"
 
 
@@ -138,22 +167,22 @@ def _allowed_methods(response):
         ("/list_uploads", "GET"),
     ],
 )
-def test_cross_origin_preflight_allows_every_method_the_desktop_frontend_uses(path, method):
-    app_module.app.config.update(TESTING=True)
-    with app_module.app.test_client() as client:
-        response = _preflight(client, path, method)
+def test_cross_origin_preflight_allows_every_method_the_desktop_frontend_uses(client, path, method):
+    response = _preflight(client, path, method)
 
     assert response.status_code in (200, 204)
     assert response.headers.get("Access-Control-Allow-Origin") in (TAURI_ORIGIN, "*")
     assert method in _allowed_methods(response)
 
 
-def test_cross_origin_delete_response_is_readable_by_the_desktop_webview():
-    app_module.app.config.update(TESTING=True)
-    with app_module.app.test_client() as client:
-        response = client.delete(
-            "/predictors/does-not-exist",
-            headers={"Origin": TAURI_ORIGIN, "X-Session-ID": "session"},
-        )
+def test_cross_origin_delete_response_is_readable_by_the_desktop_webview(client, tmp_path):
+    default_library_existed = DEFAULT_PREDICTOR_LIBRARY.exists()
+
+    response = client.delete(
+        "/predictors/does-not-exist",
+        headers={"Origin": TAURI_ORIGIN, "X-Session-ID": "session"},
+    )
 
     assert response.headers.get("Access-Control-Allow-Origin") in (TAURI_ORIGIN, "*")
+    assert (tmp_path / "custom_predictors" / "files").is_dir()
+    assert DEFAULT_PREDICTOR_LIBRARY.exists() is default_library_existed

@@ -474,7 +474,7 @@ for folder in [
 
 # Initialize the export handler and session manager
 export_handler = ExportHandler(OUTPUTS_FOLDER)
-session_manager = SessionManager(SESSIONS_FOLDER)
+session_manager = SessionManager(SESSIONS_FOLDER, runtime_root=RUNTIME_ROOT)
 
 # Initialize Prometheus metrics (no-op if prometheus_client missing)
 if Counter and Histogram and Gauge:
