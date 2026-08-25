@@ -1,4 +1,5 @@
 import os
+import platform
 import shutil
 import subprocess
 from pathlib import Path
@@ -8,7 +9,35 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SIDECAR_SCRIPT = REPO_ROOT / "scripts" / "build-tauri-sidecar.sh"
 MODEL_MANIFEST = REPO_ROOT / "src-tauri" / "desktop-models.txt"
-TARGET_TRIPLE = "aarch64-apple-darwin"
+
+HOST_ARCH = {
+    "arm64": "aarch64",
+    "aarch64": "aarch64",
+    "x86_64": "x86_64",
+    "AMD64": "x86_64",
+}.get(platform.machine())
+HOST_TRIPLE = {
+    "Darwin": f"{HOST_ARCH}-apple-darwin",
+    "Linux": "x86_64-unknown-linux-gnu" if HOST_ARCH == "x86_64" else None,
+    "Windows": "x86_64-pc-windows-msvc" if HOST_ARCH == "x86_64" else None,
+}.get(platform.system())
+FOREIGN_OS_TRIPLE = (
+    "x86_64-unknown-linux-gnu"
+    if platform.system() != "Linux"
+    else "aarch64-apple-darwin"
+)
+FOREIGN_ARCH_TRIPLE = (
+    f"{'x86_64' if HOST_ARCH == 'aarch64' else 'aarch64'}-apple-darwin"
+    if platform.system() == "Darwin"
+    else None
+)
+
+pytestmark = pytest.mark.skipif(
+    HOST_TRIPLE is None,
+    reason=f"no supported sidecar target for {platform.system()}/{platform.machine()}",
+)
+
+TARGET_TRIPLE = HOST_TRIPLE
 OLD_MTIME = 1_600_000_000
 SIDECAR_MTIME = 1_600_000_100
 NEW_MTIME = 1_600_000_200
@@ -69,9 +98,9 @@ def build_project(tmp_path, omitted_models=(), sidecar=True):
     return project_dir
 
 
-def run_gate(project_dir):
+def run_gate(project_dir, target_triple=None):
     environment = dict(os.environ)
-    environment["TAURI_ENV_TARGET_TRIPLE"] = TARGET_TRIPLE
+    environment["TAURI_ENV_TARGET_TRIPLE"] = target_triple or TARGET_TRIPLE
     environment["AUTOMORPH_PYTHON"] = str(project_dir / "fake-python")
     environment.pop("AUTOMORPH_FORCE_SIDECAR_BUILD", None)
     return subprocess.run(
@@ -108,3 +137,31 @@ def test_a_newer_bundled_model_invalidates_the_cached_sidecar(tmp_path, relative
     assert "Reusing current Tauri backend sidecar" not in result.stdout
     assert result.returncode != 0
     assert "missing backend dependencies" in result.stderr
+
+
+def test_packaging_gate_refuses_to_cross_compile_for_another_operating_system(tmp_path):
+    result = run_gate(build_project(tmp_path), target_triple=FOREIGN_OS_TRIPLE)
+
+    assert result.returncode != 0
+    assert "cannot cross-compile" in result.stderr
+    assert "Reusing current Tauri backend sidecar" not in result.stdout
+
+
+@pytest.mark.skipif(
+    FOREIGN_ARCH_TRIPLE is None, reason="no second supported arch for this host OS"
+)
+def test_packaging_gate_refuses_to_cross_compile_for_another_architecture(tmp_path):
+    result = run_gate(build_project(tmp_path), target_triple=FOREIGN_ARCH_TRIPLE)
+
+    assert result.returncode != 0
+    assert "cannot cross-compile" in result.stderr
+    assert FOREIGN_ARCH_TRIPLE.split("-", 1)[0] in result.stderr
+    assert "Reusing current Tauri backend sidecar" not in result.stdout
+
+
+def test_packaging_gate_accepts_the_host_target(tmp_path):
+    result = run_gate(build_project(tmp_path))
+
+    assert result.returncode == 0, result.stderr
+    assert "cannot cross-compile" not in result.stderr
+

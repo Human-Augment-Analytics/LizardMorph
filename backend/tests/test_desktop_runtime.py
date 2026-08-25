@@ -311,3 +311,41 @@ def test_configured_origins_override_the_desktop_allowlist(tmp_path):
     assert payload["foreign"]["preflight"] == "https://evil.test"
     assert payload["custom_scheme"]["simple"] is None
     assert payload["custom_scheme"]["preflight"] is None
+
+
+def test_a_data_root_file_overrides_the_desktop_allowlist(tmp_path):
+    (tmp_path / "cors-origins.txt").write_text(
+        "# support override\nhttps://evil.test\n", encoding="utf-8"
+    )
+
+    payload = _cors_probe(tmp_path, {"AUTOMORPH_PARENT_PID": "4242"})
+
+    assert payload["foreign"]["simple"] == "https://evil.test"
+    assert payload["foreign"]["preflight"] == "https://evil.test"
+    assert payload["custom_scheme"]["simple"] is None
+    assert payload["desktop"]["simple"] is None
+
+
+def test_the_environment_override_wins_over_the_data_root_file(tmp_path):
+    (tmp_path / "cors-origins.txt").write_text("https://replacement.test\n", encoding="utf-8")
+
+    payload = _cors_probe(
+        tmp_path,
+        {
+            "AUTOMORPH_PARENT_PID": "4242",
+            "AUTOMORPH_CORS_ORIGINS": "https://evil.test",
+        },
+    )
+
+    assert payload["foreign"]["simple"] == "https://evil.test"
+    assert payload["custom_scheme"]["simple"] is None
+
+
+def test_a_data_root_file_does_not_widen_a_hosted_deployment(tmp_path):
+    (tmp_path / "cors-origins.txt").write_text("https://replacement.test\n", encoding="utf-8")
+
+    payload = _cors_probe(tmp_path, {})
+
+    for origin_case in payload.values():
+        assert origin_case["simple"] in ("*", origin_case["origin"])
+

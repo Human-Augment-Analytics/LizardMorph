@@ -25,6 +25,7 @@ const PROBE_IO_TIMEOUT: Duration = Duration::from_millis(1000);
 const PROBE_TOTAL_TIMEOUT: Duration = Duration::from_millis(2000);
 const PROBE_INTERVAL: Duration = Duration::from_millis(250);
 const PROBE_RESPONSE_LIMIT: usize = 4096;
+const ORIGIN_PROBE_ATTEMPTS: u32 = 3;
 
 const BACKEND_PORT_IN_USE_MESSAGE: &str = "AutoMorph could not start its analysis backend because another program is already using port 3005. Quit that program — including any earlier copy of AutoMorph — and open AutoMorph again.";
 const BACKEND_START_FAILED_MESSAGE: &str =
@@ -32,7 +33,7 @@ const BACKEND_START_FAILED_MESSAGE: &str =
 const BACKEND_STOPPED_MESSAGE: &str =
     "AutoMorph's analysis backend stopped unexpectedly. Restart AutoMorph to continue.";
 const BACKEND_NOT_RUNNING_MESSAGE: &str = "AutoMorph's analysis backend is not answering on 127.0.0.1:3005. Start it with 'make dev' (or 'make dev-backend') and reload this window.";
-const BACKEND_ORIGIN_REJECTED_MESSAGE: &str = "AutoMorph's analysis backend refused this window's requests. Restart AutoMorph; if this keeps happening, set AUTOMORPH_CORS_ORIGINS to this window's origin or reinstall AutoMorph.";
+const BACKEND_ORIGIN_REJECTED_MESSAGE: &str = "AutoMorph's analysis backend refused this window's requests. Restart AutoMorph; if this keeps happening, reinstall it.";
 
 #[cfg(windows)]
 const DESKTOP_WEBVIEW_ORIGIN: &str = "http://tauri.localhost";
@@ -145,20 +146,45 @@ fn backend_is_healthy(address: &SocketAddr, expected_supervisor: Option<&str>) -
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OriginVerdict {
+    Allowed,
+    Rejected,
+    Inconclusive,
+}
+
 /// A healthy backend that rejects this webview's `Origin` leaves the window
 /// visible but unable to complete a single request, so it is checked explicitly.
-fn backend_accepts_webview_origin(address: &SocketAddr) -> bool {
+fn probe_webview_origin(address: &SocketAddr) -> OriginVerdict {
     let Some(response) = probe_health_endpoint(address, Some(DESKTOP_WEBVIEW_ORIGIN)) else {
-        return false;
+        return OriginVerdict::Inconclusive;
     };
     let (head, _) = split_http_response(&response);
     if !http_status_is_ok(head) {
-        return false;
+        return OriginVerdict::Inconclusive;
     }
     match http_header(head, "access-control-allow-origin") {
-        Some(allowed) => allowed == "*" || allowed.eq_ignore_ascii_case(DESKTOP_WEBVIEW_ORIGIN),
-        None => false,
+        Some(allowed)
+            if allowed == "*" || allowed.eq_ignore_ascii_case(DESKTOP_WEBVIEW_ORIGIN) =>
+        {
+            OriginVerdict::Allowed
+        }
+        _ => OriginVerdict::Rejected,
     }
+}
+
+fn webview_origin_verdict(address: &SocketAddr) -> OriginVerdict {
+    for attempt in 0..ORIGIN_PROBE_ATTEMPTS {
+        match probe_webview_origin(address) {
+            OriginVerdict::Inconclusive => {
+                if attempt + 1 < ORIGIN_PROBE_ATTEMPTS {
+                    thread::sleep(PROBE_INTERVAL);
+                }
+            }
+            verdict => return verdict,
+        }
+    }
+    OriginVerdict::Inconclusive
 }
 
 /// A listener still holding the port after the sidecar gave up means the port is
@@ -246,6 +272,13 @@ fn supervise_backend(app_handle: tauri::AppHandle, supervisor: Option<String>) {
             }
         }
 
+        if !ready {
+            eprintln!(
+                "AutoMorph backend never answered /health on 127.0.0.1:{BACKEND_PORT} within {} seconds",
+                ready_timeout.as_secs()
+            );
+        }
+
         if ready
             && app_handle
                 .state::<BackendProcess>()
@@ -256,12 +289,24 @@ fn supervise_backend(app_handle: tauri::AppHandle, supervisor: Option<String>) {
             ready = false;
         }
 
-        let origin_rejected = ready && !backend_accepts_webview_origin(&address);
-        if origin_rejected {
-            eprintln!(
-                "AutoMorph backend is healthy but rejects the webview origin {DESKTOP_WEBVIEW_ORIGIN}"
-            );
-            ready = false;
+        let mut origin_rejected = false;
+        if ready {
+            match webview_origin_verdict(&address) {
+                OriginVerdict::Allowed => {}
+                OriginVerdict::Rejected => {
+                    eprintln!(
+                        "AutoMorph backend is healthy but rejects the webview origin {DESKTOP_WEBVIEW_ORIGIN}"
+                    );
+                    origin_rejected = true;
+                    ready = false;
+                }
+                OriginVerdict::Inconclusive => {
+                    eprintln!(
+                        "AutoMorph backend stopped answering before its origin policy could be checked"
+                    );
+                    ready = false;
+                }
+            }
         }
 
         if ready {
@@ -272,10 +317,6 @@ fn supervise_backend(app_handle: tauri::AppHandle, supervisor: Option<String>) {
         } else if origin_rejected {
             report_backend_unavailable(&app_handle, BACKEND_ORIGIN_REJECTED_MESSAGE);
         } else {
-            eprintln!(
-                "AutoMorph backend never answered /health on 127.0.0.1:{BACKEND_PORT} within {} seconds",
-                ready_timeout.as_secs()
-            );
             report_backend_unavailable(
                 &app_handle,
                 unavailable_message(supervisor.as_deref(), &address),
@@ -455,33 +496,98 @@ mod tests {
         address
     }
 
+    fn serve_responses(mut responses: Vec<Option<Vec<u8>>>) -> SocketAddr {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        responses.reverse();
+        thread::spawn(move || {
+            while let Some(response) = responses.pop() {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    return;
+                };
+                read_request(&stream);
+                match response {
+                    Some(body) => {
+                        let _ = stream.write_all(&body);
+                    }
+                    None => drop(stream),
+                }
+            }
+        });
+        address
+    }
+
     #[test]
     fn origin_probe_accepts_a_backend_that_echoes_this_webview_origin() {
         let address = spawn_listener(Some(cors_response(Some(DESKTOP_WEBVIEW_ORIGIN))));
-        assert!(backend_accepts_webview_origin(&address));
+        assert_eq!(probe_webview_origin(&address), OriginVerdict::Allowed);
     }
 
     #[test]
     fn origin_probe_accepts_a_backend_that_allows_every_origin() {
         let address = spawn_listener(Some(cors_response(Some("*"))));
-        assert!(backend_accepts_webview_origin(&address));
+        assert_eq!(probe_webview_origin(&address), OriginVerdict::Allowed);
     }
 
     #[test]
     fn origin_probe_rejects_a_backend_that_omits_the_allow_origin_header() {
         let address = spawn_listener(Some(cors_response(None)));
-        assert!(!backend_accepts_webview_origin(&address));
+        assert_eq!(probe_webview_origin(&address), OriginVerdict::Rejected);
     }
 
     #[test]
     fn origin_probe_rejects_a_backend_that_allows_only_another_origin() {
         let address = spawn_listener(Some(cors_response(Some("https://example.test"))));
-        assert!(!backend_accepts_webview_origin(&address));
+        assert_eq!(probe_webview_origin(&address), OriginVerdict::Rejected);
     }
 
     #[test]
-    fn origin_probe_rejects_a_port_with_no_listener() {
-        assert!(!backend_accepts_webview_origin(&closed_port()));
+    fn origin_probe_reports_a_dead_port_as_inconclusive_not_rejected() {
+        assert_eq!(
+            probe_webview_origin(&closed_port()),
+            OriginVerdict::Inconclusive
+        );
+    }
+
+    #[test]
+    fn origin_probe_reports_a_dropped_connection_as_inconclusive_not_rejected() {
+        let address = spawn_listener(None);
+        assert_eq!(probe_webview_origin(&address), OriginVerdict::Inconclusive);
+    }
+
+    #[test]
+    fn origin_probe_reports_a_non_200_response_as_inconclusive_not_rejected() {
+        let address = spawn_listener(Some(
+            b"HTTP/1.1 503 SERVICE UNAVAILABLE\r\nContent-Length: 0\r\n\r\n".to_vec(),
+        ));
+        assert_eq!(probe_webview_origin(&address), OriginVerdict::Inconclusive);
+    }
+
+    #[test]
+    fn origin_verdict_retries_past_a_transient_transport_failure() {
+        let address = serve_responses(vec![
+            None,
+            None,
+            Some(cors_response(Some(DESKTOP_WEBVIEW_ORIGIN))),
+        ]);
+        assert_eq!(webview_origin_verdict(&address), OriginVerdict::Allowed);
+    }
+
+    #[test]
+    fn origin_verdict_stays_inconclusive_when_every_attempt_fails() {
+        assert_eq!(
+            webview_origin_verdict(&closed_port()),
+            OriginVerdict::Inconclusive
+        );
+    }
+
+    #[test]
+    fn origin_verdict_does_not_retry_a_completed_rejection() {
+        let address = serve_responses(vec![
+            Some(cors_response(Some("https://example.test"))),
+            Some(cors_response(Some(DESKTOP_WEBVIEW_ORIGIN))),
+        ]);
+        assert_eq!(webview_origin_verdict(&address), OriginVerdict::Rejected);
     }
 
     #[test]
@@ -504,7 +610,7 @@ mod tests {
             request
         });
 
-        assert!(backend_accepts_webview_origin(&address));
+        assert_eq!(probe_webview_origin(&address), OriginVerdict::Allowed);
         let request = handle.join().unwrap();
         assert!(request.contains(&format!("Origin: {DESKTOP_WEBVIEW_ORIGIN}\r\n")));
     }

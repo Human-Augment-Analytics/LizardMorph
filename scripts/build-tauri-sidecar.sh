@@ -13,12 +13,37 @@ SIDECAR_NAME="python-backend-${TARGET_TRIPLE}"
 TARGET_SIDECAR="${PROJECT_DIR}/src-tauri/binaries/${SIDECAR_NAME}"
 if [[ "${TARGET_TRIPLE}" == *windows* ]]; then TARGET_SIDECAR="${TARGET_SIDECAR}.exe"; fi
 
-if [[ "${TARGET_TRIPLE}" == *windows* && "$(uname -s)" != MINGW* && "$(uname -s)" != MSYS* ]]; then
-  echo "PyInstaller cannot cross-compile a Windows sidecar. Build it on Windows." >&2
+host_os() {
+  case "$(uname -s)" in
+    Darwin) echo macOS ;;
+    Linux) echo Linux ;;
+    MINGW*|MSYS*|CYGWIN*) echo Windows ;;
+    *) uname -s ;;
+  esac
+}
+
+host_arch() {
+  case "$(uname -m)" in
+    arm64|aarch64) echo aarch64 ;;
+    amd64|x86_64) echo x86_64 ;;
+    *) uname -m ;;
+  esac
+}
+
+case "${TARGET_TRIPLE}" in
+  *-apple-darwin) TARGET_OS="macOS" ;;
+  *linux*) TARGET_OS="Linux" ;;
+  *windows*) TARGET_OS="Windows" ;;
+esac
+TARGET_ARCH="${TARGET_TRIPLE%%-*}"
+
+if [[ "${TARGET_OS}" != "$(host_os)" ]]; then
+  echo "PyInstaller cannot cross-compile a ${TARGET_OS} sidecar from $(host_os). Build it on ${TARGET_OS}." >&2
   exit 1
 fi
-if [[ "${TARGET_TRIPLE}" == *linux* && "$(uname -s)" != Linux ]]; then
-  echo "PyInstaller cannot cross-compile a Linux sidecar. Build it on Linux." >&2
+if [[ "${TARGET_ARCH}" != "$(host_arch)" ]]; then
+  echo "PyInstaller cannot cross-compile a ${TARGET_ARCH} sidecar from a $(host_arch) interpreter." >&2
+  echo "Run this build under a ${TARGET_ARCH} shell and Python (on macOS: 'arch -x86_64 ...' for x86_64)." >&2
   exit 1
 fi
 

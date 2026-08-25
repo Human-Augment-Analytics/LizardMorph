@@ -118,15 +118,37 @@ DESKTOP_WEBVIEW_ORIGINS = [
 ]
 
 
+CORS_ORIGINS_FILE = "cors-origins.txt"
+
+
+def parse_cors_origins(raw):
+    origins = []
+    for line in (raw or "").splitlines():
+        for origin in line.split("#", 1)[0].split(","):
+            origin = origin.strip()
+            if origin:
+                origins.append(origin)
+    if not origins:
+        return None
+    return "*" if "*" in origins else origins
+
+
+def read_cors_origins_override():
+    """Read the desktop CORS allowlist from a file in the runtime data root."""
+    try:
+        with open(os.path.join(RUNTIME_ROOT, CORS_ORIGINS_FILE), encoding="utf-8") as handle:
+            return parse_cors_origins(handle.read())
+    except OSError:
+        return None
+
+
 def get_cors_origins():
-    configured = os.getenv("AUTOMORPH_CORS_ORIGINS", "").strip()
+    configured = parse_cors_origins(os.getenv("AUTOMORPH_CORS_ORIGINS"))
     if configured:
-        origins = [origin.strip() for origin in configured.split(",") if origin.strip()]
-        if origins:
-            return "*" if "*" in origins else origins
-    if get_bind_host() == "127.0.0.1":
-        return list(DESKTOP_WEBVIEW_ORIGINS)
-    return "*"
+        return configured
+    if get_bind_host() != "127.0.0.1":
+        return "*"
+    return read_cors_origins_override() or list(DESKTOP_WEBVIEW_ORIGINS)
 
 
 def get_model_path(relative_path):
