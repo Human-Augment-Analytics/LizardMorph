@@ -274,20 +274,22 @@ requests only from AutoMorph's own window.
 
 | Symptom | Likely cause / fix |
 |---------|--------------------|
-| The window opens but nothing loads and every action fails | The window's origin is not on the backend allowlist. Add it to a file called `cors-origins.txt` in AutoMorph's data folder (see below) and reopen AutoMorph. |
 | **"another program is already using port 3005"** | Quit that program — including any earlier copy of AutoMorph — and reopen it. |
 | **"could not start its analysis backend"** | The bundled backend failed to launch. Reinstall AutoMorph if restarting does not help. |
 | **"backend stopped unexpectedly"** | The backend exited mid-session. Restart AutoMorph. |
 
 AutoMorph's data folder is `~/Library/Application Support/AutoMorph` on macOS,
 `%APPDATA%\AutoMorph` on Windows, and `$XDG_DATA_HOME/AutoMorph` (by default
-`~/.local/share/AutoMorph`) on Linux; `AUTOMORPH_DATA_DIR` overrides it.
-`cors-origins.txt` holds one origin per line, `#` starts a comment, and commas
-separate several origins on a line. The file must be plain UTF-8 text — an
-unreadable file is ignored. Origins listed there are added to AutoMorph's own
-window origins, which stay allowed either way, so an override can never lock
-the app out of its own backend. The `AUTOMORPH_CORS_ORIGINS` environment
-variable is read instead of the file when it is set.
+`~/.local/share/AutoMorph`) on Linux; `AUTOMORPH_DATA_DIR` overrides it. To let
+something other than AutoMorph's own window reach the desktop backend — a
+browser tab, or another tool on the same machine — list its origin in a file
+called `cors-origins.txt` in that folder. It holds one origin per line, `#`
+starts a comment, and commas separate several origins on a line. The file must
+be plain UTF-8 text — an unreadable file is ignored. Origins listed there are
+added to AutoMorph's own window origins, which stay allowed either way, so an
+override can never lock the app out of its own backend. The
+`AUTOMORPH_CORS_ORIGINS` environment variable is read instead of the file when
+it is set.
 
 ## ⚠️ Known Issues and Limitations
 

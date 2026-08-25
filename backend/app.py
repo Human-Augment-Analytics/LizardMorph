@@ -300,6 +300,36 @@ logger.info(f"Toepad finger predictor: {TOEPAD_FINGER_PREDICTOR}")
 
 # Cache YOLO model at startup to avoid reloading on each request
 _cached_yolo_model = None
+_model_cache_lock = threading.Lock()
+
+
+def _load_yolo_model():
+    if not TOEPAD_YOLO_MODEL or not os.path.exists(TOEPAD_YOLO_MODEL):
+        return None
+    use_ort = os.environ.get("USE_ORT_QUANTIZED", "").lower() in ("true", "1", "yes")
+    if use_ort:
+        from ort_inference import OrtYoloDetector
+        base, ext = os.path.splitext(TOEPAD_YOLO_MODEL)
+        int8_path = f"{base}_int8{ext}"
+        if os.path.exists(int8_path):
+            logger.info(f"Loading ORT INT8 model: {int8_path}")
+            model = OrtYoloDetector(int8_path)
+            logger.info("ORT INT8 model loaded and cached")
+            return model
+        logger.warning(f"INT8 model not found at {int8_path}, falling back")
+    try:
+        from ultralytics import YOLO
+        logger.info(f"Loading YOLO model: {TOEPAD_YOLO_MODEL}")
+        model = YOLO(TOEPAD_YOLO_MODEL, task="obb")
+        logger.info("YOLO model loaded and cached")
+        return model
+    except ImportError:
+        from ort_inference import OrtYoloDetector
+        logger.info(f"ultralytics not available, using ORT: {TOEPAD_YOLO_MODEL}")
+        model = OrtYoloDetector(TOEPAD_YOLO_MODEL)
+        logger.info("ORT YOLO model loaded and cached")
+        return model
+
 
 def get_cached_yolo_model():
     """Get cached YOLO model, loading it on first call.
@@ -309,71 +339,71 @@ def get_cached_yolo_model():
     is not available (e.g. in packaged Electron builds).
     """
     global _cached_yolo_model
-    if _cached_yolo_model is None:
-        if TOEPAD_YOLO_MODEL and os.path.exists(TOEPAD_YOLO_MODEL):
-            use_ort = os.environ.get("USE_ORT_QUANTIZED", "").lower() in ("true", "1", "yes")
-            if use_ort:
-                from ort_inference import OrtYoloDetector
-                base, ext = os.path.splitext(TOEPAD_YOLO_MODEL)
-                int8_path = f"{base}_int8{ext}"
-                if os.path.exists(int8_path):
-                    logger.info(f"Loading ORT INT8 model: {int8_path}")
-                    _cached_yolo_model = OrtYoloDetector(int8_path)
-                    logger.info("ORT INT8 model loaded and cached")
-                else:
-                    logger.warning(f"INT8 model not found at {int8_path}, falling back")
-                    use_ort = False
-            if not use_ort:
-                try:
-                    from ultralytics import YOLO
-                    logger.info(f"Loading YOLO model: {TOEPAD_YOLO_MODEL}")
-                    _cached_yolo_model = YOLO(TOEPAD_YOLO_MODEL, task="obb")
-                    logger.info("YOLO model loaded and cached")
-                except ImportError:
-                    from ort_inference import OrtYoloDetector
-                    logger.info(f"ultralytics not available, using ORT: {TOEPAD_YOLO_MODEL}")
-                    _cached_yolo_model = OrtYoloDetector(TOEPAD_YOLO_MODEL)
-                    logger.info("ORT YOLO model loaded and cached")
-    return _cached_yolo_model
+    if _cached_yolo_model is not None:
+        return _cached_yolo_model
+    with _model_cache_lock:
+        if _cached_yolo_model is None:
+            _cached_yolo_model = _load_yolo_model()
+        return _cached_yolo_model
 
 _cached_id_model = None
+
+
+def _load_id_model():
+    if not ID_EXTRACTOR_MODEL or not os.path.exists(ID_EXTRACTOR_MODEL):
+        return None
+    from ultralytics import YOLO
+    logger.info(f"Loading ID extractor model: {ID_EXTRACTOR_MODEL}")
+    model = YOLO(ID_EXTRACTOR_MODEL, task="obb")
+    logger.info("ID extractor model loaded and cached")
+    return model
+
 
 def get_cached_id_model():
     """Get cached ID extractor YOLO model, loading it on first call."""
     global _cached_id_model
-    if _cached_id_model is None:
-        if ID_EXTRACTOR_MODEL and os.path.exists(ID_EXTRACTOR_MODEL):
-            from ultralytics import YOLO
-            logger.info(f"Loading ID extractor model: {ID_EXTRACTOR_MODEL}")
-            _cached_id_model = YOLO(ID_EXTRACTOR_MODEL, task="obb")
-            logger.info("ID extractor model loaded and cached")
-    return _cached_id_model
+    if _cached_id_model is not None:
+        return _cached_id_model
+    with _model_cache_lock:
+        if _cached_id_model is None:
+            _cached_id_model = _load_id_model()
+        return _cached_id_model
 
 # Cache dlib predictors at startup to avoid reloading on each request
 _cached_dlib_predictors = {}
 
+
+def _load_dlib_predictors():
+    predictors = {}
+    try:
+        import dlib
+        if DORSAL_PREDICTOR_FILE and os.path.exists(DORSAL_PREDICTOR_FILE):
+            logger.info(f"Loading dorsal predictor: {DORSAL_PREDICTOR_FILE}")
+            predictors['dorsal'] = dlib.shape_predictor(DORSAL_PREDICTOR_FILE)
+        if SCALE_PREDICTOR_FILE and os.path.exists(SCALE_PREDICTOR_FILE):
+            logger.info(f"Loading scale predictor: {SCALE_PREDICTOR_FILE}")
+            predictors['scale'] = dlib.shape_predictor(SCALE_PREDICTOR_FILE)
+        if TOEPAD_TOE_PREDICTOR and os.path.exists(TOEPAD_TOE_PREDICTOR):
+            logger.info(f"Loading toe predictor: {TOEPAD_TOE_PREDICTOR}")
+            predictors['toe'] = dlib.shape_predictor(TOEPAD_TOE_PREDICTOR)
+        if TOEPAD_FINGER_PREDICTOR and os.path.exists(TOEPAD_FINGER_PREDICTOR):
+            logger.info(f"Loading finger predictor: {TOEPAD_FINGER_PREDICTOR}")
+            predictors['finger'] = dlib.shape_predictor(TOEPAD_FINGER_PREDICTOR)
+        logger.info(f"Dlib predictors loaded and cached: {list(predictors.keys())}")
+    except ImportError:
+        logger.warning("dlib not installed, skipping predictor caching")
+    return predictors
+
+
 def get_cached_dlib_predictors():
     """Get cached dlib predictors, loading them on first call."""
     global _cached_dlib_predictors
-    if not _cached_dlib_predictors:
-        try:
-            import dlib
-            if DORSAL_PREDICTOR_FILE and os.path.exists(DORSAL_PREDICTOR_FILE):
-                logger.info(f"Loading dorsal predictor: {DORSAL_PREDICTOR_FILE}")
-                _cached_dlib_predictors['dorsal'] = dlib.shape_predictor(DORSAL_PREDICTOR_FILE)
-            if SCALE_PREDICTOR_FILE and os.path.exists(SCALE_PREDICTOR_FILE):
-                logger.info(f"Loading scale predictor: {SCALE_PREDICTOR_FILE}")
-                _cached_dlib_predictors['scale'] = dlib.shape_predictor(SCALE_PREDICTOR_FILE)
-            if TOEPAD_TOE_PREDICTOR and os.path.exists(TOEPAD_TOE_PREDICTOR):
-                logger.info(f"Loading toe predictor: {TOEPAD_TOE_PREDICTOR}")
-                _cached_dlib_predictors['toe'] = dlib.shape_predictor(TOEPAD_TOE_PREDICTOR)
-            if TOEPAD_FINGER_PREDICTOR and os.path.exists(TOEPAD_FINGER_PREDICTOR):
-                logger.info(f"Loading finger predictor: {TOEPAD_FINGER_PREDICTOR}")
-                _cached_dlib_predictors['finger'] = dlib.shape_predictor(TOEPAD_FINGER_PREDICTOR)
-            logger.info(f"Dlib predictors loaded and cached: {list(_cached_dlib_predictors.keys())}")
-        except ImportError:
-            logger.warning("dlib not installed, skipping predictor caching")
-    return _cached_dlib_predictors
+    if _cached_dlib_predictors:
+        return _cached_dlib_predictors
+    with _model_cache_lock:
+        if not _cached_dlib_predictors:
+            _cached_dlib_predictors = _load_dlib_predictors()
+        return _cached_dlib_predictors
 
 
 def _supplement_client_annotations_with_yolo(client_ann, image_path, yolo_model):
