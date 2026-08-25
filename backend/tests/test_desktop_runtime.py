@@ -108,3 +108,52 @@ def test_clear_session_sweeps_the_runtime_root_not_the_process_cwd(runtime_root)
     assert result["success"] is True
     assert not stray_in_root.exists()
     assert stray_in_cwd.exists()
+
+
+TAURI_ORIGIN = "http://tauri.localhost"
+
+
+def _preflight(client, path, method):
+    return client.options(
+        path,
+        headers={
+            "Origin": TAURI_ORIGIN,
+            "Access-Control-Request-Method": method,
+            "Access-Control-Request-Headers": "x-session-id",
+        },
+    )
+
+
+def _allowed_methods(response):
+    allowed = response.headers.get("Access-Control-Allow-Methods", "")
+    return {method.strip().upper() for method in allowed.split(",") if method.strip()}
+
+
+@pytest.mark.parametrize(
+    ("path", "method"),
+    [
+        ("/predictors/some-id", "DELETE"),
+        ("/predictors", "POST"),
+        ("/data", "POST"),
+        ("/list_uploads", "GET"),
+    ],
+)
+def test_cross_origin_preflight_allows_every_method_the_desktop_frontend_uses(path, method):
+    app_module.app.config.update(TESTING=True)
+    with app_module.app.test_client() as client:
+        response = _preflight(client, path, method)
+
+    assert response.status_code in (200, 204)
+    assert response.headers.get("Access-Control-Allow-Origin") in (TAURI_ORIGIN, "*")
+    assert method in _allowed_methods(response)
+
+
+def test_cross_origin_delete_response_is_readable_by_the_desktop_webview():
+    app_module.app.config.update(TESTING=True)
+    with app_module.app.test_client() as client:
+        response = client.delete(
+            "/predictors/does-not-exist",
+            headers={"Origin": TAURI_ORIGIN, "X-Session-ID": "session"},
+        )
+
+    assert response.headers.get("Access-Control-Allow-Origin") in (TAURI_ORIGIN, "*")

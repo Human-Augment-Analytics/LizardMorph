@@ -435,7 +435,7 @@ CORS(
     resources={
         r"/*": {
             "origins": "*",  # Allow all origins during development
-            "methods": ["GET", "POST", "OPTIONS"],
+            "methods": ["GET", "POST", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "X-Session-ID"],
         }
     },
