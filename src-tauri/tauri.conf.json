@@ -4,9 +4,9 @@
   "version": "1.0.8",
   "identifier": "com.humanaugmentanalytics.automorph",
   "build": {
-    "beforeDevCommand": "npm run dev --prefix ../frontend",
+    "beforeDevCommand": "bash scripts/tauri-dev.sh",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm run build --prefix ../frontend",
+    "beforeBuildCommand": "bash scripts/build-tauri-app.sh",
     "frontendDist": "../frontend/dist"
   },
   "app": {
@@ -15,7 +15,8 @@
         "title": "AutoMorph",
         "width": 1280,
         "height": 800,
-        "resizable": true
+        "resizable": true,
+        "visible": false
       }
     ],
     "security": {
@@ -34,7 +35,11 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "signingIdentity": "-",
+      "hardenedRuntime": false
+    }
   },
   "plugins": {}
 }

@@ -3,9 +3,10 @@
   "version": "1.0.8",
   "private": true,
   "scripts": {
-    "tauri": "npm --prefix frontend run tauri",
-    "tauri:dev": "npm --prefix frontend run tauri:dev",
-    "tauri:build": "npm --prefix frontend run tauri:build",
+    "tauri": "frontend/node_modules/.bin/tauri",
+    "tauri:dev": "frontend/node_modules/.bin/tauri dev",
+    "tauri:build": "frontend/node_modules/.bin/tauri build",
+    "sidecar:build": "bash scripts/build-tauri-sidecar.sh",
     "dev": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build"
   },

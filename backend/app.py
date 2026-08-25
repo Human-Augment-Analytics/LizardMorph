@@ -1,7 +1,13 @@
 import os
+import multiprocessing
+import sys
 from dotenv import load_dotenv
 
-load_dotenv()
+if __name__ == "__main__":
+    multiprocessing.freeze_support()
+
+if not getattr(sys, "frozen", False):
+    load_dotenv()
 
 # Server-side ID OCR loads EasyOCR/torch and can OOM low-RAM hosts; set ENABLE_ID_OCR=false to skip.
 ENABLE_ID_OCR = os.getenv("ENABLE_ID_OCR", "true").lower() in ("1", "true", "yes")
@@ -20,7 +26,6 @@ import xray_preprocessing
 from export_handler import ExportHandler
 from session_manager import SessionManager
 
-import sys
 import copy
 import hmac
 import hashlib
@@ -38,6 +43,22 @@ import psutil
 import threading
 import predictor_library
 import uuid
+
+def watch_parent_process():
+    parent_pid = os.getenv("AUTOMORPH_PARENT_PID")
+    if not parent_pid:
+        return
+    try:
+        parent_pid_value = int(parent_pid)
+    except ValueError:
+        return
+
+    def monitor():
+        while psutil.pid_exists(parent_pid_value):
+            time.sleep(1)
+        os._exit(0)
+
+    threading.Thread(target=monitor, name="automorph-parent-watchdog", daemon=True).start()
 
 # prometheus_client is optional in some environments (e.g. minimal installs, tests)
 try:
@@ -57,6 +78,21 @@ if getattr(sys, 'frozen', False):
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+def get_runtime_root():
+    configured_root = os.getenv("AUTOMORPH_DATA_DIR")
+    if configured_root:
+        return os.path.abspath(os.path.expanduser(configured_root))
+    if sys.platform == "darwin":
+        return os.path.expanduser("~/Library/Application Support/AutoMorph")
+    if sys.platform == "win32":
+        return os.path.join(os.getenv("APPDATA", os.path.expanduser("~")), "AutoMorph")
+    return os.path.join(
+        os.getenv("XDG_DATA_HOME", os.path.expanduser("~/.local/share")),
+        "AutoMorph",
+    )
+
+RUNTIME_ROOT = get_runtime_root() if getattr(sys, 'frozen', False) else os.getcwd()
+
 def get_model_path(relative_path):
     if relative_path is None:
         return None
@@ -70,9 +106,12 @@ def get_model_path(relative_path):
     return os.path.abspath(os.path.join(BASE_DIR, relative_path))
 
 # Global predictor library (Free mode)
-PREDICTOR_LIBRARY_DIR = get_model_path(
-    os.getenv("PREDICTOR_LIBRARY_DIR", "../models/custom_predictors")
-)
+if getattr(sys, 'frozen', False) and not os.getenv("PREDICTOR_LIBRARY_DIR"):
+    PREDICTOR_LIBRARY_DIR = os.path.join(RUNTIME_ROOT, "models", "custom_predictors")
+else:
+    PREDICTOR_LIBRARY_DIR = get_model_path(
+        os.getenv("PREDICTOR_LIBRARY_DIR", "../models/custom_predictors")
+    )
 PREDICTOR_LIBRARY_INDEX = os.path.join(PREDICTOR_LIBRARY_DIR, "predictors.json")
 PREDICTOR_LIBRARY_FILES = os.path.join(PREDICTOR_LIBRARY_DIR, "files")
 
@@ -132,7 +171,7 @@ PREDICTOR_INDEX_LOCK = threading.Lock()
 TRAINING_SEMAPHORE = threading.Semaphore(1)
 
 # Persistent file-based job store
-JOBS_DIR = os.path.join(os.path.dirname(__file__), "sessions", "jobs")
+JOBS_DIR = os.path.join(RUNTIME_ROOT, "sessions", "jobs")
 
 def save_job_status(job_id, status_dict):
     try:
@@ -384,13 +423,13 @@ CORS(
     },
 )
 
-SESSIONS_FOLDER = os.path.join(os.getcwd(), session_dir)
-UPLOAD_FOLDER = os.path.join(os.getcwd(), "upload")
-COLOR_CONTRAST_FOLDER = os.path.join(os.getcwd(), "color_constrasted")
-TPS_DOWNLOAD_FOLDER = os.path.join(os.getcwd(), "tps_download")
-IMAGE_DOWNLOAD_FOLDER = os.path.join(os.getcwd(), "image_download")
-INVERT_IMAGE_FOLDER = os.path.join(os.getcwd(), "invert_image")
-OUTPUTS_FOLDER = os.path.join(os.getcwd(), "outputs")
+SESSIONS_FOLDER = os.path.join(RUNTIME_ROOT, session_dir)
+UPLOAD_FOLDER = os.path.join(RUNTIME_ROOT, "upload")
+COLOR_CONTRAST_FOLDER = os.path.join(RUNTIME_ROOT, "color_constrasted")
+TPS_DOWNLOAD_FOLDER = os.path.join(RUNTIME_ROOT, "tps_download")
+IMAGE_DOWNLOAD_FOLDER = os.path.join(RUNTIME_ROOT, "image_download")
+INVERT_IMAGE_FOLDER = os.path.join(RUNTIME_ROOT, "invert_image")
+OUTPUTS_FOLDER = os.path.join(RUNTIME_ROOT, "outputs")
 
 app.config.update(
     SESSIONS_FOLDER=SESSIONS_FOLDER,
@@ -2446,5 +2485,6 @@ def extract_id():
 
 # Make sure your app runs on the correct host and port if started directly
 if __name__ == "__main__":
-    port = int(os.getenv("API_PORT", 5000))
+    watch_parent_process()
+    port = int(os.getenv("API_PORT", 3005))
     app.run(host="0.0.0.0", port=port)

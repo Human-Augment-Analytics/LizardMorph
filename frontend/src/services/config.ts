@@ -1,3 +1,19 @@
+function isTauriRuntime(): boolean {
+  const runtimeWindow = window as typeof window & { __TAURI__?: unknown };
+  return (
+    Boolean(runtimeWindow.__TAURI__) ||
+    window.location.hostname === "tauri.localhost" ||
+    window.location.protocol === "tauri:"
+  );
+}
+
+function fallbackApiUrl(): string {
+  if (isTauriRuntime()) {
+    return "http://127.0.0.1:3005";
+  }
+  return import.meta.env.VITE_API_URL || "/api";
+}
+
 async function resolveApiUrl(): Promise<string> {
   if (window.electronAPI?.isElectron) {
     try {
@@ -7,7 +23,7 @@ async function resolveApiUrl(): Promise<string> {
       // fallback
     }
   }
-  return import.meta.env.VITE_API_URL || "/api";
+  return fallbackApiUrl();
 }
 
 let _apiUrlPromise: Promise<string> | null = null;
@@ -20,4 +36,4 @@ export function getApiUrl(): Promise<string> {
 }
 
 // Synchronous export for non-Electron web mode (backwards compat)
-export const API_URL = import.meta.env.VITE_API_URL || "/api";
+export const API_URL = fallbackApiUrl();

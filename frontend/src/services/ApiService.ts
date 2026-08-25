@@ -2,13 +2,10 @@
 import type { AnnotationsData } from "../models/AnnotationsData";
 import type { ImageSet } from "../models/ImageSet";
 import { SessionService } from "./SessionService";
-import { API_URL, getApiUrl } from "./config";
+import { getApiUrl } from "./config";
 
 async function apiUrl(): Promise<string> {
-  if (window.electronAPI?.isElectron) {
-    return getApiUrl();
-  }
-  return API_URL;
+  return getApiUrl();
 }
 
 export class ApiService {

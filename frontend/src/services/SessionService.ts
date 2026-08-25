@@ -1,12 +1,9 @@
 // Session management service for handling session lifecycle and storage
-import { API_URL, getApiUrl } from "./config";
+import { getApiUrl } from "./config";
 import { CookieUtils } from "./CookieUtils";
 
 async function apiUrl(): Promise<string> {
-  if (window.electronAPI?.isElectron) {
-    return getApiUrl();
-  }
-  return API_URL;
+  return getApiUrl();
 }
 
 interface SessionInfo {

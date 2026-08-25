@@ -56,6 +56,7 @@ class OrtYoloDetector:
         Args:
             model_path: Path to .onnx model file.
         """
+        self.model_path = model_path
         providers = _get_execution_providers()
         self.session = ort.InferenceSession(
             model_path,
@@ -64,6 +65,28 @@ class OrtYoloDetector:
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
         print(f"[OrtYoloDetector] Loaded model from {model_path}")
+
+    def _run(self, tensor: np.ndarray) -> np.ndarray:
+        output = self.session.run([self.output_name], {self.input_name: tensor})[0]
+        if np.all(np.isfinite(output)):
+            return output
+
+        active_providers = self.session.get_providers()
+        if active_providers != ["CPUExecutionProvider"]:
+            print(
+                "[OrtYoloDetector] Non-finite accelerator output; retrying with CPUExecutionProvider"
+            )
+            self.session = ort.InferenceSession(
+                self.model_path,
+                providers=["CPUExecutionProvider"],
+            )
+            self.input_name = self.session.get_inputs()[0].name
+            self.output_name = self.session.get_outputs()[0].name
+            output = self.session.run([self.output_name], {self.input_name: tensor})[0]
+
+        if not np.all(np.isfinite(output)):
+            raise RuntimeError("ONNX detector produced non-finite output")
+        return output
 
     # ------------------------------------------------------------------
     # Preprocessing
@@ -269,12 +292,12 @@ class OrtYoloDetector:
         tensor, scale, x_pad, y_pad = self._preprocess(img_bgr)
 
         # --- Pass 1: Normal inference ---
-        output = self.session.run([self.output_name], {self.input_name: tensor})[0]
+        output = self._run(tensor)
         normal_boxes = self._nms_and_top_one(self._parse_detections(output, conf_threshold))
 
         # --- Pass 2: Flipped inference ---
         flipped_tensor = self._flip_tensor_vertically(tensor)
-        output_flipped = self.session.run([self.output_name], {self.input_name: flipped_tensor})[0]
+        output_flipped = self._run(flipped_tensor)
         flipped_boxes = self._nms_and_top_one(self._parse_detections(output_flipped, conf_threshold))
 
         # --- Build detections dict ---
