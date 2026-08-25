@@ -200,3 +200,74 @@ def test_an_unknown_short_session_id_matches_no_folder(tmp_path):
         session_id
     )["session_folder"]
     assert manager.find_session_folder("deadbeef") is None
+
+
+def test_a_filename_with_url_punctuation_still_serves_its_annotated_image(
+    session_client,
+):
+    client, manager = session_client
+    session_id = manager.create_session()
+    session_data = manager.get_session(session_id)
+    cv2.imwrite(
+        os.path.join(session_data["upload_folder"], "LIZ #12.png"),
+        np.full((40, 60, 3), 200, dtype=np.uint8),
+    )
+
+    exported = client.post(
+        "/endpoint",
+        json={"name": "LIZ #12.png", "coords": [{"x": 10, "y": 12}]},
+        headers={"X-Session-ID": session_id},
+    )
+    payload = exported.get_json()
+
+    assert payload["image_urls"], payload
+    image_url = payload["image_urls"][0]
+
+    served = client.get(image_url, headers={"X-Session-ID": session_id})
+
+    assert served.status_code == 200
+    annotated = cv2.imdecode(
+        np.frombuffer(served.data, dtype=np.uint8), cv2.IMREAD_COLOR
+    )
+    assert tuple(int(channel) for channel in annotated[12, 10]) == (0, 0, 255)
+
+
+def test_the_newest_folder_wins_when_two_share_a_short_session_id(
+    session_client, monkeypatch
+):
+    client, manager = session_client
+    session_id = manager.create_session()
+    session_data = manager.get_session(session_id)
+    cv2.imwrite(
+        os.path.join(session_data["upload_folder"], "specimen.png"),
+        np.full((40, 60, 3), 200, dtype=np.uint8),
+    )
+
+    stale_annotated = os.path.join(
+        manager.base_sessions_dir,
+        f"session_19990101_000000_{session_id[:8]}",
+        "annotated",
+    )
+    os.makedirs(stale_annotated)
+    cv2.imwrite(
+        os.path.join(stale_annotated, "annotated_specimen.png"),
+        np.zeros((40, 60, 3), dtype=np.uint8),
+    )
+
+    exported = client.post(
+        "/endpoint",
+        json={"name": "specimen.png", "coords": [{"x": 10, "y": 12}]},
+        headers={"X-Session-ID": session_id},
+    )
+    image_url = exported.get_json()["image_urls"][0]
+
+    real_listdir = os.listdir
+    monkeypatch.setattr(os, "listdir", lambda path: sorted(real_listdir(path)))
+    served = client.get(image_url, headers={"X-Session-ID": session_id})
+
+    assert served.status_code == 200
+    annotated = cv2.imdecode(
+        np.frombuffer(served.data, dtype=np.uint8), cv2.IMREAD_COLOR
+    )
+    assert tuple(int(channel) for channel in annotated[12, 10]) == (0, 0, 255)
+    assert tuple(int(channel) for channel in annotated[0, 0]) == (200, 200, 200)

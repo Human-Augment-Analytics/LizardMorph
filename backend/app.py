@@ -43,6 +43,7 @@ import psutil
 import threading
 import predictor_library
 import uuid
+from urllib.parse import quote
 
 def cleanup_frozen_temp_dir():
     if not getattr(sys, "frozen", False):
@@ -1585,7 +1586,7 @@ def serve_image_file():
 
 def session_image_url(session_id, image_path):
     """URL the API advertises for an annotated image belonging to a session."""
-    return f"/images/{session_id[:8]}/{os.path.basename(image_path)}"
+    return f"/images/{session_id[:8]}/{quote(os.path.basename(image_path))}"
 
 
 @app.route("/endpoint", methods=["POST"])

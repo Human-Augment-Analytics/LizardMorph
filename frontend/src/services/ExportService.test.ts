@@ -68,3 +68,62 @@ describe("ExportService annotated image download", () => {
     );
   });
 });
+
+describe("ExportService archive layout", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    vi.resetModules();
+  });
+
+  it("keeps specimens sharing a dotted prefix in separate archive entries", async () => {
+    const { ApiService } = await import("./ApiService");
+    const { ExportService } = await import("./ExportService");
+    const JSZip = (await import("jszip")).default;
+
+    vi.spyOn(ApiService, "exportScatterData").mockImplementation(async (payload) => ({
+      image_urls: [`/images/01234567/annotated_${payload.name.replace(/\.[^.]+$/, "")}.png`],
+    }));
+    vi.spyOn(ApiService, "downloadAnnotatedImage").mockImplementation(
+      async (imageUrl: string) =>
+        new TextEncoder().encode(imageUrl) as unknown as Blob,
+    );
+    const downloadFile = vi.spyOn(ExportService, "downloadFile").mockResolvedValue();
+
+    await ExportService.exportAllData(
+      [
+        { name: "LIZ.001.jpg", coords: [{ id: 0, x: 10, y: 12 }], imageSets: { original: "a" } },
+        { name: "LIZ.002.jpg", coords: [{ id: 0, x: 30, y: 24 }], imageSets: { original: "b" } },
+      ],
+      0,
+      [{ id: 0, x: 10, y: 12 }],
+      [{ id: 0, x: 10, y: 12 }],
+      async () => new TextEncoder().encode("overlay") as unknown as Blob,
+      [],
+      SCALE_SETTINGS,
+    );
+
+    const archived = await downloadFile.mock.calls[0][0].arrayBuffer();
+    const archive = await JSZip.loadAsync(archived);
+
+    expect(Object.keys(archive.files).sort()).toEqual([
+      "LIZ.001.tps",
+      "LIZ.002.tps",
+      "annotated_LIZ.001.png",
+      "annotated_LIZ.002.png",
+      "measurements.csv",
+    ]);
+    await expect(archive.file("LIZ.001.tps")!.async("string")).resolves.toContain(
+      "IMAGE=LIZ.001",
+    );
+    await expect(archive.file("LIZ.002.tps")!.async("string")).resolves.toContain(
+      "IMAGE=LIZ.002",
+    );
+    await expect(
+      archive.file("annotated_LIZ.001.png")!.async("string"),
+    ).resolves.toBe("/api/images/01234567/annotated_LIZ.001.png");
+    await expect(
+      archive.file("annotated_LIZ.002.png")!.async("string"),
+    ).resolves.toBe("/api/images/01234567/annotated_LIZ.002.png");
+  });
+});
