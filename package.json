@@ -8,7 +8,8 @@
     "tauri:build": "node frontend/node_modules/@tauri-apps/cli/tauri.js build",
     "sidecar:build": "bash scripts/build-tauri-sidecar.sh",
     "dev": "npm --prefix frontend run dev",
-    "build": "npm --prefix frontend run build"
+    "build": "npm --prefix frontend run build",
+    "test": "npm --prefix frontend run test"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.2.0"

@@ -9,6 +9,7 @@
     "build:version": "npm version patch && tsc -b && vite build",
     "build:timestamp": "tsc -b && vite build --mode production",
     "lint": "eslint .",
+    "test": "vitest run",
     "preview": "vite preview",
     "tauri": "cd .. && node frontend/node_modules/@tauri-apps/cli/tauri.js",
     "tauri:dev": "cd .. && node frontend/node_modules/@tauri-apps/cli/tauri.js dev",

@@ -61,17 +61,14 @@ class OrtYoloDetector:
         self.model_path = model_path
         providers = _get_execution_providers()
         self._session_lock = threading.Lock()
-        self._install_session(
-            ort.InferenceSession(model_path, providers=providers),
-            providers == ["CPUExecutionProvider"],
-        )
+        self._install_session(ort.InferenceSession(model_path, providers=providers))
         print(f"[OrtYoloDetector] Loaded model from {model_path}")
 
-    def _install_session(self, session, cpu_only: bool):
+    def _install_session(self, session):
         self.session = session
         self.input_name = session.get_inputs()[0].name
         self.output_name = session.get_outputs()[0].name
-        self._cpu_only = cpu_only
+        self._cpu_only = session.get_providers() == ["CPUExecutionProvider"]
 
     def _current_session(self):
         with self._session_lock:
@@ -87,8 +84,7 @@ class OrtYoloDetector:
                     ort.InferenceSession(
                         self.model_path,
                         providers=["CPUExecutionProvider"],
-                    ),
-                    True,
+                    )
                 )
             return self.session, self.input_name, self.output_name
 

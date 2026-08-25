@@ -16,5 +16,7 @@ torch
 torchvision
 easyocr
 pytesseract  # Linux /extract_id OCR via system tesseract (no torch); apt install tesseract-ocr
+pyobjc-framework-Vision; sys_platform == "darwin"  # macOS /extract_id OCR via the Vision framework
+pyobjc-framework-Quartz; sys_platform == "darwin"
 onnxruntime  # Use onnxruntime-silicon on Apple Silicon; onnxruntime-openvino on Intel for OpenVINO EP
 openvino

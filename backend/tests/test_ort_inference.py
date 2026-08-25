@@ -1,6 +1,7 @@
 import threading
 
 import numpy as np
+import pytest
 
 import ort_inference
 
@@ -48,6 +49,32 @@ def test_detector_retries_non_finite_accelerator_output_on_cpu(monkeypatch):
     assert [session.providers for session in sessions] == [
         ["CoreMLExecutionProvider"],
         ["CPUExecutionProvider"],
+    ]
+
+
+def test_detector_does_not_rebuild_when_the_accelerator_never_bound(monkeypatch):
+    bad_output = np.full((1, 11, 1), np.nan, dtype=np.float32)
+    sessions = []
+
+    def make_session(_model_path, providers):
+        session = _FakeSession(bad_output, ["CPUExecutionProvider"])
+        sessions.append((providers, session))
+        return session
+
+    monkeypatch.setattr(
+        ort_inference,
+        "_get_execution_providers",
+        lambda: ["CoreMLExecutionProvider", "CPUExecutionProvider"],
+    )
+    monkeypatch.setattr(ort_inference.ort, "InferenceSession", make_session)
+
+    detector = ort_inference.OrtYoloDetector("model.onnx")
+
+    with pytest.raises(RuntimeError, match="non-finite"):
+        detector._run(np.zeros((1, 3, 4, 4), dtype=np.float32))
+
+    assert [providers for providers, _ in sessions] == [
+        ["CoreMLExecutionProvider", "CPUExecutionProvider"]
     ]
 
 
