@@ -106,7 +106,9 @@ RUNTIME_ROOT = get_runtime_root() if getattr(sys, 'frozen', False) else os.getcw
 
 
 def get_bind_host():
-    return "127.0.0.1" if os.getenv("AUTOMORPH_PARENT_PID") else "0.0.0.0"
+    if getattr(sys, "frozen", False) or os.getenv("AUTOMORPH_PARENT_PID"):
+        return "127.0.0.1"
+    return "0.0.0.0"
 
 
 def get_model_path(relative_path):

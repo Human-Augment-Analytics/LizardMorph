@@ -7,12 +7,20 @@ import app as app_module
 from session_manager import SessionManager
 
 
-def test_bind_host_is_loopback_only_when_supervised_by_the_tauri_sidecar(monkeypatch):
+def test_bind_host_is_loopback_when_supervised_by_the_tauri_sidecar(monkeypatch):
+    monkeypatch.setattr(app_module.sys, "frozen", False, raising=False)
     monkeypatch.setenv("AUTOMORPH_PARENT_PID", "4242")
     assert app_module.get_bind_host() == "127.0.0.1"
 
 
+def test_bind_host_is_loopback_for_a_frozen_bundle_without_a_supervisor_token(monkeypatch):
+    monkeypatch.setattr(app_module.sys, "frozen", True, raising=False)
+    monkeypatch.delenv("AUTOMORPH_PARENT_PID", raising=False)
+    assert app_module.get_bind_host() == "127.0.0.1"
+
+
 def test_bind_host_stays_wide_open_for_hosted_deployments(monkeypatch):
+    monkeypatch.setattr(app_module.sys, "frozen", False, raising=False)
     monkeypatch.delenv("AUTOMORPH_PARENT_PID", raising=False)
     assert app_module.get_bind_host() == "0.0.0.0"
 
