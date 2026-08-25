@@ -138,7 +138,7 @@ def read_cors_origins_override():
     try:
         with open(os.path.join(RUNTIME_ROOT, CORS_ORIGINS_FILE), encoding="utf-8") as handle:
             return parse_cors_origins(handle.read())
-    except OSError:
+    except (OSError, ValueError):
         return None
 
 

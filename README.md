@@ -267,6 +267,26 @@ uv run python scripts/<script>.py --help
 | **Frontend not loading** | Check browser console for CORS errors; ensure the backend API URL is correctly set in `.env` or Vite config. |
 | **Image processing errors** | Verify the uploaded image format is supported (JPG, PNG, TIF, BMP). |
 
+### Desktop app (Tauri)
+
+The desktop build runs its analysis backend on `127.0.0.1:3005` and accepts
+requests only from AutoMorph's own window.
+
+| Message in the window | Likely cause / fix |
+|-----------------------|--------------------|
+| **"refused this window's requests from ..."** | The window's origin is not on the backend allowlist. Write the origin named in the message into a file called `cors-origins.txt` in AutoMorph's data folder (see below) and reopen AutoMorph. |
+| **"another program is already using port 3005"** | Quit that program — including any earlier copy of AutoMorph — and reopen it. |
+| **"could not start its analysis backend"** | The bundled backend failed to launch. Reinstall AutoMorph if restarting does not help. |
+| **"backend stopped unexpectedly"** | The backend exited mid-session. Restart AutoMorph. |
+
+AutoMorph's data folder is `~/Library/Application Support/AutoMorph` on macOS,
+`%APPDATA%\AutoMorph` on Windows, and `$XDG_DATA_HOME/AutoMorph` (by default
+`~/.local/share/AutoMorph`) on Linux; `AUTOMORPH_DATA_DIR` overrides it.
+`cors-origins.txt` holds one origin per line, `#` starts a comment, and commas
+separate several origins on a line. The file must be plain UTF-8 text — an
+unreadable file is ignored and the built-in allowlist stays in force. The
+`AUTOMORPH_CORS_ORIGINS` environment variable overrides the file.
+
 ## ⚠️ Known Issues and Limitations
 
 ### Production Deployment

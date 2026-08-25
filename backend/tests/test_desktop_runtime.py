@@ -349,3 +349,15 @@ def test_a_data_root_file_does_not_widen_a_hosted_deployment(tmp_path):
     for origin_case in payload.values():
         assert origin_case["simple"] in ("*", origin_case["origin"])
 
+
+
+def test_an_unreadable_data_root_file_leaves_the_desktop_allowlist_intact(tmp_path):
+    (tmp_path / "cors-origins.txt").write_bytes(
+        "https://evil.test\n".encode("utf-16")
+    )
+
+    payload = _cors_probe(tmp_path, {"AUTOMORPH_PARENT_PID": "4242"})
+
+    assert payload["custom_scheme"]["simple"] == "tauri://localhost"
+    assert payload["desktop"]["simple"] == "http://tauri.localhost"
+    assert payload["foreign"]["simple"] is None

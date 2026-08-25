@@ -33,12 +33,25 @@ const BACKEND_START_FAILED_MESSAGE: &str =
 const BACKEND_STOPPED_MESSAGE: &str =
     "AutoMorph's analysis backend stopped unexpectedly. Restart AutoMorph to continue.";
 const BACKEND_NOT_RUNNING_MESSAGE: &str = "AutoMorph's analysis backend is not answering on 127.0.0.1:3005. Start it with 'make dev' (or 'make dev-backend') and reload this window.";
-const BACKEND_ORIGIN_REJECTED_MESSAGE: &str = "AutoMorph's analysis backend refused this window's requests. Restart AutoMorph; if this keeps happening, reinstall it.";
-
 #[cfg(windows)]
-const DESKTOP_WEBVIEW_ORIGIN: &str = "http://tauri.localhost";
+macro_rules! desktop_webview_origin {
+    () => {
+        "http://tauri.localhost"
+    };
+}
 #[cfg(not(windows))]
-const DESKTOP_WEBVIEW_ORIGIN: &str = "tauri://localhost";
+macro_rules! desktop_webview_origin {
+    () => {
+        "tauri://localhost"
+    };
+}
+
+const DESKTOP_WEBVIEW_ORIGIN: &str = desktop_webview_origin!();
+const BACKEND_ORIGIN_REJECTED_MESSAGE: &str = concat!(
+    "AutoMorph's analysis backend refused this window's requests from ",
+    desktop_webview_origin!(),
+    ". Put that origin in a file named cors-origins.txt inside AutoMorph's data folder and reopen AutoMorph; if this keeps happening, reinstall it."
+);
 
 #[derive(Default)]
 struct BackendProcess {
@@ -214,6 +227,41 @@ fn unavailable_message(supervisor: Option<&str>, address: &SocketAddr) -> &'stat
     backend_failure_message(address)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReadinessVerdict {
+    Ready,
+    Unavailable(&'static str),
+}
+
+/// Without a supervisor token this app neither spawned the backend nor loads the
+/// custom-scheme document, so the webview origin it would assert is not this
+/// window's own origin and the check is not applicable.
+fn readiness_verdict(
+    supervisor: Option<&str>,
+    healthy: bool,
+    address: &SocketAddr,
+) -> ReadinessVerdict {
+    if !healthy {
+        return ReadinessVerdict::Unavailable(unavailable_message(supervisor, address));
+    }
+    if supervisor.is_none() {
+        return ReadinessVerdict::Ready;
+    }
+    match webview_origin_verdict(address) {
+        OriginVerdict::Allowed => ReadinessVerdict::Ready,
+        OriginVerdict::Rejected => {
+            eprintln!(
+                "AutoMorph backend is healthy but rejects the webview origin {DESKTOP_WEBVIEW_ORIGIN}"
+            );
+            ReadinessVerdict::Unavailable(BACKEND_ORIGIN_REJECTED_MESSAGE)
+        }
+        OriginVerdict::Inconclusive => {
+            eprintln!("AutoMorph backend stopped answering before its origin policy could be checked");
+            ReadinessVerdict::Unavailable(unavailable_message(supervisor, address))
+        }
+    }
+}
+
 fn report_backend_unavailable(app_handle: &tauri::AppHandle, message: &'static str) {
     *app_handle
         .state::<BackendProcess>()
@@ -289,38 +337,16 @@ fn supervise_backend(app_handle: tauri::AppHandle, supervisor: Option<String>) {
             ready = false;
         }
 
-        let mut origin_rejected = false;
-        if ready {
-            match webview_origin_verdict(&address) {
-                OriginVerdict::Allowed => {}
-                OriginVerdict::Rejected => {
-                    eprintln!(
-                        "AutoMorph backend is healthy but rejects the webview origin {DESKTOP_WEBVIEW_ORIGIN}"
-                    );
-                    origin_rejected = true;
-                    ready = false;
-                }
-                OriginVerdict::Inconclusive => {
-                    eprintln!(
-                        "AutoMorph backend stopped answering before its origin policy could be checked"
-                    );
-                    ready = false;
-                }
+        match readiness_verdict(supervisor.as_deref(), ready, &address) {
+            ReadinessVerdict::Ready => {
+                app_handle
+                    .state::<BackendProcess>()
+                    .ready
+                    .store(true, Ordering::SeqCst);
             }
-        }
-
-        if ready {
-            app_handle
-                .state::<BackendProcess>()
-                .ready
-                .store(true, Ordering::SeqCst);
-        } else if origin_rejected {
-            report_backend_unavailable(&app_handle, BACKEND_ORIGIN_REJECTED_MESSAGE);
-        } else {
-            report_backend_unavailable(
-                &app_handle,
-                unavailable_message(supervisor.as_deref(), &address),
-            );
+            ReadinessVerdict::Unavailable(message) => {
+                report_backend_unavailable(&app_handle, message);
+            }
         }
 
         if let Some(window) = app_handle.get_webview_window("main") {
@@ -747,6 +773,56 @@ mod tests {
             BACKEND_START_FAILED_MESSAGE
         );
         drop(listener);
+    }
+
+    #[test]
+    fn a_developer_run_backend_is_ready_even_when_it_rejects_the_desktop_origin() {
+        let address = spawn_listener(Some(cors_response(None)));
+
+        assert_eq!(
+            readiness_verdict(None, true, &address),
+            ReadinessVerdict::Ready
+        );
+    }
+
+    #[test]
+    fn a_supervised_backend_that_rejects_this_window_is_reported_as_such() {
+        let address = spawn_listener(Some(cors_response(None)));
+
+        assert_eq!(
+            readiness_verdict(Some("4242"), true, &address),
+            ReadinessVerdict::Unavailable(BACKEND_ORIGIN_REJECTED_MESSAGE)
+        );
+    }
+
+    #[test]
+    fn a_supervised_backend_that_accepts_this_window_is_ready() {
+        let address = spawn_listener(Some(cors_response(Some(DESKTOP_WEBVIEW_ORIGIN))));
+
+        assert_eq!(
+            readiness_verdict(Some("4242"), true, &address),
+            ReadinessVerdict::Ready
+        );
+    }
+
+    #[test]
+    fn an_origin_check_that_never_completed_is_not_reported_as_a_rejection() {
+        assert_eq!(
+            readiness_verdict(Some("4242"), true, &closed_port()),
+            ReadinessVerdict::Unavailable(BACKEND_START_FAILED_MESSAGE)
+        );
+    }
+
+    #[test]
+    fn an_unhealthy_backend_keeps_its_own_diagnosis() {
+        assert_eq!(
+            readiness_verdict(None, false, &closed_port()),
+            ReadinessVerdict::Unavailable(BACKEND_NOT_RUNNING_MESSAGE)
+        );
+        assert_eq!(
+            readiness_verdict(Some("4242"), false, &closed_port()),
+            ReadinessVerdict::Unavailable(BACKEND_START_FAILED_MESSAGE)
+        );
     }
 
     #[test]

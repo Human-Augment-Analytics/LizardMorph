@@ -22,12 +22,36 @@ host_os() {
   esac
 }
 
-host_arch() {
-  case "$(uname -m)" in
+normalize_arch() {
+  case "$1" in
     arm64|aarch64) echo aarch64 ;;
-    amd64|x86_64) echo x86_64 ;;
-    *) uname -m ;;
+    amd64|x86_64|AMD64) echo x86_64 ;;
+    *) echo "$1" ;;
   esac
+}
+
+mach_arch() {
+  case "$1" in
+    aarch64) echo arm64 ;;
+    *) echo "$1" ;;
+  esac
+}
+
+interpreter_arch() {
+  normalize_arch "$("$1" -c 'import platform; print(platform.machine())' 2>/dev/null)"
+}
+
+binary_arch_conflicts() {
+  local binary="$1" archs arch expected
+  [[ "${TARGET_OS}" == "macOS" ]] || return 1
+  command -v lipo >/dev/null 2>&1 || return 1
+  archs="$(lipo -archs "${binary}" 2>/dev/null)" || return 1
+  [[ -n "${archs}" ]] || return 1
+  expected="$(mach_arch "${TARGET_ARCH}")"
+  for arch in ${archs}; do
+    [[ "${arch}" != "${expected}" ]] || return 1
+  done
+  return 0
 }
 
 case "${TARGET_TRIPLE}" in
@@ -39,11 +63,6 @@ TARGET_ARCH="${TARGET_TRIPLE%%-*}"
 
 if [[ "${TARGET_OS}" != "$(host_os)" ]]; then
   echo "PyInstaller cannot cross-compile a ${TARGET_OS} sidecar from $(host_os). Build it on ${TARGET_OS}." >&2
-  exit 1
-fi
-if [[ "${TARGET_ARCH}" != "$(host_arch)" ]]; then
-  echo "PyInstaller cannot cross-compile a ${TARGET_ARCH} sidecar from a $(host_arch) interpreter." >&2
-  echo "Run this build under a ${TARGET_ARCH} shell and Python (on macOS: 'arch -x86_64 ...' for x86_64)." >&2
   exit 1
 fi
 
@@ -82,6 +101,7 @@ done
 sidecar_is_current() {
   [[ -x "${TARGET_SIDECAR}" ]] || return 1
   [[ "$(wc -c < "${TARGET_SIDECAR}" | tr -d ' ')" -gt 10000000 ]] || return 1
+  ! binary_arch_conflicts "${TARGET_SIDECAR}" || return 1
   local input
   for input in "${PROJECT_DIR}/src-tauri/python-backend.spec" "${PROJECT_DIR}/backend/requirements.txt" "${MODEL_MANIFEST}"; do
     [[ ! "${input}" -nt "${TARGET_SIDECAR}" ]] || return 1
@@ -118,6 +138,17 @@ if [[ -z "${BACKEND_PYTHON}" || ! -x "${BACKEND_PYTHON}" ]]; then
   exit 1
 fi
 
+BACKEND_PYTHON_ARCH="$(interpreter_arch "${BACKEND_PYTHON}")"
+if [[ -z "${BACKEND_PYTHON_ARCH}" ]]; then
+  echo "Could not determine the architecture of ${BACKEND_PYTHON}." >&2
+  exit 1
+fi
+if [[ "${TARGET_ARCH}" != "${BACKEND_PYTHON_ARCH}" ]]; then
+  echo "PyInstaller cannot cross-compile a ${TARGET_ARCH} sidecar from a ${BACKEND_PYTHON_ARCH} interpreter (${BACKEND_PYTHON})." >&2
+  echo "Point AUTOMORPH_PYTHON at a ${TARGET_ARCH} Python that has the backend dependencies (on macOS, create backend/.venv under 'arch -x86_64' for an x86_64 build)." >&2
+  exit 1
+fi
+
 PREFLIGHT_MODULES='cv2, dlib, flask, numpy, onnxruntime, PIL, psutil'
 if [[ "${TARGET_TRIPLE}" == *darwin* ]]; then
   PREFLIGHT_MODULES="${PREFLIGHT_MODULES}, Vision, Quartz, objc"
@@ -149,6 +180,11 @@ BUILT_SIDECAR="${BUILD_DIR}/dist/${SIDECAR_NAME}"
 if [[ "${TARGET_TRIPLE}" == *windows* ]]; then BUILT_SIDECAR="${BUILT_SIDECAR}.exe"; fi
 if [[ ! -s "${BUILT_SIDECAR}" ]]; then
   echo "PyInstaller did not produce ${BUILT_SIDECAR}." >&2
+  exit 1
+fi
+
+if binary_arch_conflicts "${BUILT_SIDECAR}"; then
+  echo "PyInstaller produced a $(lipo -archs "${BUILT_SIDECAR}") sidecar for the ${TARGET_ARCH} target ${TARGET_TRIPLE}." >&2
   exit 1
 fi
 

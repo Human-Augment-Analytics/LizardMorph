@@ -31,6 +31,7 @@ FOREIGN_ARCH_TRIPLE = (
     if platform.system() == "Darwin"
     else None
 )
+FOREIGN_MACHINE = "x86_64" if HOST_ARCH == "aarch64" else "arm64"
 
 pytestmark = pytest.mark.skipif(
     HOST_TRIPLE is None,
@@ -61,7 +62,7 @@ REQUIRED_MODELS = [
 ]
 
 
-def build_project(tmp_path, omitted_models=(), sidecar=True):
+def build_project(tmp_path, omitted_models=(), sidecar=True, python_machine=None):
     project_dir = tmp_path / "project"
     (project_dir / "scripts").mkdir(parents=True)
     (project_dir / "src-tauri").mkdir(parents=True)
@@ -92,7 +93,13 @@ def build_project(tmp_path, omitted_models=(), sidecar=True):
         os.utime(sidecar_path, (SIDECAR_MTIME, SIDECAR_MTIME))
 
     fake_python = project_dir / "fake-python"
-    fake_python.write_text("#!/usr/bin/env sh\nexit 1\n")
+    fake_python.write_text(
+        "#!/usr/bin/env sh\n"
+        "case \"$*\" in\n"
+        f"  *platform.machine*) echo {python_machine or platform.machine()}; exit 0 ;;\n"
+        "esac\n"
+        "exit 1\n"
+    )
     fake_python.chmod(0o755)
 
     return project_dir
@@ -116,6 +123,7 @@ def test_packaging_gate_reuses_a_sidecar_newer_than_every_bundled_model(tmp_path
 
     assert result.returncode == 0, result.stderr
     assert "Reusing current Tauri backend sidecar" in result.stdout
+    assert "cannot cross-compile" not in result.stderr
 
 
 @pytest.mark.parametrize("relative_source", REQUIRED_MODELS)
@@ -159,9 +167,13 @@ def test_packaging_gate_refuses_to_cross_compile_for_another_architecture(tmp_pa
     assert "Reusing current Tauri backend sidecar" not in result.stdout
 
 
-def test_packaging_gate_accepts_the_host_target(tmp_path):
-    result = run_gate(build_project(tmp_path))
+def test_packaging_gate_refuses_an_interpreter_of_another_architecture(tmp_path):
+    project_dir = build_project(tmp_path, python_machine=FOREIGN_MACHINE)
+    os.utime(project_dir / BUNDLED_MODELS[0], (NEW_MTIME, NEW_MTIME))
 
-    assert result.returncode == 0, result.stderr
-    assert "cannot cross-compile" not in result.stderr
+    result = run_gate(project_dir)
+
+    assert result.returncode != 0
+    assert "cannot cross-compile" in result.stderr
+    assert "missing backend dependencies" not in result.stderr
 
