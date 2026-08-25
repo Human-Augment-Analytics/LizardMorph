@@ -25,6 +25,7 @@ class SessionManager:
             base_sessions_dir (str): Base directory for all session folders
         """
         self.base_sessions_dir = base_sessions_dir
+        self.runtime_root = os.path.dirname(os.path.abspath(base_sessions_dir))
         self.active_sessions = {}
         self.ensure_directory_exists(self.base_sessions_dir)
 
@@ -232,7 +233,7 @@ class SessionManager:
 
         # Clear any output files in the backend root directory that might be related to this session
         try:
-            backend_dir = os.getcwd()
+            backend_dir = self.runtime_root
             root_files_cleared = 0
             for filename in os.listdir(backend_dir):
                 if filename.startswith("output_") and (

@@ -44,6 +44,16 @@ import threading
 import predictor_library
 import uuid
 
+def cleanup_frozen_temp_dir():
+    if not getattr(sys, "frozen", False):
+        return False
+    meipass = getattr(sys, "_MEIPASS", None)
+    if not meipass or not os.path.basename(meipass).startswith("_MEI"):
+        return False
+    shutil.rmtree(meipass, ignore_errors=True)
+    return True
+
+
 def watch_parent_process():
     parent_pid = os.getenv("AUTOMORPH_PARENT_PID")
     if not parent_pid:
@@ -56,6 +66,7 @@ def watch_parent_process():
     def monitor():
         while psutil.pid_exists(parent_pid_value):
             time.sleep(1)
+        cleanup_frozen_temp_dir()
         os._exit(0)
 
     threading.Thread(target=monitor, name="automorph-parent-watchdog", daemon=True).start()
@@ -92,6 +103,11 @@ def get_runtime_root():
     )
 
 RUNTIME_ROOT = get_runtime_root() if getattr(sys, 'frozen', False) else os.getcwd()
+
+
+def get_bind_host():
+    return "127.0.0.1" if os.getenv("AUTOMORPH_PARENT_PID") else "0.0.0.0"
+
 
 def get_model_path(relative_path):
     if relative_path is None:
@@ -500,7 +516,10 @@ if CPU_USAGE or MEMORY_USAGE or DISK_USAGE:
 # Health check endpoint (used by Electron to detect backend readiness)
 @app.route("/health", methods=["GET"])
 def health_check():
-    return {"status": "ok"}, 200
+    return {
+        "status": "ok",
+        "supervisor_pid": os.getenv("AUTOMORPH_PARENT_PID", ""),
+    }, 200
 
 # Prometheus metrics endpoint
 @app.route('/metrics')
@@ -2487,4 +2506,4 @@ def extract_id():
 if __name__ == "__main__":
     watch_parent_process()
     port = int(os.getenv("API_PORT", 3005))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host=get_bind_host(), port=port)

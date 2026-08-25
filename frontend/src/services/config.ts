@@ -1,4 +1,11 @@
+function hasDom(): boolean {
+  return typeof window !== "undefined";
+}
+
 function isTauriRuntime(): boolean {
+  if (!hasDom()) {
+    return false;
+  }
   const runtimeWindow = window as typeof window & { __TAURI__?: unknown };
   return (
     Boolean(runtimeWindow.__TAURI__) ||
@@ -15,7 +22,7 @@ function fallbackApiUrl(): string {
 }
 
 async function resolveApiUrl(): Promise<string> {
-  if (window.electronAPI?.isElectron) {
+  if (hasDom() && window.electronAPI?.isElectron) {
     try {
       const port = await window.electronAPI.getBackendPort();
       return `http://127.0.0.1:${port}`;
