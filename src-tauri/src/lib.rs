@@ -32,6 +32,12 @@ const BACKEND_START_FAILED_MESSAGE: &str =
 const BACKEND_STOPPED_MESSAGE: &str =
     "AutoMorph's analysis backend stopped unexpectedly. Restart AutoMorph to continue.";
 const BACKEND_NOT_RUNNING_MESSAGE: &str = "AutoMorph's analysis backend is not answering on 127.0.0.1:3005. Start it with 'make dev' (or 'make dev-backend') and reload this window.";
+const BACKEND_ORIGIN_REJECTED_MESSAGE: &str = "AutoMorph's analysis backend refused this window's requests. Restart AutoMorph; if this keeps happening, set AUTOMORPH_CORS_ORIGINS to this window's origin or reinstall AutoMorph.";
+
+#[cfg(windows)]
+const DESKTOP_WEBVIEW_ORIGIN: &str = "http://tauri.localhost";
+#[cfg(not(windows))]
+const DESKTOP_WEBVIEW_ORIGIN: &str = "tauri://localhost";
 
 #[derive(Default)]
 struct BackendProcess {
@@ -50,31 +56,33 @@ fn overlay_script(message: &str) -> String {
     )
 }
 
-/// Confirms the listener on `address` is this app's own backend: it must answer
-/// `/health` with `status: ok` and echo `expected_supervisor` when one is given.
-fn backend_is_healthy(address: &SocketAddr, expected_supervisor: Option<&str>) -> bool {
+/// Performs one bounded `GET /health` exchange and returns the raw response.
+fn probe_health_endpoint(address: &SocketAddr, origin: Option<&str>) -> Option<String> {
     let probe_deadline = Instant::now() + PROBE_TOTAL_TIMEOUT;
 
-    let Ok(mut stream) = TcpStream::connect_timeout(address, PROBE_CONNECT_TIMEOUT) else {
-        return false;
-    };
+    let mut stream = TcpStream::connect_timeout(address, PROBE_CONNECT_TIMEOUT).ok()?;
     if stream.set_read_timeout(Some(PROBE_IO_TIMEOUT)).is_err()
         || stream.set_write_timeout(Some(PROBE_IO_TIMEOUT)).is_err()
     {
-        return false;
+        return None;
     }
 
-    let request =
-        format!("GET /health HTTP/1.1\r\nHost: 127.0.0.1:{BACKEND_PORT}\r\nConnection: close\r\n\r\n");
+    let origin_header = match origin {
+        Some(origin) => format!("Origin: {origin}\r\n"),
+        None => String::new(),
+    };
+    let request = format!(
+        "GET /health HTTP/1.1\r\nHost: 127.0.0.1:{BACKEND_PORT}\r\n{origin_header}Connection: close\r\n\r\n"
+    );
     if stream.write_all(request.as_bytes()).is_err() {
-        return false;
+        return None;
     }
 
     let mut response = Vec::new();
     let mut buffer = [0u8; 512];
     while response.len() < PROBE_RESPONSE_LIMIT {
         if Instant::now() >= probe_deadline {
-            return false;
+            return None;
         }
         match stream.read(&mut buffer) {
             Ok(0) => break,
@@ -83,19 +91,39 @@ fn backend_is_healthy(address: &SocketAddr, expected_supervisor: Option<&str>) -
         }
     }
 
-    let response = String::from_utf8_lossy(&response);
+    Some(String::from_utf8_lossy(&response).into_owned())
+}
+
+fn split_http_response(response: &str) -> (&str, &str) {
     let mut sections = response.splitn(2, "\r\n\r\n");
-    let status_line = sections
-        .next()
-        .unwrap_or_default()
-        .lines()
-        .next()
-        .unwrap_or_default();
-    if !status_line.starts_with("HTTP/1.") || !status_line.contains(" 200") {
+    let head = sections.next().unwrap_or_default();
+    let body = sections.next().unwrap_or_default();
+    (head, body)
+}
+
+fn http_status_is_ok(head: &str) -> bool {
+    let status_line = head.lines().next().unwrap_or_default();
+    status_line.starts_with("HTTP/1.") && status_line.contains(" 200")
+}
+
+fn http_header<'a>(head: &'a str, name: &str) -> Option<&'a str> {
+    head.lines().skip(1).find_map(|line| {
+        let (key, value) = line.split_once(':')?;
+        key.trim().eq_ignore_ascii_case(name).then(|| value.trim())
+    })
+}
+
+/// Confirms the listener on `address` is this app's own backend: it must answer
+/// `/health` with `status: ok` and echo `expected_supervisor` when one is given.
+fn backend_is_healthy(address: &SocketAddr, expected_supervisor: Option<&str>) -> bool {
+    let Some(response) = probe_health_endpoint(address, None) else {
+        return false;
+    };
+    let (head, raw_body) = split_http_response(&response);
+    if !http_status_is_ok(head) {
         return false;
     }
 
-    let raw_body = sections.next().unwrap_or_default();
     let (Some(start), Some(end)) = (raw_body.find('{'), raw_body.rfind('}')) else {
         return false;
     };
@@ -114,6 +142,22 @@ fn backend_is_healthy(address: &SocketAddr, expected_supervisor: Option<&str>) -
                 == Some(expected)
         }
         None => true,
+    }
+}
+
+/// A healthy backend that rejects this webview's `Origin` leaves the window
+/// visible but unable to complete a single request, so it is checked explicitly.
+fn backend_accepts_webview_origin(address: &SocketAddr) -> bool {
+    let Some(response) = probe_health_endpoint(address, Some(DESKTOP_WEBVIEW_ORIGIN)) else {
+        return false;
+    };
+    let (head, _) = split_http_response(&response);
+    if !http_status_is_ok(head) {
+        return false;
+    }
+    match http_header(head, "access-control-allow-origin") {
+        Some(allowed) => allowed == "*" || allowed.eq_ignore_ascii_case(DESKTOP_WEBVIEW_ORIGIN),
+        None => false,
     }
 }
 
@@ -212,11 +256,21 @@ fn supervise_backend(app_handle: tauri::AppHandle, supervisor: Option<String>) {
             ready = false;
         }
 
+        let origin_rejected = ready && !backend_accepts_webview_origin(&address);
+        if origin_rejected {
+            eprintln!(
+                "AutoMorph backend is healthy but rejects the webview origin {DESKTOP_WEBVIEW_ORIGIN}"
+            );
+            ready = false;
+        }
+
         if ready {
             app_handle
                 .state::<BackendProcess>()
                 .ready
                 .store(true, Ordering::SeqCst);
+        } else if origin_rejected {
+            report_backend_unavailable(&app_handle, BACKEND_ORIGIN_REJECTED_MESSAGE);
         } else {
             eprintln!(
                 "AutoMorph backend never answered /health on 127.0.0.1:{BACKEND_PORT} within {} seconds",
@@ -356,6 +410,19 @@ mod tests {
         .into_bytes()
     }
 
+    fn cors_response(allow_origin: Option<&str>) -> Vec<u8> {
+        let body = r#"{"status":"ok"}"#;
+        let allow_header = match allow_origin {
+            Some(origin) => format!("Access-Control-Allow-Origin: {origin}\r\n"),
+            None => String::new(),
+        };
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n{allow_header}Content-Length: {}\r\n\r\n{body}",
+            body.len()
+        )
+        .into_bytes()
+    }
+
     fn read_request(stream: &TcpStream) {
         let mut reader = BufReader::new(stream.try_clone().unwrap());
         let mut line = String::new();
@@ -386,6 +453,85 @@ mod tests {
         let address = listener.local_addr().unwrap();
         drop(listener);
         address
+    }
+
+    #[test]
+    fn origin_probe_accepts_a_backend_that_echoes_this_webview_origin() {
+        let address = spawn_listener(Some(cors_response(Some(DESKTOP_WEBVIEW_ORIGIN))));
+        assert!(backend_accepts_webview_origin(&address));
+    }
+
+    #[test]
+    fn origin_probe_accepts_a_backend_that_allows_every_origin() {
+        let address = spawn_listener(Some(cors_response(Some("*"))));
+        assert!(backend_accepts_webview_origin(&address));
+    }
+
+    #[test]
+    fn origin_probe_rejects_a_backend_that_omits_the_allow_origin_header() {
+        let address = spawn_listener(Some(cors_response(None)));
+        assert!(!backend_accepts_webview_origin(&address));
+    }
+
+    #[test]
+    fn origin_probe_rejects_a_backend_that_allows_only_another_origin() {
+        let address = spawn_listener(Some(cors_response(Some("https://example.test"))));
+        assert!(!backend_accepts_webview_origin(&address));
+    }
+
+    #[test]
+    fn origin_probe_rejects_a_port_with_no_listener() {
+        assert!(!backend_accepts_webview_origin(&closed_port()));
+    }
+
+    #[test]
+    fn origin_probe_sends_this_webview_origin() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut request = String::new();
+            let mut line = String::new();
+            while reader.read_line(&mut line).unwrap_or(0) > 0 {
+                if line == "\r\n" {
+                    break;
+                }
+                request.push_str(&line);
+                line.clear();
+            }
+            let _ = stream.write_all(&cors_response(Some(DESKTOP_WEBVIEW_ORIGIN)));
+            request
+        });
+
+        assert!(backend_accepts_webview_origin(&address));
+        let request = handle.join().unwrap();
+        assert!(request.contains(&format!("Origin: {DESKTOP_WEBVIEW_ORIGIN}\r\n")));
+    }
+
+    #[test]
+    fn health_probe_sends_no_origin_header() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut request = String::new();
+            let mut line = String::new();
+            while reader.read_line(&mut line).unwrap_or(0) > 0 {
+                if line == "\r\n" {
+                    break;
+                }
+                request.push_str(&line);
+                line.clear();
+            }
+            let _ = stream.write_all(&json_response(r#"{"status":"ok"}"#));
+            request
+        });
+
+        assert!(backend_is_healthy(&address, None));
+        let request = handle.join().unwrap();
+        assert!(!request.to_ascii_lowercase().contains("origin:"));
     }
 
     #[test]

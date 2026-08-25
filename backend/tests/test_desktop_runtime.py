@@ -246,17 +246,16 @@ CORS_PROBE = (
 )
 
 
-def _cors_probe(tmp_path, supervised):
+def _cors_probe(work_dir, overrides):
     environment = dict(os.environ)
     environment["PYTHONPATH"] = str(BACKEND_DIR)
-    if supervised:
-        environment["AUTOMORPH_PARENT_PID"] = "4242"
-    else:
-        environment.pop("AUTOMORPH_PARENT_PID", None)
+    environment.pop("AUTOMORPH_PARENT_PID", None)
+    environment.pop("AUTOMORPH_CORS_ORIGINS", None)
+    environment.update(overrides)
 
     completed = subprocess.run(
         [sys.executable, "-c", CORS_PROBE],
-        cwd=str(tmp_path),
+        cwd=str(work_dir),
         env=environment,
         capture_output=True,
         text=True,
@@ -267,26 +266,48 @@ def _cors_probe(tmp_path, supervised):
     return json.loads(completed.stdout.split("<<<", 1)[1].split(">>>", 1)[0])
 
 
-def test_desktop_backend_answers_its_own_webview_across_origins(tmp_path):
-    payload = _cors_probe(tmp_path, supervised=True)
-
-    assert payload["desktop"]["simple"] == "http://tauri.localhost"
-    assert payload["desktop"]["preflight"] == "http://tauri.localhost"
-    assert payload["custom_scheme"]["simple"] == "tauri://localhost"
-    assert payload["custom_scheme"]["preflight"] == "tauri://localhost"
-
-
-def test_desktop_backend_is_unreadable_by_a_foreign_web_page(tmp_path):
-    payload = _cors_probe(tmp_path, supervised=True)
-
-    assert payload["foreign"]["simple"] is None
-    assert payload["foreign"]["preflight"] is None
+@pytest.fixture(scope="module")
+def desktop_cors(tmp_path_factory):
+    return _cors_probe(
+        tmp_path_factory.mktemp("desktop-cors"),
+        {"AUTOMORPH_PARENT_PID": "4242"},
+    )
 
 
-def test_hosted_backend_keeps_answering_every_origin(tmp_path):
-    payload = _cors_probe(tmp_path, supervised=False)
+@pytest.fixture(scope="module")
+def hosted_cors(tmp_path_factory):
+    return _cors_probe(tmp_path_factory.mktemp("hosted-cors"), {})
 
-    for origin_case in payload.values():
+
+def test_desktop_backend_answers_its_own_webview_across_origins(desktop_cors):
+    assert desktop_cors["desktop"]["simple"] == "http://tauri.localhost"
+    assert desktop_cors["desktop"]["preflight"] == "http://tauri.localhost"
+    assert desktop_cors["custom_scheme"]["simple"] == "tauri://localhost"
+    assert desktop_cors["custom_scheme"]["preflight"] == "tauri://localhost"
+
+
+def test_desktop_backend_is_unreadable_by_a_foreign_web_page(desktop_cors):
+    assert desktop_cors["foreign"]["simple"] is None
+    assert desktop_cors["foreign"]["preflight"] is None
+
+
+def test_hosted_backend_keeps_answering_every_origin(hosted_cors):
+    for origin_case in hosted_cors.values():
         allowed = ("*", origin_case["origin"])
         assert origin_case["simple"] in allowed
         assert origin_case["preflight"] in allowed
+
+
+def test_configured_origins_override_the_desktop_allowlist(tmp_path):
+    payload = _cors_probe(
+        tmp_path,
+        {
+            "AUTOMORPH_PARENT_PID": "4242",
+            "AUTOMORPH_CORS_ORIGINS": "https://evil.test",
+        },
+    )
+
+    assert payload["foreign"]["simple"] == "https://evil.test"
+    assert payload["foreign"]["preflight"] == "https://evil.test"
+    assert payload["custom_scheme"]["simple"] is None
+    assert payload["custom_scheme"]["preflight"] is None

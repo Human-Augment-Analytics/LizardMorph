@@ -13,16 +13,18 @@ def _build_fallback_reader(native_error):
     """Return an OCR reader for runtimes where the native backend is unusable."""
     try:
         import easyocr
-    except ImportError:
+
+        return easyocr.Reader(["en"], gpu=False)
+    except Exception as fallback_error:
         from native_ocr import _NullReader
 
         _logger.warning(
-            "No OCR backend is available (native OCR failed: %s; easyocr is not "
-            "installed). ID extraction will return no text.",
+            "No OCR backend is available (native OCR failed: %s; easyocr fallback "
+            "failed: %s). ID extraction will return no text.",
             native_error,
+            fallback_error,
         )
         return _NullReader()
-    return easyocr.Reader(["en"], gpu=False)
 
 
 def _get_reader():

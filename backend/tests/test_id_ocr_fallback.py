@@ -55,3 +55,24 @@ def test_ocr_backend_is_resolved_once_and_cached(without_native_ocr, without_eas
 
     assert first is second
     assert first.readtext(np.zeros((8, 8, 3), dtype=np.uint8)) == []
+
+
+def test_ocr_degrades_when_easyocr_is_installed_but_unusable(without_native_ocr, monkeypatch):
+    class _BrokenEasyOcr:
+        @staticmethod
+        def Reader(*args, **kwargs):
+            raise RuntimeError("model download failed")
+
+    real_import = builtins.__import__
+
+    def broken_import(name, *args, **kwargs):
+        if name == "easyocr":
+            return _BrokenEasyOcr
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", broken_import)
+
+    text, confidence = id_extractor.detect_digits(np.zeros((64, 128, 3), dtype=np.uint8))
+
+    assert text == ""
+    assert confidence == 0.0

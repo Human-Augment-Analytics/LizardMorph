@@ -119,6 +119,11 @@ DESKTOP_WEBVIEW_ORIGINS = [
 
 
 def get_cors_origins():
+    configured = os.getenv("AUTOMORPH_CORS_ORIGINS", "").strip()
+    if configured:
+        origins = [origin.strip() for origin in configured.split(",") if origin.strip()]
+        if origins:
+            return "*" if "*" in origins else origins
     if get_bind_host() == "127.0.0.1":
         return list(DESKTOP_WEBVIEW_ORIGINS)
     return "*"
@@ -451,16 +456,7 @@ app.config["CORS_ORIGINS"] = CORS_ORIGINS
 app.config["CORS_ALLOW_HEADERS"] = CORS_ALLOW_HEADERS
 app.config["CORS_METHODS"] = CORS_METHODS
 
-CORS(
-    app,
-    resources={
-        r"/*": {
-            "origins": CORS_ORIGINS,
-            "methods": CORS_METHODS,
-            "allow_headers": CORS_ALLOW_HEADERS,
-        }
-    },
-)
+CORS(app)
 
 SESSIONS_FOLDER = os.path.join(RUNTIME_ROOT, session_dir)
 UPLOAD_FOLDER = os.path.join(RUNTIME_ROOT, "upload")
