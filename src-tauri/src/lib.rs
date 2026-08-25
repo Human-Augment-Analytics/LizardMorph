@@ -17,19 +17,35 @@ use tauri_plugin_shell::{
 
 const BACKEND_PORT: u16 = 3005;
 const BACKEND_READY_TIMEOUT: Duration = Duration::from_secs(180);
+const BACKEND_RESPAWN_DELAY: Duration = Duration::from_millis(1500);
+const BACKEND_SPAWN_RETRIES: u32 = 2;
 const PROBE_CONNECT_TIMEOUT: Duration = Duration::from_millis(150);
 const PROBE_IO_TIMEOUT: Duration = Duration::from_millis(1000);
 const PROBE_TOTAL_TIMEOUT: Duration = Duration::from_millis(2000);
 const PROBE_INTERVAL: Duration = Duration::from_millis(250);
 const PROBE_RESPONSE_LIMIT: usize = 4096;
 
-const BACKEND_FAILURE_OVERLAY: &str = r#"(function(){var m='AutoMorph could not start its analysis backend. Restart AutoMorph; if this keeps happening, reinstall it.';function render(){if(document.getElementById('automorph-backend-error'))return;var e=document.createElement('div');e.id='automorph-backend-error';e.setAttribute('role','alert');e.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:32px;background:#1b1b1f;color:#f5f5f5;font:16px/1.5 system-ui,sans-serif;text-align:center';e.textContent=m;(document.body||document.documentElement).appendChild(e);}if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',render);}else{render();}})()"#;
+const BACKEND_PORT_IN_USE_MESSAGE: &str = "AutoMorph could not start its analysis backend because another program is already using port 3005. Quit that program — including any earlier copy of AutoMorph — and open AutoMorph again.";
+const BACKEND_START_FAILED_MESSAGE: &str =
+    "AutoMorph could not start its analysis backend. Restart AutoMorph; if this keeps happening, reinstall it.";
+const BACKEND_STOPPED_MESSAGE: &str =
+    "AutoMorph's analysis backend stopped unexpectedly. Restart AutoMorph to continue.";
 
 #[derive(Default)]
 struct BackendProcess {
     child: Mutex<Option<CommandChild>>,
     stopped: AtomicBool,
-    unavailable: AtomicBool,
+    ready: AtomicBool,
+    shutting_down: AtomicBool,
+    failure: Mutex<Option<&'static str>>,
+}
+
+fn overlay_script(message: &str) -> String {
+    let message = serde_json::to_string(message)
+        .unwrap_or_else(|_| String::from("\"AutoMorph's analysis backend is unavailable.\""));
+    format!(
+        "(function(){{var m={message};function render(){{var e=document.getElementById('automorph-backend-error');if(!e){{e=document.createElement('div');e.id='automorph-backend-error';e.setAttribute('role','alert');e.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:32px;background:#1b1b1f;color:#f5f5f5;font:16px/1.5 system-ui,sans-serif;text-align:center';(document.body||document.documentElement).appendChild(e);}}e.textContent=m;}}if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded',render);}}else{{render();}}}})()"
+    )
 }
 
 /// Confirms the listener on `address` is this app's own backend: it must answer
@@ -99,22 +115,38 @@ fn backend_is_healthy(address: &SocketAddr, expected_supervisor: Option<&str>) -
     }
 }
 
-fn report_backend_unavailable(app_handle: &tauri::AppHandle) {
-    app_handle
+/// A listener still holding the port after the sidecar gave up means the port is
+/// taken by something else, not that the sidecar itself is broken.
+fn backend_failure_message(address: &SocketAddr) -> &'static str {
+    if TcpStream::connect_timeout(address, PROBE_CONNECT_TIMEOUT).is_ok() {
+        BACKEND_PORT_IN_USE_MESSAGE
+    } else {
+        BACKEND_START_FAILED_MESSAGE
+    }
+}
+
+fn report_backend_unavailable(app_handle: &tauri::AppHandle, message: &'static str) {
+    *app_handle
         .state::<BackendProcess>()
-        .unavailable
-        .store(true, Ordering::SeqCst);
+        .failure
+        .lock()
+        .unwrap() = Some(message);
     if let Some(window) = app_handle.get_webview_window("main") {
-        if let Err(error) = window.eval(BACKEND_FAILURE_OVERLAY) {
+        if let Err(error) = window.eval(overlay_script(message)) {
             eprintln!("Failed to report the AutoMorph backend failure: {error}");
         }
     }
 }
 
-fn show_window_when_backend_is_ready(app_handle: tauri::AppHandle, supervisor: Option<String>) {
+fn supervise_backend(app_handle: tauri::AppHandle, supervisor: Option<String>) {
     tauri::async_runtime::spawn_blocking(move || {
         let address = SocketAddr::from(([127, 0, 0, 1], BACKEND_PORT));
         let deadline = Instant::now() + BACKEND_READY_TIMEOUT;
+        let mut respawns_left = if supervisor.is_some() {
+            BACKEND_SPAWN_RETRIES
+        } else {
+            0
+        };
 
         let mut ready = false;
         while Instant::now() < deadline {
@@ -123,11 +155,29 @@ fn show_window_when_backend_is_ready(app_handle: tauri::AppHandle, supervisor: O
                 break;
             }
             thread::sleep(PROBE_INTERVAL);
-            if app_handle
+
+            if !app_handle
                 .state::<BackendProcess>()
                 .stopped
                 .load(Ordering::SeqCst)
             {
+                continue;
+            }
+
+            let Some(token) = supervisor.as_deref() else {
+                break;
+            };
+            if respawns_left == 0 {
+                break;
+            }
+            respawns_left -= 1;
+            thread::sleep(BACKEND_RESPAWN_DELAY);
+            if Instant::now() >= deadline {
+                break;
+            }
+            eprintln!("AutoMorph backend sidecar exited before becoming ready; retrying");
+            if let Err(error) = spawn_backend(&app_handle, token) {
+                eprintln!("Failed to restart the AutoMorph backend: {error}");
                 break;
             }
         }
@@ -142,12 +192,17 @@ fn show_window_when_backend_is_ready(app_handle: tauri::AppHandle, supervisor: O
             ready = false;
         }
 
-        if !ready {
+        if ready {
+            app_handle
+                .state::<BackendProcess>()
+                .ready
+                .store(true, Ordering::SeqCst);
+        } else {
             eprintln!(
                 "AutoMorph backend never answered /health on 127.0.0.1:{BACKEND_PORT} within {} seconds",
                 BACKEND_READY_TIMEOUT.as_secs()
             );
-            report_backend_unavailable(&app_handle);
+            report_backend_unavailable(&app_handle, backend_failure_message(&address));
         }
 
         if let Some(window) = app_handle.get_webview_window("main") {
@@ -158,8 +213,16 @@ fn show_window_when_backend_is_ready(app_handle: tauri::AppHandle, supervisor: O
     });
 }
 
-fn start_backend(app: &tauri::App, supervisor: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let command = app
+fn spawn_backend(
+    app_handle: &tauri::AppHandle,
+    supervisor: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    app_handle
+        .state::<BackendProcess>()
+        .stopped
+        .store(false, Ordering::SeqCst);
+
+    let command = app_handle
         .shell()
         .sidecar("python-backend")?
         .env("API_PORT", BACKEND_PORT.to_string())
@@ -167,9 +230,13 @@ fn start_backend(app: &tauri::App, supervisor: &str) -> Result<(), Box<dyn std::
         .env("PYTHONUNBUFFERED", "1");
     let (mut events, child) = command.spawn()?;
     let pid = child.pid();
-    *app.state::<BackendProcess>().child.lock().unwrap() = Some(child);
-    let app_handle = app.handle().clone();
+    *app_handle
+        .state::<BackendProcess>()
+        .child
+        .lock()
+        .unwrap() = Some(child);
 
+    let app_handle = app_handle.clone();
     tauri::async_runtime::spawn(async move {
         while let Some(event) = events.recv().await {
             match event {
@@ -185,9 +252,16 @@ fn start_backend(app: &tauri::App, supervisor: &str) -> Result<(), Box<dyn std::
                         "AutoMorph backend process {pid} exited (code: {:?}, signal: {:?})",
                         payload.code, payload.signal
                     );
-                    let state = app_handle.state::<BackendProcess>();
-                    state.stopped.store(true, Ordering::SeqCst);
-                    state.child.lock().unwrap().take();
+                    let lost_while_running = {
+                        let state = app_handle.state::<BackendProcess>();
+                        state.stopped.store(true, Ordering::SeqCst);
+                        state.child.lock().unwrap().take();
+                        state.ready.load(Ordering::SeqCst)
+                            && !state.shutting_down.load(Ordering::SeqCst)
+                    };
+                    if lost_while_running {
+                        report_backend_unavailable(&app_handle, BACKEND_STOPPED_MESSAGE);
+                    }
                     break;
                 }
                 _ => {}
@@ -205,12 +279,9 @@ pub fn run() {
             if payload.event() != PageLoadEvent::Finished {
                 return;
             }
-            if webview
-                .state::<BackendProcess>()
-                .unavailable
-                .load(Ordering::SeqCst)
-            {
-                if let Err(error) = webview.eval(BACKEND_FAILURE_OVERLAY) {
+            let failure = *webview.state::<BackendProcess>().failure.lock().unwrap();
+            if let Some(message) = failure {
+                if let Err(error) = webview.eval(overlay_script(message)) {
                     eprintln!("Failed to report the AutoMorph backend failure: {error}");
                 }
             }
@@ -220,7 +291,7 @@ pub fn run() {
                 None
             } else {
                 let supervisor = std::process::id().to_string();
-                if let Err(error) = start_backend(app, &supervisor) {
+                if let Err(error) = spawn_backend(app.handle(), &supervisor) {
                     eprintln!("Failed to start the AutoMorph backend: {error}");
                     app.state::<BackendProcess>()
                         .stopped
@@ -228,7 +299,7 @@ pub fn run() {
                 }
                 Some(supervisor)
             };
-            show_window_when_backend_is_ready(app.handle().clone(), supervisor);
+            supervise_backend(app.handle().clone(), supervisor);
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -236,13 +307,10 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
-            if let Some(child) = app_handle
-                .state::<BackendProcess>()
-                .child
-                .lock()
-                .unwrap()
-                .take()
-            {
+            let state = app_handle.state::<BackendProcess>();
+            state.shutting_down.store(true, Ordering::SeqCst);
+            let child = state.child.lock().unwrap().take();
+            if let Some(child) = child {
                 if let Err(error) = child.kill() {
                     eprintln!("Failed to stop AutoMorph backend: {error}");
                 }
@@ -265,24 +333,35 @@ mod tests {
         .into_bytes()
     }
 
+    fn read_request(stream: &TcpStream) {
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let mut line = String::new();
+        while reader.read_line(&mut line).unwrap_or(0) > 0 {
+            if line == "\r\n" {
+                break;
+            }
+            line.clear();
+        }
+    }
+
     fn spawn_listener(response: Option<Vec<u8>>) -> SocketAddr {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let address = listener.local_addr().unwrap();
         thread::spawn(move || {
             if let Ok((mut stream, _)) = listener.accept() {
-                let mut reader = BufReader::new(stream.try_clone().unwrap());
-                let mut line = String::new();
-                while reader.read_line(&mut line).unwrap_or(0) > 0 {
-                    if line == "\r\n" {
-                        break;
-                    }
-                    line.clear();
-                }
+                read_request(&stream);
                 if let Some(body) = response {
                     let _ = stream.write_all(&body);
                 }
             }
         });
+        address
+    }
+
+    fn closed_port() -> SocketAddr {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
         address
     }
 
@@ -308,10 +387,7 @@ mod tests {
 
     #[test]
     fn health_probe_rejects_a_port_with_no_listener() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let address = listener.local_addr().unwrap();
-        drop(listener);
-        assert!(!backend_is_healthy(&address, None));
+        assert!(!backend_is_healthy(&closed_port(), None));
     }
 
     #[test]
@@ -342,14 +418,7 @@ mod tests {
         let address = listener.local_addr().unwrap();
         thread::spawn(move || {
             if let Ok((mut stream, _)) = listener.accept() {
-                let mut reader = BufReader::new(stream.try_clone().unwrap());
-                let mut line = String::new();
-                while reader.read_line(&mut line).unwrap_or(0) > 0 {
-                    if line == "\r\n" {
-                        break;
-                    }
-                    line.clear();
-                }
+                read_request(&stream);
                 let _ = stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n{");
                 loop {
                     if stream.write_all(b" ").is_err() {
@@ -363,5 +432,33 @@ mod tests {
         let started = Instant::now();
         assert!(!backend_is_healthy(&address, None));
         assert!(started.elapsed() < PROBE_TOTAL_TIMEOUT * 3);
+    }
+
+    #[test]
+    fn failure_message_blames_the_port_when_something_still_holds_it() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        assert_eq!(backend_failure_message(&address), BACKEND_PORT_IN_USE_MESSAGE);
+        drop(listener);
+    }
+
+    #[test]
+    fn failure_message_blames_the_sidecar_when_the_port_is_free() {
+        assert_eq!(
+            backend_failure_message(&closed_port()),
+            BACKEND_START_FAILED_MESSAGE
+        );
+    }
+
+    #[test]
+    fn overlay_script_carries_the_message_through_json_escaping() {
+        let message = r#"Port "3005" is busy \ retry"#;
+        let script = overlay_script(message);
+
+        let start = script.find("var m=").unwrap() + "var m=".len();
+        let end = script[start..].find(";function render()").unwrap() + start;
+        let embedded: String = serde_json::from_str(&script[start..end]).unwrap();
+
+        assert_eq!(embedded, message);
     }
 }
