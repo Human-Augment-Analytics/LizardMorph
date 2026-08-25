@@ -10,9 +10,9 @@
     "build:timestamp": "tsc -b && vite build --mode production",
     "lint": "eslint .",
     "preview": "vite preview",
-    "tauri": "cd .. && frontend/node_modules/.bin/tauri",
-    "tauri:dev": "cd .. && frontend/node_modules/.bin/tauri dev",
-    "tauri:build": "cd .. && frontend/node_modules/.bin/tauri build"
+    "tauri": "cd .. && node frontend/node_modules/@tauri-apps/cli/tauri.js",
+    "tauri:dev": "cd .. && node frontend/node_modules/@tauri-apps/cli/tauri.js dev",
+    "tauri:build": "cd .. && node frontend/node_modules/@tauri-apps/cli/tauri.js build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.2.0",

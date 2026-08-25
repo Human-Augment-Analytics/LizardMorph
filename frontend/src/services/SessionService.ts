@@ -2,10 +2,6 @@
 import { getApiUrl } from "./config";
 import { CookieUtils } from "./CookieUtils";
 
-async function apiUrl(): Promise<string> {
-  return getApiUrl();
-}
-
 interface SessionInfo {
   success: boolean;
   session_id: string;
@@ -77,7 +73,7 @@ export class SessionService {
    */
   static async startNewSession(): Promise<string> {
     try {
-      const base = await apiUrl();
+      const base = await getApiUrl();
       const response = await fetch(`${base}/session/start`, {
         method: "POST",
         headers: {
@@ -138,7 +134,7 @@ export class SessionService {
       throw new Error("No active session");
     }
 
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const response = await fetch(`${base}/session/info`, {
       method: "GET",
       headers: {
@@ -166,7 +162,7 @@ export class SessionService {
    */
   static async validateSession(sessionId: string): Promise<boolean> {
     try {
-      const base = await apiUrl();
+      const base = await getApiUrl();
       const response = await fetch(`${base}/session/info`, {
         method: "GET",
         headers: {

@@ -856,50 +856,55 @@ export class MainView extends Component<MainProps, MainState> {
               };
 
         const img = new Image();
+        img.crossOrigin = "anonymous";
 
         img.onload = () => {
-          // Set canvas dimensions to match original image
-          canvas.width =
-            imageIndex === this.state.currentImageIndex
-              ? imageData.width
-              : img.width;
-          canvas.height =
-            imageIndex === this.state.currentImageIndex
-              ? imageData.height
-              : img.height;
+          try {
+            // Set canvas dimensions to match original image
+            canvas.width =
+              imageIndex === this.state.currentImageIndex
+                ? imageData.width
+                : img.width;
+            canvas.height =
+              imageIndex === this.state.currentImageIndex
+                ? imageData.height
+                : img.height;
 
-          // Draw the background image
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            // Draw the background image
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-          // Draw each point
-          ctx.fillStyle = "red";
-          ctx.strokeStyle = "black";
-          ctx.lineWidth = 1;
-
-          imageData.coords.forEach((point) => {
-            // Use original coordinates directly since we're working with original image dimensions
-            const x = point.x;
-            const y = point.y;
-
-            ctx.beginPath();
-            ctx.arc(x, y, 5, 0, 2 * Math.PI);
-            ctx.fill();
-            ctx.stroke();
-
-            // Reset styles for next point
+            // Draw each point
             ctx.fillStyle = "red";
             ctx.strokeStyle = "black";
             ctx.lineWidth = 1;
-          });
 
-          // Convert canvas to blob
-          canvas.toBlob((blob) => {
-            if (blob) {
-              resolve(blob);
-            } else {
-              reject(new Error("Failed to create blob from canvas"));
-            }
-          }, "image/png");
+            imageData.coords.forEach((point) => {
+              // Use original coordinates directly since we're working with original image dimensions
+              const x = point.x;
+              const y = point.y;
+
+              ctx.beginPath();
+              ctx.arc(x, y, 5, 0, 2 * Math.PI);
+              ctx.fill();
+              ctx.stroke();
+
+              // Reset styles for next point
+              ctx.fillStyle = "red";
+              ctx.strokeStyle = "black";
+              ctx.lineWidth = 1;
+            });
+
+            // Convert canvas to blob
+            canvas.toBlob((blob) => {
+              if (blob) {
+                resolve(blob);
+              } else {
+                reject(new Error("Failed to create blob from canvas"));
+              }
+            }, "image/png");
+          } catch (error) {
+            reject(error);
+          }
         };
 
         img.onerror = () => {

@@ -52,7 +52,6 @@ function parseRecognizeResult(text: string, confidence01: number): { id: string;
 
 async function loadImageBitmapFromUrl(url: string): Promise<ImageBitmap> {
   const res = await fetch(url, {
-    credentials: "include",
     headers: SessionService.getSessionHeaders(),
   });
   if (!res.ok) throw new Error(`Failed to load image for OCR (${res.status})`);

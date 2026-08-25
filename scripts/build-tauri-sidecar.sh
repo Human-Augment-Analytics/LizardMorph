@@ -47,8 +47,13 @@ sidecar_is_current() {
   for input in "${REQUIRED_MODELS[@]}"; do
     [[ ! "${PROJECT_DIR}/${input}" -nt "${TARGET_SIDECAR}" ]] || return 1
   done
-  if find "${PROJECT_DIR}/backend" -type f \( -name '*.py' -o -name '*.json' \) \
-      -newer "${TARGET_SIDECAR}" -print -quit | grep -q .; then
+  if find "${PROJECT_DIR}/backend" \
+      \( -type d \( -name '.venv' -o -name 'venv' -o -name 'env' -o -name '__pycache__' \
+                   -o -name '.pytest_cache' -o -name 'sessions' -o -name 'upload' \
+                   -o -name 'outputs' -o -name 'color_constrasted' -o -name 'invert_image' \
+                   -o -name 'tps_download' -o -name 'image_download' \) -prune \) -o \
+      \( -type f \( -name '*.py' -o -name '*.json' \) -newer "${TARGET_SIDECAR}" -print -quit \) \
+      | grep -q .; then
     return 1
   fi
 }
