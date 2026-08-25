@@ -3,7 +3,7 @@ import type { Point } from "../models/Point";
 import { ApiService } from "./ApiService";
 import type { Measurement } from "../models/Measurement";
 import type { ScaleSettings } from "../models/ScaleSettings";
-import { API_URL } from "./config";
+import { getApiUrl } from "./config";
 
 export class ExportService {
   static createTpsContent(coords: Point[], imageName: string): string {
@@ -149,9 +149,11 @@ export class ExportService {
 
           let imageBlob: Blob | undefined;
           if (result.image_urls && result.image_urls.length > 0) {
-            const imageUrl = result.image_urls[0].startsWith('http')
-              ? result.image_urls[0]
-              : `${API_URL}/${result.image_urls[0].startsWith('/') ? '' : '/'}${result.image_urls[0]}`;
+            const advertisedUrl = result.image_urls[0];
+            const base = await getApiUrl();
+            const imageUrl = advertisedUrl.startsWith('http')
+              ? advertisedUrl
+              : `${base}${advertisedUrl.startsWith('/') ? '' : '/'}${advertisedUrl}`;
 
             try {
               imageBlob = await ApiService.downloadAnnotatedImage(imageUrl);

@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use tauri::{webview::PageLoadEvent, Manager};
+use tauri::{webview::PageLoadEvent, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_shell::{
     process::{CommandChild, CommandEvent},
     ShellExt,
@@ -48,6 +48,35 @@ fn overlay_script(message: &str) -> String {
     format!(
         "(function(){{var m={message};function render(){{var e=document.getElementById('automorph-backend-error');if(!e){{e=document.createElement('div');e.id='automorph-backend-error';e.setAttribute('role','alert');e.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:32px;background:#1b1b1f;color:#f5f5f5;font:16px/1.5 system-ui,sans-serif;text-align:center';(document.body||document.documentElement).appendChild(e);}}e.textContent=m;}}if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded',render);}}else{{render();}}}})()"
     )
+}
+
+const SPLASH_WINDOW_LABEL: &str = "splash";
+
+fn open_startup_window(app_handle: &tauri::AppHandle) {
+    if app_handle.get_webview_window(SPLASH_WINDOW_LABEL).is_some() {
+        return;
+    }
+    let opened = WebviewWindowBuilder::new(
+        app_handle,
+        SPLASH_WINDOW_LABEL,
+        WebviewUrl::App("splash.html".into()),
+    )
+    .title("Starting AutoMorph")
+    .inner_size(460.0, 240.0)
+    .resizable(false)
+    .center()
+    .build();
+    if let Err(error) = opened {
+        eprintln!("Failed to open the AutoMorph startup window: {error}");
+    }
+}
+
+fn close_startup_window(app_handle: &tauri::AppHandle) {
+    if let Some(window) = app_handle.get_webview_window(SPLASH_WINDOW_LABEL) {
+        if let Err(error) = window.close() {
+            eprintln!("Failed to close the AutoMorph startup window: {error}");
+        }
+    }
 }
 
 /// Performs one bounded `GET /health` exchange and returns the raw response.
@@ -288,6 +317,8 @@ fn supervise_backend(app_handle: tauri::AppHandle, supervisor: Option<String>) {
                 eprintln!("Failed to show the AutoMorph window: {error}");
             }
         }
+
+        close_startup_window(&app_handle);
     });
 }
 
@@ -365,6 +396,7 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            open_startup_window(app.handle());
             let supervisor = if tauri::is_dev() {
                 None
             } else {

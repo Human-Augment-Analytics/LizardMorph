@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Starting AutoMorph</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        padding: 24px;
+        background: #1b1b1f;
+        color: #f5f5f5;
+        font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+        text-align: center;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      .spinner {
+        width: 34px;
+        height: 34px;
+        border: 3px solid rgba(245, 245, 245, 0.25);
+        border-top-color: #f5f5f5;
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      h1 {
+        margin: 0;
+        font-size: 17px;
+        font-weight: 600;
+      }
+      p {
+        margin: 0;
+        max-width: 36ch;
+        color: #c8c8d0;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .spinner {
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="spinner" role="progressbar" aria-label="Starting AutoMorph"></div>
+    <h1>Starting AutoMorph</h1>
+    <p>
+      Preparing the analysis backend. The first launch after installing or
+      updating takes longer.
+    </p>
+  </body>
+</html>

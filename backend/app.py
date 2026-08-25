@@ -1581,6 +1581,11 @@ def serve_image_file():
 
 
 
+def session_image_url(session_id, image_path):
+    """URL the API advertises for an annotated image belonging to a session."""
+    return f"/images/{session_id[:8]}/{os.path.basename(image_path)}"
+
+
 @app.route("/endpoint", methods=["POST"])
 @cross_origin()
 @track_metrics
@@ -1658,9 +1663,7 @@ def process_scatter_data():
             image_urls = []
             if output_paths:
                 for path in output_paths:
-                    image_urls.append(
-                        f"/api/images/{session_id[:8]}/{os.path.basename(path)}"
-                    )
+                    image_urls.append(session_image_url(session_id, path))
 
             logger.info(f"Annotated images created: {output_paths}")
 
