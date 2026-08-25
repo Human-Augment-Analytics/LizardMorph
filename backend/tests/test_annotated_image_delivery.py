@@ -115,7 +115,7 @@ def test_a_dotted_specimen_name_still_yields_a_served_annotated_image(session_cl
     assert tuple(int(channel) for channel in annotated[12, 10]) == (0, 0, 255)
 
 
-def test_two_specimens_sharing_a_dotted_prefix_keep_separate_tps_files(session_client):
+def test_two_specimens_sharing_a_dotted_prefix_keep_separate_outputs(session_client):
     client, manager = session_client
     session_id = manager.create_session()
     session_data = manager.get_session(session_id)
@@ -125,16 +125,37 @@ def test_two_specimens_sharing_a_dotted_prefix_keep_separate_tps_files(session_c
             np.full((40, 60, 3), 200, dtype=np.uint8),
         )
 
+    advertised = {}
     for name, x in (("LIZ.001.jpg", 10), ("LIZ.002.jpg", 30)):
-        client.post(
+        exported = client.post(
             "/endpoint",
             json={"name": name, "coords": [{"x": x, "y": 12}]},
             headers={"X-Session-ID": session_id},
         )
+        payload = exported.get_json()
+        assert payload["image_urls"], payload
+        advertised[name] = payload["image_urls"][0]
 
     tps_files = sorted(os.listdir(session_data["tps_folder"]))
 
     assert tps_files == ["LIZ.001.tps", "LIZ.002.tps"]
+    assert advertised["LIZ.001.jpg"] != advertised["LIZ.002.jpg"]
+
+    landmarks = {}
+    for name, url in advertised.items():
+        served = client.get(url, headers={"X-Session-ID": session_id})
+        assert served.status_code == 200
+        annotated = cv2.imdecode(
+            np.frombuffer(served.data, dtype=np.uint8), cv2.IMREAD_COLOR
+        )
+        landmarks[name] = [
+            column
+            for column in range(annotated.shape[1])
+            if tuple(int(channel) for channel in annotated[12, column]) == (0, 0, 255)
+        ]
+
+    assert 10 in landmarks["LIZ.001.jpg"] and 30 not in landmarks["LIZ.001.jpg"]
+    assert 30 in landmarks["LIZ.002.jpg"] and 10 not in landmarks["LIZ.002.jpg"]
 
 
 def test_serving_an_annotated_image_does_not_scan_the_session_trees(

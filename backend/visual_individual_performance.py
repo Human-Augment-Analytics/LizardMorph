@@ -174,7 +174,7 @@ def create_image(tps_file_path, output_folder, source_folder):
                 cv2.circle(image, pt, 6, (0, 0, 0), -1, lineType=cv2.LINE_AA)
                 cv2.circle(image, pt, 4, (0, 0, 255), -1, lineType=cv2.LINE_AA)
             
-            output_basename = os.path.splitext(os.path.basename(image_name))[0]
+            output_basename = os.path.splitext(os.path.basename(image_path))[0]
             output_path = os.path.join(output_folder, f"annotated_{output_basename}.png")
             
             print(f"Saving annotated image to: {output_path}")
