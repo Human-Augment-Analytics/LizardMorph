@@ -175,7 +175,44 @@ https://ngrok.com/docs/getting-started/
 5. Copy the generated ngrok URL
    and update your `.env` file with this domain.
 
-## 6. Server Production Deployment
+## 6. Desktop App Build (Tauri)
+
+The desktop app bundles the Flask backend as a PyInstaller sidecar that the Rust
+shell starts and supervises on `127.0.0.1:3005`.
+
+```bash
+npm install            # repo root, installs the Tauri CLI
+npm run tauri:dev      # dev window against a `make dev` backend
+npm run sidecar:build  # rebuild only the Python sidecar
+npm run tauri:build    # frontend build + sidecar build + platform bundle
+```
+
+`npm run tauri:dev` does **not** package a backend: it drops a no-op stub in
+`src-tauri/binaries/` and runs `make dev`, so the dev window talks to the backend
+you started from source. The shell always probes port 3005, so leave `API_PORT`
+at its default while developing. Only `tauri:build` produces a real sidecar.
+
+Build prerequisites:
+
+- A backend Python environment with the dependencies installed
+  (`make setup-backend`). Point `AUTOMORPH_PYTHON` at a different interpreter to
+  override it. PyInstaller is installed into that environment automatically when
+  missing.
+- Every model marked `required` in `src-tauri/desktop-models.txt` present on disk
+  (`make download-models`). That file is the authoritative list of what the
+  sidecar embeds; `optional` entries are bundled when present and skipped when
+  not.
+- The same OS **and** CPU architecture as the target — PyInstaller cannot
+  cross-compile. An `x86_64` sidecar therefore needs an `x86_64` interpreter even
+  on Apple Silicon: create `backend/.venv` under `arch -x86_64`, or point
+  `AUTOMORPH_PYTHON` at such a Python.
+
+The sidecar is reused unless the PyInstaller spec, `backend/requirements.txt`,
+the model manifest, a bundled model, or a backend `.py`/`.json` file is newer
+than the existing binary. Set `AUTOMORPH_FORCE_SIDECAR_BUILD=1` to rebuild
+unconditionally.
+
+## 7. Server Production Deployment
 
 To set up and run the application on the current production server:
 
