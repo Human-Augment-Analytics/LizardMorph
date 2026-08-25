@@ -185,11 +185,7 @@ fn unavailable_message(supervisor: Option<&str>, address: &SocketAddr) -> &'stat
 }
 
 fn report_backend_unavailable(app_handle: &tauri::AppHandle, message: &'static str) {
-    *app_handle
-        .state::<BackendProcess>()
-        .failure
-        .lock()
-        .unwrap() = Some(message);
+    *app_handle.state::<BackendProcess>().failure.lock().unwrap() = Some(message);
     if let Some(window) = app_handle.get_webview_window("main") {
         if let Err(error) = window.eval(overlay_script(message)) {
             eprintln!("Failed to report the AutoMorph backend failure: {error}");
@@ -339,11 +335,7 @@ fn spawn_backend(
         .env("PYTHONUNBUFFERED", "1");
     let (mut events, child) = command.spawn()?;
     let pid = child.pid();
-    *app_handle
-        .state::<BackendProcess>()
-        .child
-        .lock()
-        .unwrap() = Some(child);
+    *app_handle.state::<BackendProcess>().child.lock().unwrap() = Some(child);
 
     let app_handle = app_handle.clone();
     tauri::async_runtime::spawn(async move {
@@ -573,7 +565,10 @@ mod tests {
     fn failure_message_blames_the_port_when_something_still_holds_it() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let address = listener.local_addr().unwrap();
-        assert_eq!(backend_failure_message(&address), BACKEND_PORT_IN_USE_MESSAGE);
+        assert_eq!(
+            backend_failure_message(&address),
+            BACKEND_PORT_IN_USE_MESSAGE
+        );
         drop(listener);
     }
 

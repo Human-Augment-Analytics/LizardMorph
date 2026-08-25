@@ -274,7 +274,7 @@ class SessionManager:
             logger.error(f"Error clearing session {session_id}: {str(e)}")
             errors.append(f"Error clearing session: {str(e)}")
 
-        # Clear any output files in the backend root directory that might be related to this session
+        # Clear any output files in the runtime data root that might be related to this session
         try:
             backend_dir = self.runtime_root
             root_files_cleared = 0

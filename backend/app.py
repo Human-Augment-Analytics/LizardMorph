@@ -337,7 +337,7 @@ def get_cached_yolo_model():
 
     Uses OrtYoloDetector (INT8 quantized) if USE_ORT_QUANTIZED=true,
     falls back to OrtYoloDetector with the standard model if ultralytics
-    is not available (e.g. in packaged Electron builds).
+    is not available (e.g. in packaged desktop builds, which exclude ultralytics).
     """
     global _cached_yolo_model
     if _cached_yolo_model is not None:
@@ -590,7 +590,9 @@ if CPU_USAGE or MEMORY_USAGE or DISK_USAGE:
     metrics_thread = threading.Thread(target=update_system_metrics, daemon=True)
     metrics_thread.start()
 
-# Health check endpoint (used by Electron to detect backend readiness)
+# Health check endpoint (desktop hosts poll it to detect backend readiness).
+# supervisor_pid echoes AUTOMORPH_PARENT_PID so a desktop host can tell its own
+# sidecar apart from an unrelated process that already holds the API port.
 @app.route("/health", methods=["GET"])
 def health_check():
     return {
