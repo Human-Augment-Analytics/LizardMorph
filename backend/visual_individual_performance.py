@@ -77,41 +77,7 @@ def parse_xml_for_frontend(file_path):
 def read_tps_file(file_path):
     """Read a TPS file and return data as a list of x and y coordinate lists with their corresponding images."""
     data = []
-    current_lm = 0
-    current_x = []
-    current_y = []
-    current_image = None
-    reading_points = False
 
-    with open(file_path, 'r') as file:
-        lines = file.readlines()
-        i = 0
-        while i < len(lines):
-            line = lines[i].strip()
-            if line.startswith('LM='):
-                current_x = []  # Reset coordinates for the new entry
-                current_y = []
-                current_lm = int(line[3:])
-                reading_points = True
-                i += 1
-                # Read the next current_lm lines as coordinates
-                for j in range(current_lm):
-                    if i + j < len(lines):
-                        point_line = lines[i + j].strip()
-                        # Skip if it's not a coordinate line
-                        if point_line.startswith('IMAGE=') or point_line.startswith('ID='):
-                            break
-                        try:
-                            parts = point_line.split()
-                            if len(parts) >= 2:  # Ensure we have at least x and y
-                                current_x.append(float(parts[0]))
-                                current_y.append(float(parts[1]))
-                        except Exception as e:
-                            print(f"Error parsing point line: {point_line}, error: {str(e)}")
-                i += current_lm - 1  # Skip the coordinates we just read
-                reading_points = False
-            elif line.startswith('IMAGE='):
-                current_image = line[6:]
     with open(file_path, 'r') as f:
         lines = f.readlines()
         
@@ -140,7 +106,39 @@ def read_tps_file(file_path):
     
     return data
 
-def create_image(tps_file_path, output_folder):
+SOURCE_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp")
+
+
+def resolve_source_image(image_name, source_folder):
+    """Locate the source image a TPS ``IMAGE=`` entry names, whatever its extension."""
+    if os.path.dirname(image_name) and os.path.isfile(image_name):
+        return image_name
+
+    if not source_folder:
+        return None
+
+    basename = os.path.basename(image_name)
+    direct = os.path.join(source_folder, basename)
+    if os.path.isfile(direct):
+        return direct
+
+    stem = os.path.splitext(basename)[0].lower()
+    try:
+        entries = sorted(os.listdir(source_folder))
+    except OSError:
+        return None
+
+    for entry in entries:
+        entry_stem, entry_ext = os.path.splitext(entry)
+        if entry_stem.lower() == stem and entry_ext.lower() in SOURCE_IMAGE_EXTENSIONS:
+            candidate = os.path.join(source_folder, entry)
+            if os.path.isfile(candidate):
+                return candidate
+
+    return None
+
+
+def create_image(tps_file_path, output_folder, source_folder):
     """Create annotated images based on TPS file data."""
     plot_data = read_tps_file(tps_file_path)
     output_image_paths = []
@@ -150,17 +148,13 @@ def create_image(tps_file_path, output_folder):
     
     for i, (image_name, x_coords, y_coords) in enumerate(plot_data):
         try:
-            # Ensure image name is correctly handled
-            if image_name.endswith('.jpg'):
-                image_path = os.path.join("upload", image_name)
-            else:
-                image_path = os.path.join("upload", f"{image_name}.jpg")
-            
-            print(f"Loading image: {image_path}")
-            
-            if not os.path.exists(image_path):
-                print(f"Warning: Image file not found: {image_path}")
+            image_path = resolve_source_image(image_name, source_folder)
+
+            if not image_path:
+                print(f"Warning: Image file not found for: {image_name}")
                 continue
+
+            print(f"Loading image: {image_path}")
             
             image = cv2.imread(image_path)
             if image is None:

@@ -15,7 +15,6 @@ describe("api config", () => {
 
     const config = await import("./config");
 
-    expect(config.API_URL).toBe("/api");
     await expect(config.getApiUrl()).resolves.toBe("/api");
   });
 
@@ -25,7 +24,6 @@ describe("api config", () => {
 
     const config = await import("./config");
 
-    expect(config.API_URL).toBe("http://backend.test:3005");
     await expect(config.getApiUrl()).resolves.toBe("http://backend.test:3005");
   });
 
@@ -38,7 +36,6 @@ describe("api config", () => {
 
     const config = await import("./config");
 
-    expect(config.API_URL).toBe(TAURI_API_URL);
     await expect(config.getApiUrl()).resolves.toBe(TAURI_API_URL);
   });
 
@@ -51,7 +48,6 @@ describe("api config", () => {
 
     const config = await import("./config");
 
-    expect(config.API_URL).toBe(TAURI_API_URL);
     await expect(config.getApiUrl()).resolves.toBe(TAURI_API_URL);
   });
 
@@ -65,7 +61,6 @@ describe("api config", () => {
 
     const config = await import("./config");
 
-    expect(config.API_URL).toBe(TAURI_API_URL);
     await expect(config.getApiUrl()).resolves.toBe(TAURI_API_URL);
   });
 });

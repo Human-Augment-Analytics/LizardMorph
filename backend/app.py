@@ -300,7 +300,7 @@ logger.info(f"Toepad finger predictor: {TOEPAD_FINGER_PREDICTOR}")
 
 # Cache YOLO model at startup to avoid reloading on each request
 _cached_yolo_model = None
-_model_cache_lock = threading.Lock()
+_yolo_model_lock = threading.Lock()
 
 
 def _load_yolo_model():
@@ -341,12 +341,13 @@ def get_cached_yolo_model():
     global _cached_yolo_model
     if _cached_yolo_model is not None:
         return _cached_yolo_model
-    with _model_cache_lock:
+    with _yolo_model_lock:
         if _cached_yolo_model is None:
             _cached_yolo_model = _load_yolo_model()
         return _cached_yolo_model
 
 _cached_id_model = None
+_id_model_lock = threading.Lock()
 
 
 def _load_id_model():
@@ -364,13 +365,14 @@ def get_cached_id_model():
     global _cached_id_model
     if _cached_id_model is not None:
         return _cached_id_model
-    with _model_cache_lock:
+    with _id_model_lock:
         if _cached_id_model is None:
             _cached_id_model = _load_id_model()
         return _cached_id_model
 
 # Cache dlib predictors at startup to avoid reloading on each request
-_cached_dlib_predictors = {}
+_cached_dlib_predictors = None
+_dlib_predictors_lock = threading.Lock()
 
 
 def _load_dlib_predictors():
@@ -398,10 +400,10 @@ def _load_dlib_predictors():
 def get_cached_dlib_predictors():
     """Get cached dlib predictors, loading them on first call."""
     global _cached_dlib_predictors
-    if _cached_dlib_predictors:
+    if _cached_dlib_predictors is not None:
         return _cached_dlib_predictors
-    with _model_cache_lock:
-        if not _cached_dlib_predictors:
+    with _dlib_predictors_lock:
+        if _cached_dlib_predictors is None:
             _cached_dlib_predictors = _load_dlib_predictors()
         return _cached_dlib_predictors
 
@@ -1652,7 +1654,9 @@ def process_scatter_data():
         try:
             logger.info(f"Creating annotated image for: {tps_file_path}")
             output_paths = visual_individual_performance.create_image(
-                tps_file_path, session_data["image_download_folder"]
+                tps_file_path,
+                session_data["image_download_folder"],
+                session_data["upload_folder"],
             )
 
             # Copy annotated images to export directory
@@ -2086,7 +2090,9 @@ def save_annotations():
         # Generate annotated image with updated points
         try:
             output_paths = visual_individual_performance.create_image(
-                tps_file_path, session_data["image_download_folder"]
+                tps_file_path,
+                session_data["image_download_folder"],
+                session_data["upload_folder"],
             )
 
             # Copy all generated files to the export directory
@@ -2142,7 +2148,7 @@ def save_annotations():
         # Generate annotated image with updated points
         try:
             output_paths = visual_individual_performance.create_image(
-                tps_file_path, IMAGE_DOWNLOAD_FOLDER
+                tps_file_path, IMAGE_DOWNLOAD_FOLDER, session_data["upload_folder"]
             )
 
             # Copy all generated files to the export directory

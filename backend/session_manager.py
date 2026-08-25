@@ -52,6 +52,22 @@ class SessionManager:
                 logger.info(f"Created directory (ownership unchanged): {directory}")
                 logger.debug(f"Ownership change failed: {e}")
 
+    @staticmethod
+    def parse_session_folder_name(folder_name: str) -> Optional[tuple]:
+        """Split ``session_<timestamp>_<session_id[:8]>`` into (timestamp, short id).
+
+        The timestamp itself contains an underscore (``%Y%m%d_%H%M%S``), so the
+        short session ID is the last segment, not the third one.
+        """
+        if not folder_name.startswith("session_"):
+            return None
+
+        parts = folder_name.split("_")
+        if len(parts) < 3:
+            return None
+
+        return "_".join(parts[1:-1]), parts[-1]
+
     def create_session(self, session_id: str = None) -> str:
         """
         Create a new session with a unique session ID.
@@ -152,10 +168,11 @@ class SessionManager:
             if session_id[:8] in folder_name and folder_name.startswith("session_"):
                 session_folder = os.path.join(self.base_sessions_dir, folder_name)
                 if os.path.isdir(session_folder):
+                    parsed = self.parse_session_folder_name(folder_name)
                     # Reconstruct session data
                     session_data = {
                         "session_id": session_id,
-                        "created_at": folder_name.split("_")[1],
+                        "created_at": parsed[0] if parsed else "",
                         "session_folder": session_folder,
                         "upload_folder": os.path.join(session_folder, "uploads"),
                         "processed_folder": os.path.join(session_folder, "processed"),
@@ -293,10 +310,9 @@ class SessionManager:
             if folder_name.startswith("session_") and os.path.isdir(
                 os.path.join(self.base_sessions_dir, folder_name)
             ):
-                parts = folder_name.split("_")
-                if len(parts) >= 3:
-                    timestamp = parts[1]
-                    session_id_part = parts[2]
+                parsed = self.parse_session_folder_name(folder_name)
+                if parsed:
+                    timestamp, session_id_part = parsed
 
                     session_folder = os.path.join(self.base_sessions_dir, folder_name)
 

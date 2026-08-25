@@ -41,6 +41,3 @@ export function getApiUrl(): Promise<string> {
   }
   return _apiUrlPromise;
 }
-
-// Synchronous export for non-Electron web mode (backwards compat)
-export const API_URL = fallbackApiUrl();
