@@ -140,7 +140,10 @@ export class Header extends Component<HeaderProps, HeaderState> {
               {isMenuOpen && (
                 <div style={styles.dropdownContent}>
                   <button
-                    onClick={onClearHistory}
+                    onClick={() => {
+                      this.setState({ isMenuOpen: false });
+                      onClearHistory();
+                    }}
                     disabled={loading}
                     style={{
                       ...styles.clearHistoryButton,

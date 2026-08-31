@@ -20,6 +20,7 @@ import { getMainViewStyles } from "./MainView.style";
 import { ThemeContext } from "../contexts/theme";
 import { SVGViewer } from "../components/SVGViewer";
 import { ApiService } from "../services/ApiService";
+import { SessionService } from "../services/SessionService";
 import { extractIdFromImageUrl } from "../services/IdOcrService";
 import { ExportService } from "../services/ExportService";
 import { FreePredictorPanel } from "../components/FreePredictorPanel";
@@ -794,49 +795,66 @@ export class MainView extends Component<MainProps, MainState> {
   };
 
   private readonly handleClearHistory = async (): Promise<void> => {
-    const confirmed = window.confirm(
-      `Are you sure you want to clear all history? This will delete all uploaded images, processed files, and session data. This action cannot be undone.`
-    );
-
-    if (confirmed) {
-      try {
-        this.setState({ loading: true });
-        // Clear backend session (best-effort, don't block frontend reset)
-        try {
-          await this.clearHistory();
-        } catch (err) {
-          console.warn("Backend clear_history failed (continuing with frontend reset):", err);
-        }
-        
-        // Always reset all frontend state regardless of backend result
-        this.setState({
-          uploadHistory: [],
-          images: [],
-          currentImageIndex: 0,
-          scatterData: [],
-          originalScatterData: [],
-          imageSet: {
-            original: "",
-            inverted: "",
-            color_contrasted: "",
-          },
-          currentImageURL: null,
-          imageFilename: null,
-          dataFetched: false,
-          lizardCount: 0,
-          currentBoundingBoxes: [],
-          extractedId: null,
-          extractedIdConfidence: null,
-          selectedPoint: null,
-        });
-        
-        alert("History cleared successfully");
-      } catch (error) {
-        alert("Error clearing history");
-        console.error("Clear history error:", error);
-      } finally {
-        this.setState({ loading: false });
+    let confirmed = true;
+    try {
+      if (typeof window !== "undefined" && window.confirm) {
+        confirmed = window.confirm(
+          "Are you sure you want to clear all history? This will delete all uploaded images, processed files, and session data. This action cannot be undone."
+        );
       }
+    } catch {
+      confirmed = true;
+    }
+
+    if (!confirmed) return;
+
+    try {
+      this.setState({ loading: true });
+      
+      // Clear backend session (best-effort, don't block frontend reset)
+      try {
+        await ApiService.clearHistory();
+      } catch (err) {
+        console.warn("Backend clear_history failed (continuing with frontend reset):", err);
+      }
+
+      // Clear client session token cache
+      SessionService.clearSession();
+      
+      // Reset all frontend state completely
+      this.setState({
+        uploadHistory: [],
+        images: [],
+        uploadProgress: {},
+        currentImageIndex: 0,
+        scatterData: [],
+        originalScatterData: [],
+        imageSet: {
+          original: "",
+          inverted: "",
+          color_contrasted: "",
+        },
+        currentImageURL: null,
+        imageFilename: null,
+        dataFetched: false,
+        lizardCount: 0,
+        currentBoundingBoxes: [],
+        extractedId: null,
+        extractedIdConfidence: null,
+        selectedPoint: null,
+        dataError: null,
+      });
+
+      // Start fresh session
+      try {
+        await SessionService.initializeSession();
+      } catch {
+        // Non-blocking
+      }
+    } catch (error) {
+      console.error("Clear history error:", error);
+    } finally {
+      this.setState({ loading: false });
     }
   };
 
@@ -1123,15 +1141,6 @@ export class MainView extends Component<MainProps, MainState> {
 
   private readonly handleToepadPredictorTypeChange = (type: string): void => {
     this.setState({ toepadPredictorType: type });
-  };
-
-  // Automatically called on clearBtn click from header
-  private readonly clearHistory = async (): Promise<void> => {
-    try {
-      await ApiService.clearHistory();
-    } catch (error) {
-      console.error("Failed to clear history:", error);
-    }
   };
 
   render() {

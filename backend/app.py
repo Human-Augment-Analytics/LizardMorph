@@ -2637,6 +2637,7 @@ def memory_cleanup():
         }), 500
 
 @app.route("/clear_history", methods=["POST"])
+@app.route("/api/clear_history", methods=["POST"])
 @cross_origin()
 @track_metrics
 def clear_history():

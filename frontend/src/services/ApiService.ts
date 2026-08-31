@@ -176,7 +176,8 @@ export class ApiService {
 
   static async clearHistory(): Promise<{ success: boolean }> {
     const base = await getApiUrl();
-    const res = await fetch(`${base}/clear_history`, {
+    const url = buildEndpointUrl(base, "/clear_history");
+    const res = await fetchWithBackendRetry(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
