@@ -37,6 +37,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome, onUseModel }) => {
   const [isCheckingData, setIsCheckingData] = useState(false);
   const [previewImageUrls, setPreviewImageUrls] = useState<Record<string, string>>({});
   const [selectedImageIndex, setSelectedImageIndex] = useState<number>(0);
+  const [selectedDigitIndex, setSelectedDigitIndex] = useState<number | null>(null);
   const [showPreviewLandmarks, setShowPreviewLandmarks] = useState<boolean>(true);
   const [showPreviewBoxes, setShowPreviewBoxes] = useState<boolean>(true);
   const [showPreviewLabels, setShowPreviewLabels] = useState<boolean>(true);
@@ -787,149 +788,280 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome, onUseModel }) => {
                       .join(" ");
                   };
 
+                  const isZoomed = selectedDigitIndex !== null && !!curImg.objects?.[selectedDigitIndex];
+                  let viewBox = `0 0 ${curImg.width || 800} ${curImg.height || 600}`;
+                  if (isZoomed && curImg.objects?.[selectedDigitIndex!]) {
+                    const selObj = curImg.objects[selectedDigitIndex!];
+                    const [cx, cy, w, h] = selObj.obb || [0, 0, 100, 100];
+                    const padBox = Math.max(w, h, 80) * 0.9;
+                    const vW = Math.max(140, w + padBox);
+                    const vH = Math.max(140, h + padBox);
+                    const vX = Math.max(0, cx - vW / 2);
+                    const vY = Math.max(0, cy - vH / 2);
+                    viewBox = `${vX} ${vY} ${vW} ${vH}`;
+                  }
+
+                  const lmRadius = isZoomed ? 3.0 : Math.max(8, (curImg.width || 800) / 100);
+                  const strokeWidth = isZoomed ? 0.8 : Math.max(2, (curImg.width || 800) / 400);
+                  const fontSize = isZoomed ? 8 : Math.max(14, (curImg.width || 800) / 70);
+
                   return (
-                    <div style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 280px",
-                      gap: "20px",
-                      alignItems: "start",
-                    }}>
-                      {/* Main Visual SVG */}
+                    <div>
+                      {/* Zoom Focus Toolbar */}
                       <div style={{
-                        position: "relative",
-                        width: "100%",
-                        borderRadius: "10px",
-                        overflow: "hidden",
-                        background: "#111",
-                        border: `1px solid ${t.border}`,
-                        boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        marginBottom: "12px",
+                        flexWrap: "wrap",
                       }}>
-                        <svg
-                          viewBox={`0 0 ${curImg.width || 800} ${curImg.height || 600}`}
-                          style={{ width: "100%", height: "auto", display: "block" }}
+                        <span style={{ fontSize: "12px", fontWeight: 700, opacity: 0.8 }}>View Focus:</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDigitIndex(null)}
+                          style={{
+                            padding: "5px 12px",
+                            borderRadius: "6px",
+                            border: `1px solid ${selectedDigitIndex === null ? "#4CAF50" : t.border}`,
+                            background: selectedDigitIndex === null ? "#4CAF50" : "transparent",
+                            color: selectedDigitIndex === null ? "#fff" : t.text,
+                            fontWeight: 700,
+                            fontSize: "12px",
+                            cursor: "pointer",
+                          }}
                         >
-                          {imgSrc ? (
-                            <image
-                              href={imgSrc}
-                              width={curImg.width || 800}
-                              height={curImg.height || 600}
-                            />
-                          ) : (
-                            <rect width={curImg.width || 800} height={curImg.height || 600} fill="#222" />
-                          )}
-
-                          {/* Bounding Boxes & Landmarks */}
-                          {curImg.objects?.map((obj, oIdx) => {
-                            const polyPoints = getObbPolygonPoints(obj.obb);
-                            const classColors = ["#4CAF50", "#2196F3", "#FF9800", "#E91E63", "#9C27B0"];
-                            const boxColor = classColors[oIdx % classColors.length];
-                            const cx = obj.obb?.[0] || 0;
-                            const cy = obj.obb?.[1] || 0;
-
-                            return (
-                              <g key={`obj-${obj.object_id || oIdx}`}>
-                                {/* Bounding Box */}
-                                {showPreviewBoxes && polyPoints && (
-                                  <>
-                                    <polygon
-                                      points={polyPoints}
-                                      fill={boxColor}
-                                      fillOpacity="0.12"
-                                      stroke={boxColor}
-                                      strokeWidth="3"
-                                      strokeDasharray="4 2"
-                                    />
-                                    <rect
-                                      x={cx - 38}
-                                      y={cy - 12}
-                                      width="76"
-                                      height="20"
-                                      rx="4"
-                                      fill={boxColor}
-                                      fillOpacity="0.85"
-                                    />
-                                    <text
-                                      x={cx}
-                                      y={cy + 2}
-                                      fill="#ffffff"
-                                      fontSize="11"
-                                      fontWeight="700"
-                                      textAnchor="middle"
-                                    >
-                                      {obj.class_name}
-                                    </text>
-                                  </>
-                                )}
-
-                                {/* Landmarks */}
-                                {showPreviewLandmarks && obj.landmarks?.map((pt, pIdx) => (
-                                  <g key={`lm-${obj.object_id}-${pt.name}-${pIdx}`}>
-                                    <circle
-                                      cx={pt.x}
-                                      cy={pt.y}
-                                      r="5"
-                                      fill="#00E5FF"
-                                      stroke="#000000"
-                                      strokeWidth="1.5"
-                                    />
-                                    {showPreviewLabels && (
-                                      <text
-                                        x={pt.x + 6}
-                                        y={pt.y - 6}
-                                        fill="#FFD700"
-                                        stroke="#000000"
-                                        strokeWidth="0.6"
-                                        fontSize="13"
-                                        fontWeight="800"
-                                      >
-                                        {pt.name}
-                                      </text>
-                                    )}
-                                  </g>
-                                ))}
-                              </g>
-                            );
-                          })}
-                        </svg>
-                      </div>
-
-                      {/* Sidebar: Object and Landmark Breakdown */}
-                      <div style={{
-                        maxHeight: "520px",
-                        overflowY: "auto",
-                        background: isDark ? "#1e293b" : "#ffffff",
-                        padding: "16px",
-                        borderRadius: "10px",
-                        border: `1px solid ${t.border}`,
-                      }}>
-                        <h4 style={{ fontSize: "14px", fontWeight: 700, marginBottom: "12px" }}>
-                          Detected Objects ({curImg.objects?.length || 0})
-                        </h4>
+                          🔍 Full Specimen
+                        </button>
                         {curImg.objects?.map((obj, oIdx) => (
-                          <div
-                            key={obj.object_id || oIdx}
+                          <button
+                            key={`btn-focus-${oIdx}`}
+                            type="button"
+                            onClick={() => setSelectedDigitIndex(oIdx)}
                             style={{
-                              marginBottom: "12px",
-                              padding: "10px",
-                              borderRadius: "8px",
-                              background: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
-                              border: `1px solid ${t.borderLight}`,
+                              padding: "5px 12px",
+                              borderRadius: "6px",
+                              border: `1px solid ${selectedDigitIndex === oIdx ? "#00E5FF" : t.border}`,
+                              background: selectedDigitIndex === oIdx ? "rgba(0,229,255,0.2)" : "transparent",
+                              color: selectedDigitIndex === oIdx ? "#00E5FF" : t.text,
+                              fontWeight: 700,
+                              fontSize: "12px",
+                              cursor: "pointer",
                             }}
                           >
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                              <span style={{ fontWeight: 700, fontSize: "13px", color: "#4CAF50" }}>
-                                {obj.class_name}
-                              </span>
-                              <span style={{ fontSize: "11px", opacity: 0.7 }}>
-                                {obj.landmarks?.length || 0} points
-                              </span>
-                            </div>
-                            <div style={{ fontSize: "11px", opacity: 0.8, lineHeight: "1.4" }}>
-                              <div>Center: ({obj.obb?.[0]?.toFixed(1)}, {obj.obb?.[1]?.toFixed(1)})</div>
-                              <div>Dim: {obj.obb?.[2]?.toFixed(1)} × {obj.obb?.[3]?.toFixed(1)} px</div>
-                            </div>
-                          </div>
+                            🦶 Digit {oIdx + 1}: {obj.class_name}
+                          </button>
                         ))}
+                      </div>
+
+                      <div style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 300px",
+                        gap: "20px",
+                        alignItems: "start",
+                      }}>
+                        {/* Main Visual SVG */}
+                        <div style={{
+                          position: "relative",
+                          width: "100%",
+                          borderRadius: "10px",
+                          overflow: "hidden",
+                          background: "#111",
+                          border: `1px solid ${t.border}`,
+                          boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+                        }}>
+                          <svg
+                            viewBox={viewBox}
+                            style={{ width: "100%", height: "auto", display: "block" }}
+                          >
+                            {imgSrc ? (
+                              <image
+                                href={imgSrc}
+                                width={curImg.width || 800}
+                                height={curImg.height || 600}
+                              />
+                            ) : (
+                              <rect width={curImg.width || 800} height={curImg.height || 600} fill="#222" />
+                            )}
+
+                            {/* Bounding Boxes, Anatomical Polygons, & Landmarks */}
+                            {curImg.objects?.map((obj, oIdx) => {
+                              const polyPoints = getObbPolygonPoints(obj.obb);
+                              const classColors = ["#4CAF50", "#2196F3", "#FF9800", "#E91E63", "#9C27B0"];
+                              const boxColor = classColors[oIdx % classColors.length];
+                              const cx = obj.obb?.[0] || 0;
+                              const cy = obj.obb?.[1] || 0;
+
+                              // Map points by name for anatomical polygon outline
+                              const lmMap: Record<string, { x: number; y: number }> = {};
+                              obj.landmarks?.forEach((lm) => {
+                                lmMap[lm.name] = { x: lm.x, y: lm.y };
+                              });
+
+                              // Claw line (0 to 1)
+                              const p0 = lmMap["0"];
+                              const p1 = lmMap["1"];
+
+                              // Toepad polygon (2, 3, 5, 7, 8, 6, 4)
+                              const polyIdxs = ["2", "3", "5", "7", "8", "6", "4"];
+                              const padPolygonPoints = polyIdxs
+                                .map((id) => lmMap[id])
+                                .filter(Boolean)
+                                .map((p) => `${p.x},${p.y}`)
+                                .join(" ");
+
+                              return (
+                                <g key={`obj-${obj.object_id || oIdx}`}>
+                                  {/* Bounding Box */}
+                                  {showPreviewBoxes && polyPoints && (
+                                    <>
+                                      <polygon
+                                        points={polyPoints}
+                                        fill={boxColor}
+                                        fillOpacity="0.10"
+                                        stroke={boxColor}
+                                        strokeWidth={strokeWidth * 1.5}
+                                        strokeDasharray={isZoomed ? undefined : "6 3"}
+                                      />
+                                      {!isZoomed && (
+                                        <>
+                                          <rect
+                                            x={cx - 45}
+                                            y={cy - 12}
+                                            width="90"
+                                            height="22"
+                                            rx="4"
+                                            fill={boxColor}
+                                            fillOpacity="0.9"
+                                          />
+                                          <text
+                                            x={cx}
+                                            y={cy + 3}
+                                            fill="#ffffff"
+                                            fontSize="11"
+                                            fontWeight="800"
+                                            textAnchor="middle"
+                                          >
+                                            {obj.class_name}
+                                          </text>
+                                        </>
+                                      )}
+                                    </>
+                                  )}
+
+                                  {/* Anatomical Outline Connections */}
+                                  {showPreviewLandmarks && (
+                                    <>
+                                      {/* Claw segment */}
+                                      {p0 && p1 && (
+                                        <line
+                                          x1={p0.x}
+                                          y1={p0.y}
+                                          x2={p1.x}
+                                          y2={p1.y}
+                                          stroke="#FFD700"
+                                          strokeWidth={strokeWidth}
+                                        />
+                                      )}
+                                      {/* Toepad polygon */}
+                                      {padPolygonPoints && (
+                                        <polygon
+                                          points={padPolygonPoints}
+                                          fill="rgba(0, 229, 255, 0.18)"
+                                          stroke="#00E5FF"
+                                          strokeWidth={strokeWidth}
+                                        />
+                                      )}
+                                    </>
+                                  )}
+
+                                  {/* Landmarks (Points) */}
+                                  {showPreviewLandmarks && obj.landmarks?.map((pt, pIdx) => (
+                                    <g key={`lm-${obj.object_id}-${pt.name}-${pIdx}`}>
+                                      {/* Halo ring for high visibility */}
+                                      <circle
+                                        cx={pt.x}
+                                        cy={pt.y}
+                                        r={lmRadius + 1.5}
+                                        fill="none"
+                                        stroke="#ffffff"
+                                        strokeWidth={strokeWidth * 0.7}
+                                      />
+                                      <circle
+                                        cx={pt.x}
+                                        cy={pt.y}
+                                        r={lmRadius}
+                                        fill="#00E5FF"
+                                        stroke="#000000"
+                                        strokeWidth={strokeWidth}
+                                      />
+                                      {showPreviewLabels && (
+                                        <text
+                                          x={pt.x + lmRadius + 3}
+                                          y={pt.y - lmRadius}
+                                          fill="#FFD700"
+                                          stroke="#000000"
+                                          strokeWidth={strokeWidth * 0.4}
+                                          fontSize={fontSize}
+                                          fontWeight="800"
+                                        >
+                                          {pt.name}
+                                        </text>
+                                      )}
+                                    </g>
+                                  ))}
+                                </g>
+                              );
+                            })}
+                          </svg>
+                        </div>
+
+                        {/* Sidebar: Object and Landmark Breakdown */}
+                        <div style={{
+                          maxHeight: "560px",
+                          overflowY: "auto",
+                          background: isDark ? "#1e293b" : "#ffffff",
+                          padding: "16px",
+                          borderRadius: "10px",
+                          border: `1px solid ${t.border}`,
+                        }}>
+                          <h4 style={{ fontSize: "14px", fontWeight: 700, marginBottom: "8px" }}>
+                            Detected Digits ({curImg.objects?.length || 0})
+                          </h4>
+                          <p style={{ fontSize: "11px", opacity: 0.7, marginBottom: "12px" }}>
+                            Click any digit below to zoom in and inspect its 9 landmarks.
+                          </p>
+
+                          {curImg.objects?.map((obj, oIdx) => (
+                            <div
+                              key={obj.object_id || oIdx}
+                              onClick={() => setSelectedDigitIndex(selectedDigitIndex === oIdx ? null : oIdx)}
+                              style={{
+                                marginBottom: "10px",
+                                padding: "12px",
+                                borderRadius: "8px",
+                                background: selectedDigitIndex === oIdx
+                                  ? "rgba(0, 229, 255, 0.10)"
+                                  : isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
+                                border: `2px solid ${selectedDigitIndex === oIdx ? "#00E5FF" : t.borderLight}`,
+                                cursor: "pointer",
+                                transition: "all 0.2s ease",
+                              }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                                <span style={{ fontWeight: 800, fontSize: "13px", color: selectedDigitIndex === oIdx ? "#00E5FF" : "#4CAF50" }}>
+                                  {oIdx + 1}. {obj.class_name}
+                                </span>
+                                <span style={{ fontSize: "11px", fontWeight: 700, background: "rgba(76,175,80,0.15)", color: "#4CAF50", padding: "2px 6px", borderRadius: "4px" }}>
+                                  {obj.landmarks?.length || 0} pts
+                                </span>
+                              </div>
+                              <div style={{ fontSize: "11px", opacity: 0.8, lineHeight: "1.4" }}>
+                                <div>Center: ({obj.obb?.[0]?.toFixed(1)}, {obj.obb?.[1]?.toFixed(1)})</div>
+                                <div>Box: {obj.obb?.[2]?.toFixed(0)} × {obj.obb?.[3]?.toFixed(0)} px</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   );
