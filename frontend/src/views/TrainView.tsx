@@ -949,30 +949,17 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome, onUseModel }) => {
                                   {/* Landmarks (Points) */}
                                   {showPreviewLandmarks && obj.landmarks?.map((pt, pIdx) => (
                                     <g key={`lm-${obj.object_id}-${pt.name}-${pIdx}`}>
-                                      {/* Halo ring for high visibility */}
-                                      <circle
-                                        cx={pt.x}
-                                        cy={pt.y}
-                                        r={lmRadius + 1.5}
-                                        fill="none"
-                                        stroke="#ffffff"
-                                        strokeWidth={strokeWidth * 0.7}
-                                      />
                                       <circle
                                         cx={pt.x}
                                         cy={pt.y}
                                         r={lmRadius}
                                         fill="#00E5FF"
-                                        stroke="#000000"
-                                        strokeWidth={strokeWidth}
                                       />
                                       {showPreviewLabels && (
                                         <text
-                                          x={pt.x + lmRadius + 3}
+                                          x={pt.x + lmRadius + 2}
                                           y={pt.y - lmRadius}
                                           fill="#FFD700"
-                                          stroke="#000000"
-                                          strokeWidth={strokeWidth * 0.4}
                                           fontSize={fontSize}
                                           fontWeight="800"
                                         >
