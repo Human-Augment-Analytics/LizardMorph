@@ -46,6 +46,13 @@ class SessionManager:
                 logger.info(f"Created directory (ownership unchanged): {directory}")
                 logger.debug(f"Ownership change failed: {e}")
 
+    @staticmethod
+    def _normalize_session_id(session_id: str) -> str:
+        try:
+            return str(uuid.UUID(str(session_id)))
+        except (ValueError, TypeError, AttributeError) as error:
+            raise ValueError("Invalid session identifier.") from error
+
     def create_session(self, session_id: str = None) -> str:
         """
         Create a new session with a unique session ID.
@@ -56,7 +63,7 @@ class SessionManager:
         if session_id is None:
             session_id = str(uuid.uuid4())
         else:
-            session_id = session_id
+            session_id = self._normalize_session_id(session_id)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -64,7 +71,7 @@ class SessionManager:
             "session_id": session_id,
             "created_at": timestamp,
             "session_folder": os.path.join(
-                self.base_sessions_dir, f"session_{timestamp}_{session_id[:8]}"
+                self.base_sessions_dir, f"session_{timestamp}_{session_id}"
             ),
             "upload_folder": None,
             "processed_folder": None,
@@ -122,6 +129,11 @@ class SessionManager:
         Returns:
             dict: Session data or None if not found
         """
+        try:
+            session_id = self._normalize_session_id(session_id)
+        except ValueError:
+            return None
+
         if session_id in self.active_sessions:
             return self.active_sessions[session_id]
 
@@ -142,14 +154,18 @@ class SessionManager:
         if not os.path.exists(self.base_sessions_dir):
             return None
 
+        expected_suffix = f"_{session_id}"
         for folder_name in os.listdir(self.base_sessions_dir):
-            if session_id[:8] in folder_name and folder_name.startswith("session_"):
+            if folder_name.startswith("session_") and folder_name.endswith(expected_suffix):
                 session_folder = os.path.join(self.base_sessions_dir, folder_name)
                 if os.path.isdir(session_folder):
+                    created_at = folder_name[
+                        len("session_") : -len(expected_suffix)
+                    ]
                     # Reconstruct session data
                     session_data = {
                         "session_id": session_id,
-                        "created_at": folder_name.split("_")[1],
+                        "created_at": created_at,
                         "session_folder": session_folder,
                         "upload_folder": os.path.join(session_folder, "uploads"),
                         "processed_folder": os.path.join(session_folder, "processed"),
@@ -287,10 +303,10 @@ class SessionManager:
             if folder_name.startswith("session_") and os.path.isdir(
                 os.path.join(self.base_sessions_dir, folder_name)
             ):
-                parts = folder_name.split("_")
-                if len(parts) >= 3:
-                    timestamp = parts[1]
-                    session_id_part = parts[2]
+                parts = folder_name.rsplit("_", 1)
+                if len(parts) == 2:
+                    timestamp = parts[0].removeprefix("session_")
+                    session_id_part = parts[1]
 
                     session_folder = os.path.join(self.base_sessions_dir, folder_name)
 

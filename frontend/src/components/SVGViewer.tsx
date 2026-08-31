@@ -1,7 +1,7 @@
 import { Component, createRef } from "react";
 import * as d3 from "d3";
 import { getSVGViewerStyles } from "./SVGViewer.style";
-import type { ResolvedTheme } from "../contexts/ThemeContext";
+import type { ResolvedTheme } from "../contexts/theme";
 import type { Point } from "../models/Point";
 import type { UploadHistoryItem } from "../models/UploadHistoryItem";
 import type { BoundingBox } from "../models/AnnotationsData";

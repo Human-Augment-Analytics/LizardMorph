@@ -1,7 +1,9 @@
 import os
+import json
 import time
 import shutil
 import tempfile
+import csv
 import cv2
 import numpy as np
 import pytest
@@ -13,7 +15,7 @@ from backend.datasets.canonical import (
     CanonicalObject,
     LandmarkPoint,
 )
-from backend.training.yolo_trainer import YoloOBBTrainer
+from backend.training.yolo_trainer import YoloOBBTrainer, export_model_to_onnx
 from backend.training.ml_morph_trainer import MLMorphTrainer
 from backend.training.orchestration import TrainingOrchestrator
 
@@ -105,6 +107,66 @@ def test_yolo_obb_dataset_formatting(temp_workspace, sample_canonical_dataset):
     assert os.path.exists(metrics["detector_weights"])
 
 
+def test_yolo_recovers_completed_checkpoint_before_export(temp_workspace, monkeypatch):
+    job_dir = os.path.join(temp_workspace, "recovery_job")
+    weights_dir = os.path.join(job_dir, "yolo_obb_train", "weights")
+    os.makedirs(weights_dir, exist_ok=True)
+    best_weights = os.path.join(weights_dir, "best.pt")
+    with open(best_weights, "wb") as f:
+        f.write(b"valid-test-checkpoint")
+
+    results_path = os.path.join(job_dir, "yolo_obb_train", "results.csv")
+    fieldnames = ["epoch", "metrics/mAP50(B)", "metrics/mAP50-95(B)"]
+    with open(results_path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow({"epoch": 1, "metrics/mAP50(B)": 0.8, "metrics/mAP50-95(B)": 0.6})
+        writer.writerow({"epoch": 2, "metrics/mAP50(B)": 0.9, "metrics/mAP50-95(B)": 0.7})
+
+    class FakeYOLO:
+        def __init__(self, path):
+            assert path == best_weights
+
+        def export(self, **kwargs):
+            assert kwargs == {"format": "onnx", "simplify": False}
+            exported = os.path.join(weights_dir, "best.onnx")
+            with open(exported, "wb") as f:
+                f.write(b"onnx")
+            return exported
+
+    import ultralytics
+
+    monkeypatch.setattr(ultralytics, "YOLO", FakeYOLO)
+    metrics = YoloOBBTrainer(job_dir).train("unused.yaml", epochs=2)
+
+    assert metrics["recovered_from_checkpoint"] is True
+    assert metrics["mAP50"] == 0.9
+    assert metrics["mAP50-95"] == 0.7
+    assert os.path.exists(metrics["detector_weights"])
+
+
+def test_yolo_onnx_export_forces_legacy_torch_export(monkeypatch):
+    import torch
+
+    captured = {}
+
+    def fake_torch_export(*args, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(torch.onnx, "export", fake_torch_export)
+    original_export = torch.onnx.export
+
+    class FakeYOLO:
+        def export(self, **kwargs):
+            assert kwargs == {"format": "onnx", "simplify": False}
+            torch.onnx.export("model", "input", "model.onnx")
+            return "model.onnx"
+
+    assert export_model_to_onnx(FakeYOLO()) == "model.onnx"
+    assert captured["dynamo"] is False
+    assert torch.onnx.export is original_export
+
+
 def test_ml_morph_trainer_dlib_xml_and_training(temp_workspace, sample_canonical_dataset):
     job_dir = os.path.join(temp_workspace, "ml_morph_job")
     trainer = MLMorphTrainer(job_dir)
@@ -139,6 +201,7 @@ def test_training_orchestrator_job_lifecycle(temp_workspace, sample_canonical_da
     job_config = {
         "mock": True,
         "epochs": 1,
+        "model_name": "Wing Geometry",
         "dlib_options": {"nu": 0.1, "tree_depth": 2, "cascade_depth": 2},
     }
 
@@ -169,6 +232,10 @@ def test_training_orchestrator_job_lifecycle(temp_workspace, sample_canonical_da
     job_dir = os.path.join(runs_dir, job_id)
     manifest_path = os.path.join(job_dir, "manifest.json")
     assert os.path.exists(manifest_path)
+    with open(manifest_path, "r", encoding="utf-8") as manifest_file:
+        manifest = json.load(manifest_file)
+    assert manifest["name"] == "Wing Geometry"
+    assert manifest["detector"]["artifact"].endswith("detector_yolo_obb.onnx")
 
 
 def test_training_orchestrator_job_cancellation(temp_workspace, sample_canonical_dataset):

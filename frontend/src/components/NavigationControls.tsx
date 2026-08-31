@@ -1,6 +1,6 @@
 import { Component } from "react";
 import { getNavigationControlsStyles } from "./NavigationControls.style";
-import type { ResolvedTheme } from "../contexts/ThemeContext";
+import type { ResolvedTheme } from "../contexts/theme";
 
 interface NavigationControlsProps {
   currentImageIndex: number;

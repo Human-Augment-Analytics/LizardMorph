@@ -1,6 +1,6 @@
 import type { PredictorMeta } from "../services/ApiService";
 import React from "react";
-import type { ResolvedTheme } from "../contexts/ThemeContext";
+import type { ResolvedTheme } from "../contexts/theme";
 
 interface Props {
   predictors: PredictorMeta[];

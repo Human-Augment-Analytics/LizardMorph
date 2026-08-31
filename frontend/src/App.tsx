@@ -1,22 +1,32 @@
 import React from "react";
-import { HashRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { HashRouter as Router, Routes, Route, Navigate, useNavigate, useLocation, useParams } from "react-router-dom";
 import "./App.css";
 import { MainView } from "./views/MainView";
 import { LandingPage } from "./components/LandingPage";
 import type { LizardViewType } from "./components/LandingPage";
-import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
+import { ThemeProvider } from "./contexts/ThemeContext";
+import { useTheme } from "./contexts/theme";
 import { TrainView } from "./views/TrainView";
 
 // Wrapper component to provide navigation to MainView
 const MainViewWrapper: React.FC<{ selectedViewType: LizardViewType }> = ({ selectedViewType }) => {
   const navigate = useNavigate();
-  return <MainView selectedViewType={selectedViewType} onNavigateHome={() => navigate("/")} />;
+  const location = useLocation();
+  const { modelId: routeModelId } = useParams<{ modelId?: string }>();
+  const navigationState = location.state as { selectedModelId?: string } | null;
+  const modelId = routeModelId ?? navigationState?.selectedModelId;
+  return <MainView selectedViewType={selectedViewType} modelId={modelId} onNavigateHome={() => navigate("/")} />;
 };
 
 // Wrapper component for TrainView custom mode routing
 const TrainViewWrapper: React.FC = () => {
   const navigate = useNavigate();
-  return <TrainView onNavigateHome={() => navigate("/")} />;
+  return (
+    <TrainView
+      onNavigateHome={() => navigate("/")}
+      onUseModel={(modelId) => navigate(`/custom-model/${encodeURIComponent(modelId)}`)}
+    />
+  );
 };
 
 // Version display component
@@ -67,6 +77,8 @@ function App() {
         <Route path="/toepads" element={<MainViewWrapper selectedViewType="toepads" />} />
         <Route path="/toepad" element={<MainViewWrapper selectedViewType="toepads" />} />
         <Route path="/free" element={<MainViewWrapper selectedViewType="free" />} />
+        <Route path="/custom-model" element={<MainViewWrapper selectedViewType="custom" />} />
+        <Route path="/custom-model/:modelId" element={<MainViewWrapper selectedViewType="custom" />} />
         <Route path="/custom" element={<TrainViewWrapper />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

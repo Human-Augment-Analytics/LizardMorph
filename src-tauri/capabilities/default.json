@@ -4,19 +4,6 @@
   "description": "Default capability for AutoMorph main window",
   "windows": ["main"],
   "permissions": [
-    "core:default",
-    "shell:default",
-    "shell:allow-execute",
-    "shell:allow-spawn",
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "binaries/python-backend",
-          "sidecar": true,
-          "args": true
-        }
-      ]
-    }
+    "core:default"
   ]
 }

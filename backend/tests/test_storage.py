@@ -92,6 +92,28 @@ def test_manifest_serialization_deserialization():
     assert reconstructed.evaluation == {"mAP50": 0.95}
 
 
+def test_legacy_manifest_is_migrated_to_current_schema():
+    legacy = {
+        "manifest_version": "1.0",
+        "name": "Wing",
+        "detector": {"type": "yolo_obb", "weights": "weights/best.pt"},
+        "predictors": [{"class_name": "wing", "file": "models/wing.dat"}],
+        "metrics": {"mAP50": 0.8},
+    }
+
+    manifest = Manifest.from_dict(
+        legacy,
+        fallback_id="legacy-id",
+        artifact_prefix="runs/job_legacy-id",
+    )
+
+    assert manifest.id == "legacy-id"
+    assert manifest.detector.artifact == "runs/job_legacy-id/weights/best.pt"
+    assert manifest.classes[0].predictor == "runs/job_legacy-id/models/wing.dat"
+    assert manifest.classes[0].name == "wing"
+    assert manifest.evaluation["mAP50"] == 0.8
+
+
 def test_model_registry_repository():
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = os.path.join(tmpdir, "test.db")

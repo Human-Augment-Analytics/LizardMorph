@@ -92,6 +92,15 @@ export default defineConfig(({ mode }) => {
             // Add version to build output
             rollupOptions: {
                 output: {
+                    manualChunks(id) {
+                        if (!id.includes('node_modules')) return undefined;
+                        if (/node_modules\/(react|react-dom|react-router|scheduler)\//.test(id)) return 'react-vendor';
+                        if (id.includes('node_modules/d3-') || id.includes('node_modules/d3/')) return 'd3-vendor';
+                        if (id.includes('node_modules/onnxruntime-')) return 'onnx-vendor';
+                        if (id.includes('node_modules/tesseract.js')) return 'ocr-vendor';
+                        if (id.includes('node_modules/jszip')) return 'zip-vendor';
+                        return 'vendor';
+                    },
                     // Add version to chunk names for cache busting
                     chunkFileNames: `assets/[name]-${buildVersion}-[hash].js`,
                     entryFileNames: `assets/[name]-${buildVersion}-[hash].js`,
@@ -125,4 +134,3 @@ export default defineConfig(({ mode }) => {
         }
     }
 });
-

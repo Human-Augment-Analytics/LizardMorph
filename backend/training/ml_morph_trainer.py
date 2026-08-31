@@ -1,10 +1,17 @@
 import os
+import random
+import re
 import cv2
 import numpy as np
 import xml.etree.ElementTree as ET
 from typing import Dict, Any, Optional
 
-from backend.datasets.canonical import CanonicalDataset
+try:
+    from backend.datasets.canonical import CanonicalDataset
+    from backend.geometry import canonicalize_obb_for_crop
+except ImportError:
+    from datasets.canonical import CanonicalDataset
+    from geometry import canonicalize_obb_for_crop
 
 try:
     import dlib
@@ -41,6 +48,7 @@ class MLMorphTrainer:
         canonical_dataset: CanonicalDataset,
         jitter_padding: float = 0.2,
         box_jitter: float = 0.05,
+        class_name: Optional[str] = None,
     ) -> str:
         """
         Crops images with box jitter padding around OBB and generates dlib training XML.
@@ -53,7 +61,11 @@ class MLMorphTrainer:
         Returns:
             Absolute path to generated dlib XML annotation file.
         """
-        lm_dir = os.path.join(self.job_dir, "landmark_dataset")
+        class_slug = (
+            re.sub(r"[^A-Za-z0-9_.-]+", "_", class_name or "default").strip("._")
+            or "default"
+        )
+        lm_dir = os.path.join(self.job_dir, "landmark_dataset", class_slug)
         crops_dir = os.path.join(lm_dir, "crops")
         os.makedirs(crops_dir, exist_ok=True)
 
@@ -65,33 +77,37 @@ class MLMorphTrainer:
 
         images_elem = ET.SubElement(dataset_elem, "images")
 
-        for cimg in canonical_dataset.images:
-            # Load or create base image
+        random_generator = np.random.default_rng(42)
+        for image_index, cimg in enumerate(canonical_dataset.images):
+            # Every referenced source image must be present. Silent placeholder images
+            # produce apparently successful but unusable predictors.
             img_w = cimg.width if cimg.width > 0 else 100
             img_h = cimg.height if cimg.height > 0 else 100
 
             actual_img_path = resolve_image_path(cimg.file_path)
-            if actual_img_path and os.path.exists(actual_img_path):
-                img = cv2.imread(actual_img_path)
-                if img is None:
-                    img = np.ones((img_h, img_w, 3), dtype=np.uint8) * 128
-                else:
-                    img_h, img_w = img.shape[:2]
-            else:
-                img = np.ones((img_h, img_w, 3), dtype=np.uint8) * 128
+            if not actual_img_path or not os.path.exists(actual_img_path):
+                raise FileNotFoundError(
+                    f"Image '{cimg.file_path}' referenced by the annotations was not provided."
+                )
+            img = cv2.imread(actual_img_path)
+            if img is None:
+                raise ValueError(f"Unable to decode training image '{cimg.file_path}'.")
+            img_h, img_w = img.shape[:2]
 
-            for obj in cimg.objects:
+            for object_index, obj in enumerate(cimg.objects):
+                if class_name is not None and obj.class_name != class_name:
+                    continue
                 if not obj.landmarks or len(obj.obb) < 5:
                     continue
 
-                cx, cy, w, h, angle_deg = obj.obb[:5]
+                cx, cy, w, h, angle_deg = canonicalize_obb_for_crop(obj.obb)
 
                 # Apply box jitter if requested
                 if box_jitter > 0:
-                    dx = np.random.uniform(-box_jitter, box_jitter) * w
-                    dy = np.random.uniform(-box_jitter, box_jitter) * h
-                    dw = np.random.uniform(-box_jitter, box_jitter) * w
-                    dh = np.random.uniform(-box_jitter, box_jitter) * h
+                    dx = random_generator.uniform(-box_jitter, box_jitter) * w
+                    dy = random_generator.uniform(-box_jitter, box_jitter) * h
+                    dw = random_generator.uniform(-box_jitter, box_jitter) * w
+                    dh = random_generator.uniform(-box_jitter, box_jitter) * h
                     j_cx = cx + dx
                     j_cy = cy + dy
                     j_w = max(1.0, w + dw)
@@ -99,16 +115,44 @@ class MLMorphTrainer:
                 else:
                     j_cx, j_cy, j_w, j_h = cx, cy, w, h
 
-                padded_w = float(j_w) * (1.0 + jitter_padding)
-                padded_h = float(j_h) * (1.0 + jitter_padding)
+                def make_transform(center_x, center_y, box_width, box_height):
+                    padded_width = float(box_width) * (1.0 + jitter_padding)
+                    padded_height = float(box_height) * (1.0 + jitter_padding)
+                    transform = cv2.getRotationMatrix2D(
+                        (center_x, center_y), angle_deg, 1.0
+                    )
+                    transform[0, 2] += padded_width / 2.0 - center_x
+                    transform[1, 2] += padded_height / 2.0 - center_y
+                    return (
+                        transform,
+                        max(1, int(round(padded_width))),
+                        max(1, int(round(padded_height))),
+                    )
 
-                # Compute affine transformation matrix for crop
-                M = cv2.getRotationMatrix2D((j_cx, j_cy), angle_deg, 1.0)
-                M[0, 2] += padded_w / 2.0 - j_cx
-                M[1, 2] += padded_h / 2.0 - j_cy
+                M, out_w, out_h = make_transform(j_cx, j_cy, j_w, j_h)
 
-                out_w = max(1, int(round(padded_w)))
-                out_h = max(1, int(round(padded_h)))
+                def transform_landmarks(transform):
+                    return [
+                        (
+                            landmark,
+                            transform[0, 0] * landmark.x
+                            + transform[0, 1] * landmark.y
+                            + transform[0, 2],
+                            transform[1, 0] * landmark.x
+                            + transform[1, 1] * landmark.y
+                            + transform[1, 2],
+                        )
+                        for landmark in obj.landmarks
+                    ]
+
+                transformed_landmarks = transform_landmarks(M)
+                if any(
+                    px < 0 or py < 0 or px > out_w - 1 or py > out_h - 1
+                    for _, px, py in transformed_landmarks
+                ):
+                    # A jittered crop must never discard its ground-truth points.
+                    M, out_w, out_h = make_transform(cx, cy, w, h)
+                    transformed_landmarks = transform_landmarks(M)
 
                 crop = cv2.warpAffine(
                     img,
@@ -119,9 +163,10 @@ class MLMorphTrainer:
                     borderValue=(0, 0, 0),
                 )
 
-                crop_filename = f"crop_{cimg.image_id}_{obj.object_id}.jpg"
+                crop_filename = f"crop_{image_index + 1}_{object_index + 1}.jpg"
                 crop_path = os.path.join(crops_dir, crop_filename)
-                cv2.imwrite(crop_path, crop)
+                if not cv2.imwrite(crop_path, crop):
+                    raise OSError(f"Unable to write landmark crop '{crop_path}'.")
 
                 # Relative path for dlib XML
                 rel_crop_path = os.path.join("crops", crop_filename)
@@ -147,17 +192,14 @@ class MLMorphTrainer:
                     },
                 )
 
-                for lm in obj.landmarks:
-                    # Transform landmark point into crop space
-                    px = M[0, 0] * lm.x + M[0, 1] * lm.y + M[0, 2]
-                    py = M[1, 0] * lm.x + M[1, 1] * lm.y + M[1, 2]
+                for lm, px, py in transformed_landmarks:
                     ET.SubElement(
                         box_node,
                         "part",
                         attrib={
                             "name": str(lm.name),
-                            "x": str(int(round(px))),
-                            "y": str(int(round(py))),
+                            "x": str(min(out_w - 1, max(0, int(round(px))))),
+                            "y": str(min(out_h - 1, max(0, int(round(py))))),
                         },
                     )
 
@@ -168,13 +210,50 @@ class MLMorphTrainer:
         ET.indent(tree, space="  ", level=0)
         tree.write(xml_path, encoding="utf-8", xml_declaration=True)
 
+        if not images_elem.findall("image"):
+            raise ValueError(f"No landmark annotations found for class '{class_name or 'default'}'.")
+
         return xml_path
+
+    @staticmethod
+    def _split_dataset(xml_path: str, test_split: float, seed: int = 42):
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        images_node = root.find("images")
+        if images_node is None:
+            raise ValueError("Generated dlib dataset is missing its images element.")
+        images = list(images_node.findall("image"))
+        if len(images) < 2 or test_split <= 0:
+            return xml_path, None
+
+        indices = list(range(len(images)))
+        random.Random(seed).shuffle(indices)
+        test_count = min(len(images) - 1, max(1, int(round(len(images) * test_split))))
+        test_indices = set(indices[:test_count])
+
+        def write_subset(path: str, include_test: bool):
+            subset_root = ET.Element("dataset")
+            ET.SubElement(subset_root, "name").text = "ML-Morph Dataset"
+            subset_images = ET.SubElement(subset_root, "images")
+            for index, image in enumerate(images):
+                if (index in test_indices) == include_test:
+                    subset_images.append(ET.fromstring(ET.tostring(image)))
+            ET.ElementTree(subset_root).write(path, encoding="utf-8", xml_declaration=True)
+
+        base_dir = os.path.dirname(xml_path)
+        train_path = os.path.join(base_dir, "train_split.xml")
+        test_path = os.path.join(base_dir, "test_split.xml")
+        write_subset(train_path, False)
+        write_subset(test_path, True)
+        return train_path, test_path
 
     def train(
         self,
         xml_path: str,
         output_model_name: str = "shape_predictor.dat",
         custom_options: Optional[Dict[str, Any]] = None,
+        test_split: float = 0.2,
+        mock: bool = False,
     ) -> Dict[str, Any]:
         """
         Runs dlib.train_shape_predictor on generated dataset.
@@ -190,54 +269,59 @@ class MLMorphTrainer:
         opts = custom_options or {}
         models_dir = os.path.join(self.job_dir, "models")
         os.makedirs(models_dir, exist_ok=True)
+        if os.path.basename(output_model_name) != output_model_name:
+            raise ValueError("Landmark model filename must not contain a directory path.")
         output_model_path = os.path.join(models_dir, output_model_name)
 
-        if dlib is not None:
-            try:
-                try:
-                    train_tree = ET.parse(xml_path)
-                    num_images = len(train_tree.getroot().findall(".//image"))
-                except Exception:
-                    num_images = 1
-
-                options = dlib.shape_predictor_training_options()
-                options.num_threads = min(4, os.cpu_count() or 1)
-                if num_images > 0:
-                    options.num_threads = min(options.num_threads, num_images)
-
-                options.nu = float(opts.get("nu", 0.1))
-                options.tree_depth = int(opts.get("tree_depth", 4))
-                options.cascade_depth = int(opts.get("cascade_depth", 15))
-                options.oversampling_amount = int(opts.get("oversampling_amount", 5))
-                options.feature_pool_size = int(opts.get("feature_pool_size", 400))
-                options.num_test_splits = int(opts.get("num_test_splits", 20))
-                options.be_verbose = False
-
-                dlib.train_shape_predictor(xml_path, output_model_path, options)
-
-                return {
-                    "landmark_model": output_model_path,
-                    "model_path": output_model_path,
-                    "status": "success",
-                }
-            except Exception as e:
-                # Fallback mock file on dlib training error
-                with open(output_model_path, "wb") as f:
-                    f.write(b"MOCK_DLIB_SHAPE_PREDICTOR_DATA")
-
-                return {
-                    "landmark_model": output_model_path,
-                    "model_path": output_model_path,
-                    "status": "mock_fallback",
-                    "warning": str(e),
-                }
-        else:
-            # Fallback mock when dlib is not installed
+        if mock:
             with open(output_model_path, "wb") as f:
-                f.write(b"MOCK_DLIB_SHAPE_PREDICTOR_DATA")
-
+                f.write(b"EXPLICIT_TEST_MOCK_DLIB")
             return {
                 "landmark_model": output_model_path,
                 "model_path": output_model_path,
                 "status": "mock",
+                "test_error": 0.0,
             }
+
+        if dlib is None:
+            raise RuntimeError("dlib is required for landmark training but is not installed.")
+
+        try:
+            train_xml_path, test_xml_path = self._split_dataset(xml_path, test_split)
+            try:
+                train_tree = ET.parse(train_xml_path)
+                num_images = len(train_tree.getroot().findall(".//image"))
+            except Exception:
+                num_images = 1
+
+            options = dlib.shape_predictor_training_options()
+            options.num_threads = min(4, os.cpu_count() or 1)
+            if num_images > 0:
+                options.num_threads = min(options.num_threads, num_images)
+
+            options.nu = float(opts.get("nu", 0.1))
+            options.tree_depth = int(opts.get("tree_depth", 4))
+            options.cascade_depth = int(opts.get("cascade_depth", 15))
+            options.oversampling_amount = int(opts.get("oversampling_amount", 5))
+            options.feature_pool_size = int(opts.get("feature_pool_size", 400))
+            options.num_test_splits = int(opts.get("num_test_splits", 20))
+            options.be_verbose = False
+
+            dlib.train_shape_predictor(train_xml_path, output_model_path, options)
+
+            # Loading the artifact catches truncated or invalid predictors immediately.
+            dlib.shape_predictor(output_model_path)
+            test_error = None
+            if test_xml_path:
+                test_error = float(dlib.test_shape_predictor(test_xml_path, output_model_path))
+
+            return {
+                "landmark_model": output_model_path,
+                "model_path": output_model_path,
+                "status": "success",
+                "test_error": test_error,
+            }
+        except Exception:
+            if os.path.exists(output_model_path):
+                os.remove(output_model_path)
+            raise

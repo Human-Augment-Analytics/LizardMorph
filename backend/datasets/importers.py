@@ -2,12 +2,20 @@ import os
 import math
 import xml.etree.ElementTree as ET
 from typing import List, Dict, Optional, Tuple, Any
-from backend.datasets.canonical import (
-    LandmarkPoint,
-    CanonicalObject,
-    CanonicalImage,
-    CanonicalDataset,
-)
+try:
+    from backend.datasets.canonical import (
+        LandmarkPoint,
+        CanonicalObject,
+        CanonicalImage,
+        CanonicalDataset,
+    )
+except ImportError:
+    from datasets.canonical import (
+        LandmarkPoint,
+        CanonicalObject,
+        CanonicalImage,
+        CanonicalDataset,
+    )
 
 
 class TPSImporter:
@@ -27,6 +35,12 @@ class TPSImporter:
             nonlocal obj_counter, current_pts, current_tags, current_lm_count
             if current_lm_count is None and not current_pts:
                 return
+            if current_lm_count is None or current_lm_count <= 0:
+                raise ValueError("TPS specimens must declare at least one landmark.")
+            if len(current_pts) != current_lm_count:
+                raise ValueError(
+                    f"TPS specimen declares {current_lm_count} landmarks but contains {len(current_pts)}."
+                )
 
             file_path = current_tags.get("IMAGE", current_tags.get("image", default_image_name))
             specimen_id = current_tags.get("ID", current_tags.get("id"))
@@ -67,18 +81,21 @@ class TPSImporter:
                     if current_lm_count is not None or current_pts:
                         finalize_object()
                     current_lm_count = int(val_clean)
+                    if current_lm_count <= 0:
+                        raise ValueError("TPS landmark count must be greater than zero.")
                     # Read next current_lm_count lines
                     for pt_idx in range(current_lm_count):
                         i += 1
                         if i >= len(lines):
-                            break
+                            raise ValueError("TPS file ended before all landmarks were read.")
                         pt_line = lines[i].strip()
                         parts = pt_line.split()
-                        if len(parts) >= 2:
-                            x, y = float(parts[0]), float(parts[1])
-                            current_pts.append(
-                                LandmarkPoint(name=str(pt_idx), x=x, y=y)
-                            )
+                        if len(parts) < 2:
+                            raise ValueError(f"Invalid TPS landmark line: '{pt_line}'.")
+                        x, y = float(parts[0]), float(parts[1])
+                        current_pts.append(
+                            LandmarkPoint(name=str(pt_idx), x=x, y=y)
+                        )
                 else:
                     current_tags[key_upper] = val_clean
             i += 1

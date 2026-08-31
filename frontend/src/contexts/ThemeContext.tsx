@@ -1,13 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-
-export type ThemePreference = "light" | "dark" | "auto";
-export type ResolvedTheme = "light" | "dark";
-
-interface ThemeContextValue {
-  preference: ThemePreference;
-  resolved: ResolvedTheme;
-  setPreference: (pref: ThemePreference) => void;
-}
+import React, { useState, useEffect, useCallback } from "react";
+import { ThemeContext } from "./theme";
+import type { ThemePreference, ResolvedTheme } from "./theme";
 
 const STORAGE_KEY = "lizardmorph-theme";
 
@@ -17,12 +10,6 @@ function getSystemTheme(): ResolvedTheme {
   }
   return "light";
 }
-
-const ThemeContext = createContext<ThemeContextValue>({
-  preference: "auto",
-  resolved: "light",
-  setPreference: () => {},
-});
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [preference, setPreferenceState] = useState<ThemePreference>(() => {
@@ -59,8 +46,3 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     </ThemeContext.Provider>
   );
 };
-
-export const useTheme = () => useContext(ThemeContext);
-
-/** For class components — pass resolved theme as a prop from a functional wrapper */
-export { ThemeContext };

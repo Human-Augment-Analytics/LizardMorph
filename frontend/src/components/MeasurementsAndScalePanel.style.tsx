@@ -1,4 +1,4 @@
-import type { ResolvedTheme } from "../contexts/ThemeContext";
+import type { ResolvedTheme } from "../contexts/theme";
 import { getTokens } from "../contexts/themeTokens";
 
 export function getMeasurementsAndScalePanelStyles(theme: ResolvedTheme) {

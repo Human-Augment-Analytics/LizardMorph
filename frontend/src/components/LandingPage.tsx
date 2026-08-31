@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useTheme } from "../contexts/ThemeContext";
+import { useTheme } from "../contexts/theme";
 import { getTokens } from "../contexts/themeTokens";
 import { ApiService } from "../services/ApiService";
 import type { ModelVersionItem } from "../services/ApiService";
-import lizard_logo from "../../public/lizard.svg";
+import lizard_logo from "../assets/lizard.svg";
 
 export type LizardViewType = "dorsal" | "lateral" | "toepads" | "custom" | "free";
 
@@ -230,8 +230,8 @@ export const LandingPage: React.FC = () => {
       await ApiService.deleteModel(modelToDelete.id);
       setModels((prev) => prev.filter((m) => m.id !== modelToDelete.id));
       setModelToDelete(null);
-    } catch (err: any) {
-      setDeleteError(err.message || "Failed to delete model");
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete model");
     } finally {
       setIsDeleting(false);
     }
@@ -398,7 +398,7 @@ export const LandingPage: React.FC = () => {
                 ...LandingPageStyles.optionCard,
                 ...(hoveredCard === m.id ? LandingPageStyles.optionCardHover : {}),
               }}
-              onClick={() => navigate("/toepads", { state: { selectedModelId: m.id } })}
+              onClick={() => navigate(`/custom-model/${encodeURIComponent(m.id)}`)}
               onMouseEnter={() => handleMouseEnter(m.id)}
               onMouseLeave={handleMouseLeave}
             >

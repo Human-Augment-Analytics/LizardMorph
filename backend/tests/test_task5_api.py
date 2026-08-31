@@ -21,6 +21,10 @@ def test_api_models_endpoint(client):
     assert "lizard-dorsal-v1" in model_ids
     assert "lizard-lateral-v1" in model_ids
     assert "lizard-toepad-v1" in model_ids
+    manifests = {model["id"]: model["manifest"] for model in data["models"]}
+    assert len(manifests["lizard-dorsal-v1"]["landmark_schemas"]["dorsal"]["points"]) == 34
+    assert len(manifests["lizard-lateral-v1"]["landmark_schemas"]["lateral"]["points"]) == 9
+    assert len(manifests["lizard-toepad-v1"]["landmark_schemas"]["toepad"]["points"]) == 9
 
 
 def test_api_projects_endpoints(client):
@@ -47,13 +51,38 @@ def test_api_projects_endpoints(client):
     assert proj["id"] in proj_ids
 
 
-def test_api_train_and_status_endpoints(client):
+def test_api_train_and_status_endpoints(client, monkeypatch):
+    import backend.app as app_mod
+
+    dataset = {
+        "images": [
+            {
+                "image_id": f"img_{index}",
+                "file_path": f"image_{index}.jpg",
+                "width": 100,
+                "height": 100,
+                "objects": [{
+                    "object_id": f"obj_{index}",
+                    "class_name": "object",
+                    "obb": [50, 50, 40, 40, 0],
+                    "landmarks": [{"name": "0", "x": 50, "y": 50}],
+                }],
+            }
+            for index in (1, 2)
+        ]
+    }
+    monkeypatch.setattr(app_mod.training_orchestrator, "submit_job", lambda **kwargs: "job_test123")
+    monkeypatch.setattr(
+        app_mod.training_orchestrator,
+        "get_status",
+        lambda job_id: {"status": "running", "stage": "Training", "progress": 0.5, "metrics": {}},
+    )
     # Test POST /api/train
     train_res = client.post(
         "/api/train",
         json={
             "project_id": "test_proj_1",
-            "dataset": {"images": []},
+            "dataset": dataset,
             "config": {"epochs": 1, "model_type": "ml_morph"},
         },
     )
@@ -97,18 +126,11 @@ ID=Anolis_001
     assert len(objs[0]["obb"]) == 5
 
 
-def test_api_cancel_training_endpoint(client):
-    # Submit job
-    train_res = client.post(
-        "/api/train",
-        json={
-            "project_id": "test_cancel_proj",
-            "dataset": {"images": []},
-            "config": {"epochs": 10, "mock": True},
-        },
-    )
-    assert train_res.status_code == 200
-    job_id = train_res.get_json()["job_id"]
+def test_api_cancel_training_endpoint(client, monkeypatch):
+    import backend.app as app_mod
+
+    job_id = "job_cancel123"
+    monkeypatch.setattr(app_mod.training_orchestrator, "cancel_job", lambda requested: requested == job_id)
 
     # Cancel job
     cancel_res = client.post(f"/api/train/{job_id}/cancel")

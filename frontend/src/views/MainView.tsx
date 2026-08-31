@@ -17,7 +17,7 @@ import { HistoryPanel } from "../components/HistoryPanel";
 import { MeasurementsAndScalePanel } from "../components/MeasurementsAndScalePanel";
 import { SessionInfo } from "../components/SessionInfo";
 import { getMainViewStyles } from "./MainView.style";
-import { ThemeContext } from "../contexts/ThemeContext";
+import { ThemeContext } from "../contexts/theme";
 import { SVGViewer } from "../components/SVGViewer";
 import { ApiService } from "../services/ApiService";
 import { extractIdFromImageUrl } from "../services/IdOcrService";
@@ -66,10 +66,12 @@ interface MainState {
   predictorsLoading: boolean;
   predictorsError: string | null;
   isFreePredictorPanelOpen: boolean;
+  selectedModelName: string | null;
 }
 
 interface MainProps {
   selectedViewType: LizardViewType;
+  modelId?: string;
   onNavigateHome?: () => void;
 }
 
@@ -125,6 +127,7 @@ export class MainView extends Component<MainProps, MainState> {
     predictorsLoading: false,
     predictorsError: null,
     isFreePredictorPanelOpen: this.props.selectedViewType === "free",
+    selectedModelName: null,
   };
   componentDidMount(): void {
     this.initializeApp();
@@ -141,6 +144,18 @@ export class MainView extends Component<MainProps, MainState> {
 
       // Initialize session management (will reuse existing session if available)
       await ApiService.initialize();
+
+      if (this.props.selectedViewType === "custom") {
+        if (!this.props.modelId) {
+          throw new Error("No custom model was selected.");
+        }
+        const models = await ApiService.getModels();
+        const selectedModel = models.find((model) => model.id === this.props.modelId);
+        if (!selectedModel) {
+          throw new Error(`Custom model '${this.props.modelId}' was not found.`);
+        }
+        this.setState({ selectedModelName: selectedModel.name });
+      }
 
       // Mark session as ready
       this.setState({ sessionReady: true });
@@ -221,6 +236,7 @@ export class MainView extends Component<MainProps, MainState> {
         };
       });
     } catch (e) {
+      console.error("refreshPredictors error:", e);
       this.setState({
         predictorsError: e instanceof Error ? e.message : "Failed to load predictors",
       });
@@ -339,7 +355,8 @@ export class MainView extends Component<MainProps, MainState> {
           const results = await ApiService.uploadMultipleImages(
             [file], 
             this.props.selectedViewType,
-            this.props.selectedViewType === "toepads" ? this.state.toepadPredictorType : undefined
+            this.props.selectedViewType === "toepads" ? this.state.toepadPredictorType : undefined,
+            this.props.modelId
           );
           
           // Check if we got a valid result
@@ -352,6 +369,9 @@ export class MainView extends Component<MainProps, MainState> {
           // Validate result has required properties
           if (!result || !result.name) {
             throw new Error(`Invalid result for image: ${file.name}`);
+          }
+          if (result.error) {
+            throw new Error(`Failed to process ${file.name}: ${result.error}`);
           }
           
           // Update progress to 50% after upload
@@ -542,6 +562,7 @@ export class MainView extends Component<MainProps, MainState> {
           imageWidth: img.width,
           imageHeight: img.height,
           dataLoading: false,
+          dataError: null,
           needsScaling: true, // Reset scaling flag when new image is loaded, forcing recalculation
         });
       };
@@ -550,9 +571,10 @@ export class MainView extends Component<MainProps, MainState> {
         console.error("Failed to load image:", e);
         this.setState({
           dataError: new Error(
-            "Failed to load image. Please try again with a different file."
+            "Failed to load image. Please select or upload a valid file."
           ),
           dataLoading: false,
+          currentImageURL: null,
         });
       };
 
@@ -773,48 +795,39 @@ export class MainView extends Component<MainProps, MainState> {
 
   private readonly handleClearHistory = async (): Promise<void> => {
     const confirmed = window.confirm(
-      `Are you sure you want to clear all history for ${this.props.selectedViewType} view? This will delete all uploaded images, processed files, and session data for this view type. This action cannot be undone.`
+      `Are you sure you want to clear all history? This will delete all uploaded images, processed files, and session data. This action cannot be undone.`
     );
 
     if (confirmed) {
       try {
         this.setState({ loading: true });
-        // Clear backend session (this clears all files, but we'll filter frontend history)
-        await this.clearHistory();
+        // Clear backend session (best-effort, don't block frontend reset)
+        try {
+          await this.clearHistory();
+        } catch (err) {
+          console.warn("Backend clear_history failed (continuing with frontend reset):", err);
+        }
         
-        // Filter frontend history to only keep items for other viewTypes
-        this.setState((prevState) => {
-          const historyToKeep = prevState.uploadHistory.filter(
-            item => item.viewType !== this.props.selectedViewType
-          );
-          const indicesToKeep = new Set(historyToKeep.map(item => item.index).filter(idx => idx >= 0));
-          
-          // Filter images to only keep those referenced by remaining history items
-          const filteredImages = prevState.images.filter((_img, idx) => indicesToKeep.has(idx));
-          
-          // Reindex history items to match new image indices
-          const reindexedHistory = historyToKeep.map(item => {
-            if (item.index >= 0) {
-              const newIndex = Array.from(indicesToKeep).indexOf(item.index);
-              return { ...item, index: newIndex >= 0 ? newIndex : -1 };
-            }
-            return item;
-          });
-          
-          return {
-            uploadHistory: reindexedHistory,
-            images: filteredImages,
-            currentImageIndex: filteredImages.length > 0 ? 0 : 0,
-            scatterData: filteredImages.length > 0 ? filteredImages[0].coords : [],
-            originalScatterData: filteredImages.length > 0 ? filteredImages[0].originalCoords : [],
-            imageSet: filteredImages.length > 0 ? filteredImages[0].imageSets : {
-              original: "",
-              inverted: "",
-              color_contrasted: "",
-            },
-            currentImageURL: filteredImages.length > 0 ? filteredImages[0].imageSets.original : null,
-            imageFilename: filteredImages.length > 0 ? filteredImages[0].name : null,
-          };
+        // Always reset all frontend state regardless of backend result
+        this.setState({
+          uploadHistory: [],
+          images: [],
+          currentImageIndex: 0,
+          scatterData: [],
+          originalScatterData: [],
+          imageSet: {
+            original: "",
+            inverted: "",
+            color_contrasted: "",
+          },
+          currentImageURL: null,
+          imageFilename: null,
+          dataFetched: false,
+          lizardCount: 0,
+          currentBoundingBoxes: [],
+          extractedId: null,
+          extractedIdConfidence: null,
+          selectedPoint: null,
         });
         
         alert("History cleared successfully");
@@ -944,11 +957,15 @@ export class MainView extends Component<MainProps, MainState> {
     try {
       const files = await ApiService.fetchUploadedFiles();
 
-      // Create history entries for files
-      const currentFileNames = new Set(
-        this.state.uploadHistory.map((item) => item.name)
+      const validFileNames = new Set(files.map((fileObj) => fileObj.filename));
+      const filteredHistory = this.state.uploadHistory.filter((item) =>
+        validFileNames.has(item.name)
       );
-      const newHistory = [...this.state.uploadHistory];
+
+      const currentFileNames = new Set(
+        filteredHistory.map((item) => item.name)
+      );
+      const newHistory = [...filteredHistory];
 
       files.forEach((fileObj) => {
         if (!currentFileNames.has(fileObj.filename)) {
@@ -961,9 +978,7 @@ export class MainView extends Component<MainProps, MainState> {
         }
       });
 
-      if (newHistory.length !== this.state.uploadHistory.length) {
-        this.setState({ uploadHistory: newHistory });
-      }
+      this.setState({ uploadHistory: newHistory });
 
       // Update lizard count
       this.setState({ lizardCount: files.length });
@@ -1004,7 +1019,8 @@ export class MainView extends Component<MainProps, MainState> {
       const result = await ApiService.processExistingImage(
         filename, 
         this.props.selectedViewType,
-        this.props.selectedViewType === "toepads" ? this.state.toepadPredictorType : undefined
+        this.props.selectedViewType === "toepads" ? this.state.toepadPredictorType : undefined,
+        this.props.modelId
       );
       const imageSets = await ApiService.fetchImageSet(filename);
       const coords = result.coords.map((coord: Point, index: number) => ({
@@ -1125,6 +1141,7 @@ export class MainView extends Component<MainProps, MainState> {
           dataFetched={this.state.dataFetched}
           dataError={this.state.dataError}
           selectedViewType={this.props.selectedViewType}
+          modelName={this.state.selectedModelName}
           onUpload={this.handleUpload}
           onExportAll={this.handleScatterData}
           onClearHistory={this.handleClearHistory}

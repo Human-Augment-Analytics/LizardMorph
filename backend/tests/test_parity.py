@@ -1,16 +1,44 @@
+import importlib
 import io
 import cv2
 import numpy as np
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def stub_inference(monkeypatch):
+    app_module = importlib.import_module("app")
+    monkeypatch.setattr(
+        app_module.generic_pipeline_engine,
+        "predict",
+        lambda image, manifest, bundle_dir=None: [
+            {
+                "class_name": manifest.classes[0].name,
+                "obb": [25.0, 25.0, 50.0, 50.0, 0.0],
+                "landmarks": [],
+            }
+        ],
+    )
+
+
+def post_image(client, **fields):
+    image = np.zeros((50, 50, 3), dtype=np.uint8)
+    encoded_ok, encoded = cv2.imencode(".png", image)
+    assert encoded_ok
+    return client.post(
+        "/api/predict",
+        data={**fields, "image": (io.BytesIO(encoded.tobytes()), "test.png")},
+        content_type="multipart/form-data",
+    )
+
+
 def test_predict_parity_dorsal(client):
     """Verify that view_type='dorsal' yields identical model resolution as model_version_id='lizard-dorsal-v1'."""
-    res_legacy = client.post("/api/predict", json={"view_type": "dorsal"})
+    res_legacy = post_image(client, view_type="dorsal")
     assert res_legacy.status_code == 200
     data_legacy = res_legacy.get_json()
 
-    res_modern = client.post("/api/predict", json={"model_version_id": "lizard-dorsal-v1"})
+    res_modern = post_image(client, model_version_id="lizard-dorsal-v1")
     assert res_modern.status_code == 200
     data_modern = res_modern.get_json()
 
@@ -23,11 +51,11 @@ def test_predict_parity_dorsal(client):
 
 def test_predict_parity_lateral(client):
     """Verify that view_type='lateral' yields identical model resolution as model_version_id='lizard-lateral-v1'."""
-    res_legacy = client.post("/api/predict", json={"view_type": "lateral"})
+    res_legacy = post_image(client, view_type="lateral")
     assert res_legacy.status_code == 200
     data_legacy = res_legacy.get_json()
 
-    res_modern = client.post("/api/predict", json={"model_version_id": "lizard-lateral-v1"})
+    res_modern = post_image(client, model_version_id="lizard-lateral-v1")
     assert res_modern.status_code == 200
     data_modern = res_modern.get_json()
 
@@ -40,9 +68,9 @@ def test_predict_parity_lateral(client):
 
 def test_predict_parity_toepad(client):
     """Verify that view_type='toepad' or 'toepads' yields identical model resolution as model_version_id='lizard-toepad-v1'."""
-    res_toepad = client.post("/api/predict", json={"view_type": "toepad"})
-    res_toepads = client.post("/api/predict", json={"view_type": "toepads"})
-    res_modern = client.post("/api/predict", json={"model_version_id": "lizard-toepad-v1"})
+    res_toepad = post_image(client, view_type="toepad")
+    res_toepads = post_image(client, view_type="toepads")
+    res_modern = post_image(client, model_version_id="lizard-toepad-v1")
 
     assert res_toepad.status_code == 200
     assert res_toepads.status_code == 200
@@ -66,7 +94,7 @@ def test_predict_parity_toepad(client):
 
 def test_predict_default_view_type_fallback(client):
     """Verify that omitting both view_type and model_version_id defaults to dorsal."""
-    res = client.post("/api/predict", json={})
+    res = post_image(client)
     assert res.status_code == 200
     data = res.get_json()
     assert data["success"] is True
@@ -75,7 +103,7 @@ def test_predict_default_view_type_fallback(client):
 
 def test_predict_model_id_alias(client):
     """Verify that using model_id field works as an alias for model_version_id."""
-    res = client.post("/api/predict", json={"model_id": "lizard-dorsal-v1"})
+    res = post_image(client, model_id="lizard-dorsal-v1")
     assert res.status_code == 200
     data = res.get_json()
     assert data["success"] is True
@@ -84,19 +112,11 @@ def test_predict_model_id_alias(client):
 
 def test_predict_multipart_form_data(client):
     """Verify multipart form-data requests work for both view_type and model_version_id."""
-    res_form_legacy = client.post(
-        "/api/predict",
-        data={"view_type": "lateral"},
-        content_type="multipart/form-data",
-    )
+    res_form_legacy = post_image(client, view_type="lateral")
     assert res_form_legacy.status_code == 200
     d_legacy = res_form_legacy.get_json()
 
-    res_form_modern = client.post(
-        "/api/predict",
-        data={"model_version_id": "lizard-lateral-v1"},
-        content_type="multipart/form-data",
-    )
+    res_form_modern = post_image(client, model_version_id="lizard-lateral-v1")
     assert res_form_modern.status_code == 200
     d_modern = res_form_modern.get_json()
 
@@ -107,8 +127,8 @@ def test_predict_multipart_form_data(client):
     assert d_legacy["predictions"] == d_modern["predictions"]
 
 
-def test_predict_image_upload_and_path(client, tmp_path):
-    """Verify prediction with uploaded image file vs image_path."""
+def test_predict_requires_uploaded_image(client, tmp_path):
+    """Verify uploads work and arbitrary server-side image paths are rejected."""
     # 1. Create a dummy image
     img_array = np.zeros((50, 50, 3), dtype=np.uint8)
     _, img_encoded = cv2.imencode(".png", img_array)
@@ -140,11 +160,10 @@ def test_predict_image_upload_and_path(client, tmp_path):
             "image_path": str(img_file),
         },
     )
-    assert res_path.status_code == 200
+    assert res_path.status_code == 400
     d_path = res_path.get_json()
-    assert d_path["success"] is True
-    assert d_path["model_version_id"] == "lizard-dorsal-v1"
-    assert isinstance(d_path["predictions"], list)
+    assert d_path["success"] is False
+    assert "image upload" in d_path["error"]
 
 
 def test_predict_invalid_model_version_id(client):

@@ -12,7 +12,7 @@ export interface PreprocessedData {
 export class OnnxService {
   private static worker: Worker | null = null;
   private static messageIdSeq = 0;
-  private static pendingResolvers = new Map<number, { resolve: (val: any) => void; reject: (err: any) => void }>();
+  private static pendingResolvers = new Map<number, { resolve: (value: unknown) => void; reject: (error: unknown) => void }>();
   private static cache = new Map<string, PreprocessedData>();
 
   private static get MODEL_PATH() {
@@ -59,10 +59,10 @@ export class OnnxService {
     return this.initializationPromise;
   }
 
-  private static postMessageAsync(type: string, payload?: any): Promise<any> {
-    return new Promise((resolve, reject) => {
+  private static postMessageAsync<T = unknown>(type: string, payload?: unknown): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
       const id = ++this.messageIdSeq;
-      this.pendingResolvers.set(id, { resolve, reject });
+      this.pendingResolvers.set(id, { resolve: (value) => resolve(value as T), reject });
       this.worker!.postMessage({ type, payload, id });
     });
   }
@@ -103,7 +103,10 @@ export class OnnxService {
     // We transfer the underlying ArrayBuffer to the worker to avoid a copy.
     return new Promise((resolve, reject) => {
       const id = ++this.messageIdSeq;
-      this.pendingResolvers.set(id, { resolve, reject });
+      this.pendingResolvers.set(id, {
+        resolve: (value) => resolve(value as AnnotationsData),
+        reject,
+      });
       this.worker!.postMessage(
         { type: "INFER", payload: preprocessed, id }, 
         [preprocessed.floatData.buffer] // Transferable object

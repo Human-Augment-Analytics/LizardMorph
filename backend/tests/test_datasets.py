@@ -1,5 +1,9 @@
 import os
+import io
 import tempfile
+import zipfile
+import cv2
+import numpy as np
 import pytest
 from backend.datasets.canonical import (
     LandmarkPoint,
@@ -12,6 +16,7 @@ from backend.datasets.importers import (
     DlibXMLImporter,
     YOLOOBBImporter,
 )
+from backend.datasets.package import parse_dataset_package
 
 
 def test_landmark_point_serialization():
@@ -227,3 +232,75 @@ def test_yolo_obb_importer_file(tmp_path):
     )
     assert len(ds.images) == 1
     assert ds.images[0].file_path == "img1.jpg"
+
+
+def _encoded_test_image(width=80, height=60):
+    image = np.full((height, width, 3), 127, dtype=np.uint8)
+    encoded_ok, encoded = cv2.imencode(".png", image)
+    assert encoded_ok
+    return encoded.tobytes()
+
+
+def test_dataset_package_resolves_images_and_tps_coordinates():
+    tps = b"""LM=2
+10 10
+40 30
+IMAGE=images/specimen.png
+ID=specimen-1
+"""
+    parsed = parse_dataset_package(
+        [("annotations.tps", tps), ("images/specimen.png", _encoded_test_image())]
+    )
+
+    image = parsed.dataset.images[0]
+    assert (image.width, image.height) == (80, 60)
+    assert image.file_path == "specimen.png"
+    assert [point.y for point in image.objects[0].landmarks] == [50.0, 30.0]
+    assert parsed.source_files["specimen.png"]
+
+
+def test_dataset_package_matches_absolute_xml_image_by_basename():
+    xml = b"""<dataset><images>
+      <image file=\"/old/computer/specimen.png\">
+        <box top=\"5\" left=\"5\" width=\"30\" height=\"20\" label=\"wing\">
+          <part name=\"base\" x=\"10\" y=\"10\"/>
+        </box>
+      </image>
+    </images></dataset>"""
+    parsed = parse_dataset_package(
+        [("labels.xml", xml), ("nested/specimen.png", _encoded_test_image())]
+    )
+    assert parsed.dataset.images[0].file_path == "specimen.png"
+    assert parsed.dataset.images[0].objects[0].class_name == "wing"
+
+
+def test_dataset_package_rejects_zip_path_traversal():
+    archive_bytes = io.BytesIO()
+    with zipfile.ZipFile(archive_bytes, "w") as archive:
+        archive.writestr("../annotations.tps", "LM=0\nIMAGE=image.png\n")
+        archive.writestr("image.png", _encoded_test_image())
+
+    with pytest.raises(ValueError, match="Unsafe dataset path"):
+        parse_dataset_package([("dataset.zip", archive_bytes.getvalue())])
+
+
+def test_dataset_package_requires_every_referenced_image():
+    tps = b"LM=1\n10 10\nIMAGE=missing.png\n"
+    with pytest.raises(ValueError, match="was not provided"):
+        parse_dataset_package([("annotations.tps", tps)])
+
+
+def test_tps_importer_rejects_truncated_landmarks():
+    with pytest.raises(ValueError, match="ended before all landmarks"):
+        TPSImporter.parse_string("LM=2\n10 10\n")
+
+
+def test_dataset_package_rejects_case_insensitive_duplicate_names():
+    with pytest.raises(ValueError, match="Duplicate filename"):
+        parse_dataset_package(
+            [
+                ("annotations.tps", b"LM=1\n10 10\nIMAGE=sample.png\n"),
+                ("Sample.png", _encoded_test_image()),
+                ("sample.PNG", _encoded_test_image()),
+            ]
+        )

@@ -4,7 +4,7 @@ import type { Measurement } from "../models/Measurement";
 import type { Point } from "../models/Point";
 import type { ScaleSettings as ScaleSettingsType } from "../models/ScaleSettings";
 import { UNITS } from "../models/ScaleSettings";
-import type { ResolvedTheme } from "../contexts/ThemeContext";
+import type { ResolvedTheme } from "../contexts/theme";
 
 interface MeasurementsAndScalePanelProps {
   points: Point[];

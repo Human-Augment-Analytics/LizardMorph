@@ -1,7 +1,7 @@
 import { Component } from "react";
 import { getImageVersionControlsStyles } from "./ImageVersionControls.style";
 import type { ImageSet } from "../models/ImageSet";
-import type { ResolvedTheme } from "../contexts/ThemeContext";
+import type { ResolvedTheme } from "../contexts/theme";
 
 interface ImageVersionControlsProps {
   dataFetched: boolean;

@@ -14,7 +14,10 @@ import shutil
 import random
 import numpy as np
 import cv2
-import predictor_library
+if __package__:
+    from backend import predictor_library
+else:
+    import predictor_library
 try:
     import dlib
 except ImportError:
@@ -2226,5 +2229,4 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
         
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
-
 

@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { ResolvedTheme } from "../contexts/ThemeContext";
+import type { ResolvedTheme } from "../contexts/theme";
 import { getTokens } from "../contexts/themeTokens";
 
 export function getImageVersionControlsStyles(theme: ResolvedTheme) {

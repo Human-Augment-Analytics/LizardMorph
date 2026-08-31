@@ -1,14 +1,19 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { ApiService } from "../services/ApiService";
-import type { PredictorMeta, ProjectItem, DeriveBoxesResult, TrainJobStatusResult } from "../services/ApiService";
-import { useTheme } from "../contexts/ThemeContext";
+import type { ModelVersionItem, ProjectItem, DeriveBoxesResult, TrainJobStatusResult } from "../services/ApiService";
+import { useTheme } from "../contexts/theme";
 import { getTokens } from "../contexts/themeTokens";
 
 interface Props {
   onNavigateHome: () => void;
+  onUseModel: (modelId: string) => void;
 }
 
-export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export const TrainView: React.FC<Props> = ({ onNavigateHome, onUseModel }) => {
   const { resolved } = useTheme();
   const isDark = resolved === "dark";
   const t = getTokens(resolved);
@@ -22,8 +27,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
   const [createdProject, setCreatedProject] = useState<ProjectItem | null>(null);
 
   // Step 2: Add Data State
-  const [datasetFile, setDatasetFile] = useState<File | null>(null);
-  const [datasetContent, setDatasetContent] = useState<string>("");
+  const [datasetFiles, setDatasetFiles] = useState<File[]>([]);
   const [padding, setPadding] = useState<number>(0.2);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -51,12 +55,14 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
   const [publishedModelId, setPublishedModelId] = useState<string | null>(null);
 
   // General state
-  const [predictors, setPredictors] = useState<PredictorMeta[]>([]);
-  const [loadingPredictors, setLoadingPredictors] = useState(false);
+  const [registeredModels, setRegisteredModels] = useState<ModelVersionItem[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
 
   const pollIntervalRef = useRef<number | null>(null);
+  const pollFailureCountRef = useRef(0);
+  const interruptedFailureCountRef = useRef(0);
 
   const handleCancelJob = async () => {
     if (!activeJobId) return;
@@ -66,22 +72,22 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
       stopPolling();
       setIsTraining(false);
       setError("Training job cancelled by user.");
-    } catch (err: any) {
-      setError(`Failed to cancel training job: ${err.message || err}`);
+    } catch (err: unknown) {
+      setError(`Failed to cancel training job: ${errorMessage(err)}`);
     } finally {
       setIsCancelling(false);
     }
   };
 
-  const fetchPredictors = async () => {
-    setLoadingPredictors(true);
+  const fetchModels = async () => {
+    setLoadingModels(true);
     try {
-      const res = await ApiService.listPredictors();
-      setPredictors(res);
-    } catch (err: any) {
-      // Ignore predictor list error
+      const models = await ApiService.getModels();
+      setRegisteredModels(models.filter((model) => model.project_id !== "built-in"));
+    } catch {
+      setRegisteredModels([]);
     } finally {
-      setLoadingPredictors(false);
+      setLoadingModels(false);
     }
   };
 
@@ -93,7 +99,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
   };
 
   useEffect(() => {
-    fetchPredictors();
+    void fetchModels();
     return () => stopPolling();
   }, []);
 
@@ -106,38 +112,35 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
       const proj = await ApiService.createProject(projectName.trim(), organism.trim());
       setCreatedProject(proj);
       setCurrentStep(2);
-    } catch (err: any) {
-      setError(`Failed to create project: ${err.message || err}`);
+    } catch (err: unknown) {
+      setError(`Failed to create project: ${errorMessage(err)}`);
     }
   };
 
   // Step 2 Handler: Read Dataset File
-  const handleFileUpload = (file: File) => {
-    setDatasetFile(file);
+  const handleFileUpload = (files: File[]) => {
+    setDatasetFiles(files);
+    setDerivedBoxes(null);
     setError(null);
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const text = evt.target?.result as string;
-      setDatasetContent(text || "");
-    };
-    reader.readAsText(file);
   };
 
   // Step 3 Handler: Check Data (Derive Boxes)
   const handleCheckData = async () => {
-    if (!datasetContent) {
-      setCurrentStep(3);
+    if (datasetFiles.length === 0) {
+      setError("Select a ZIP dataset, or select one TPS/XML annotation file together with all referenced images.");
       return;
     }
     setIsCheckingData(true);
     setError(null);
     try {
-      const result = await ApiService.deriveBoxes(datasetContent, padding);
+      const result = await ApiService.deriveBoxes(datasetFiles, padding);
+      if (!result.training_ready) {
+        throw new Error(result.validation_errors[0] || "Dataset is not ready for training.");
+      }
       setDerivedBoxes(result);
       setCurrentStep(3);
-    } catch (err: any) {
-      setError(`Dataset validation error: ${err.message || err}`);
-      setCurrentStep(3);
+    } catch (err: unknown) {
+      setError(`Dataset validation error: ${errorMessage(err)}`);
     } finally {
       setIsCheckingData(false);
     }
@@ -145,6 +148,11 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
 
   // Step 4 Handler: Start Training
   const handleStartTraining = async () => {
+    if (!derivedBoxes || datasetFiles.length === 0) {
+      setError("Validate the complete dataset before starting training.");
+      setCurrentStep(2);
+      return;
+    }
     setError(null);
     setIsTraining(true);
     setCurrentStep(5);
@@ -154,6 +162,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
     if (trainingPreset === "accurate") epochs = 100;
 
     const config = {
+      model_name: createdProject ? createdProject.name : projectName,
       preset: trainingPreset,
       epochs,
       padding,
@@ -168,48 +177,58 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
 
     try {
       const projId = createdProject ? createdProject.id : "default";
-      const datasetDict = derivedBoxes ? { images: derivedBoxes.images } : { content: datasetContent };
-
-      const res = await ApiService.submitTrain(projId, datasetDict, config);
+      const res = await ApiService.submitTrain(projId, datasetFiles, config);
       setActiveJobId(res.job_id);
+      setPublishedModelId(res.job_id.replace(/^job_/, ""));
+      pollFailureCountRef.current = 0;
 
       // Start polling status
       pollIntervalRef.current = window.setInterval(async () => {
         try {
-          let statusRes: TrainJobStatusResult;
-          try {
-            statusRes = await ApiService.getTrainJobStatus(res.job_id);
-          } catch {
-            const legacyStatus = await ApiService.getTrainStatus(res.job_id);
-            statusRes = {
-              success: legacyStatus.success,
-              job_id: res.job_id,
-              status: legacyStatus.status,
-              stage: legacyStatus.status === "completed" ? "Completed" : "Training",
-              progress: legacyStatus.status === "completed" ? 100.0 : 50.0,
-              metrics: legacyStatus.predictor ? { test_accuracy: legacyStatus.predictor.test_accuracy } : {},
-            };
-          }
+          const statusRes: TrainJobStatusResult = await ApiService.getTrainJobStatus(res.job_id);
 
           setJobStatus(statusRes);
+          pollFailureCountRef.current = 0;
 
           if (statusRes.status === "completed") {
+            interruptedFailureCountRef.current = 0;
             stopPolling();
             setIsTraining(false);
             setCurrentStep(6);
+            void fetchModels();
           } else if (statusRes.status === "failed") {
+            const detail = statusRes.error || statusRes.stage || "Training process failed";
+            if (/interrupted.*backend|backend.*restart/i.test(detail)) {
+              interruptedFailureCountRef.current += 1;
+              // A frozen training worker used to expose a brief interrupted
+              // status while it initialized. Confirm that state for 30
+              // seconds before treating it as terminal.
+              if (interruptedFailureCountRef.current < 15) return;
+            }
             stopPolling();
             setIsTraining(false);
-            const detail = statusRes.stage || (statusRes as any).error || "Training process failed";
             setError(`Training job failed: ${detail}`);
+          } else if (statusRes.status === "cancelled") {
+            interruptedFailureCountRef.current = 0;
+            stopPolling();
+            setIsTraining(false);
+            setError("Training job cancelled by user.");
+          } else {
+            interruptedFailureCountRef.current = 0;
+            setError(null);
           }
-        } catch (pollErr: any) {
-          // Keep polling unless explicit error
+        } catch (pollError: unknown) {
+          pollFailureCountRef.current += 1;
+          if (pollFailureCountRef.current >= 3) {
+            stopPolling();
+            setIsTraining(false);
+            setError(`Lost contact with the training job: ${errorMessage(pollError)}`);
+          }
         }
       }, 2000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setIsTraining(false);
-      setError(`Failed to start training: ${err.message || err}`);
+      setError(`Failed to start training: ${errorMessage(err)}`);
     }
   };
 
@@ -510,7 +529,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
                 style={{
                   padding: "36px",
                   borderRadius: "14px",
-                  border: `2px dashed ${isDragging ? "#4CAF50" : datasetFile ? "#4CAF50" : t.border}`,
+                  border: `2px dashed ${isDragging || datasetFiles.length > 0 ? "#4CAF50" : t.border}`,
                   background: isDark ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.01)",
                   textAlign: "center",
                   cursor: "pointer",
@@ -520,26 +539,29 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
                 onDrop={(e) => {
                   e.preventDefault();
                   setIsDragging(false);
-                  const file = e.dataTransfer.files?.[0];
-                  if (file) handleFileUpload(file);
+                  const files = Array.from(e.dataTransfer.files || []);
+                  if (files.length > 0) handleFileUpload(files);
                 }}
               >
                 <input
                   type="file"
-                  accept=".tps,.xml,.zip,.txt"
+                  accept=".tps,.xml,.zip,.bmp,.jpeg,.jpg,.png,.tif,.tiff,.webp"
+                  multiple
                   style={{ display: "none" }}
                   id="dataset-file-input"
                   onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleFileUpload(file);
+                    const files = Array.from(e.target.files || []);
+                    if (files.length > 0) handleFileUpload(files);
                   }}
                 />
                 <label htmlFor="dataset-file-input" style={{ cursor: "pointer" }}>
                   <div style={{ fontWeight: 700, fontSize: "15px" }}>
-                    {datasetFile ? datasetFile.name : "Click or Drag & Drop Dataset File"}
+                    {datasetFiles.length > 0
+                      ? `${datasetFiles.length} file${datasetFiles.length === 1 ? "" : "s"} selected`
+                      : "Click or Drag & Drop Dataset Files"}
                   </div>
                   <div style={{ fontSize: "12px", opacity: 0.6, marginTop: "4px" }}>
-                    Supports Thin-Plate Spline (.tps), dlib XML (.xml), or ZIP dataset archives
+                    Select a ZIP archive, or select TPS/XML and every referenced image together
                   </div>
                 </label>
               </div>
@@ -601,14 +623,14 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginTop: "16px" }}>
                 <div style={{ background: isDark ? "#2a3a4e" : "#f5f5f5", padding: "16px", borderRadius: "10px", textAlign: "center" }}>
                   <div style={{ fontSize: "24px", fontWeight: 800 }}>
-                    {derivedBoxes ? derivedBoxes.total_images : datasetFile ? "1+" : "0"}
+                    {derivedBoxes ? derivedBoxes.total_images : "0"}
                   </div>
                   <div style={{ fontSize: "12px", opacity: 0.7 }}>Images Registered</div>
                 </div>
 
                 <div style={{ background: isDark ? "#2a3a4e" : "#f5f5f5", padding: "16px", borderRadius: "10px", textAlign: "center" }}>
                   <div style={{ fontSize: "24px", fontWeight: 800 }}>
-                    {derivedBoxes ? derivedBoxes.total_objects : datasetFile ? "1+" : "0"}
+                    {derivedBoxes ? derivedBoxes.total_objects : "0"}
                   </div>
                   <div style={{ fontSize: "12px", opacity: 0.7 }}>Specimens / Objects</div>
                 </div>
@@ -773,7 +795,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
 
         {/* STEP 5: Follow Progress */}
         {currentStep === 5 && (() => {
-          const rawProg = jobStatus?.progress ?? 0.2;
+          const rawProg = jobStatus?.progress ?? 0;
           const displayProg = rawProg <= 1.0 ? rawProg * 100 : rawProg;
 
           return (
@@ -818,7 +840,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
                 <button
                   onClick={() => setCurrentStep(6)}
                   className="btn-action"
-                  disabled={isTraining && displayProg < 100}
+                  disabled={jobStatus?.status !== "completed"}
                 >
                   Review Results →
                 </button>
@@ -840,21 +862,25 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "28px" }}>
               <div style={{ background: isDark ? "#2a3a4e" : "#f5f5f5", padding: "20px", borderRadius: "12px", textAlign: "center" }}>
                 <div style={{ fontSize: "28px", fontWeight: 800, color: "#4CAF50" }}>
-                  {jobStatus?.metrics?.mAP50 ? `${(jobStatus.metrics.mAP50 * 100).toFixed(1)}%` : "98.4%"}
+                    {typeof jobStatus?.metrics?.mAP50 === "number"
+                      ? `${(jobStatus.metrics.mAP50 * 100).toFixed(1)}%`
+                      : "Not reported"}
                 </div>
                 <div style={{ fontSize: "12px", opacity: 0.7, marginTop: "4px" }}>Detector mAP50</div>
               </div>
 
               <div style={{ background: isDark ? "#2a3a4e" : "#f5f5f5", padding: "20px", borderRadius: "12px", textAlign: "center" }}>
                 <div style={{ fontSize: "28px", fontWeight: 800, color: "#4CAF50" }}>
-                  {jobStatus?.metrics?.test_accuracy ? `${jobStatus.metrics.test_accuracy.toFixed(2)} px` : "1.24 px"}
+                    {typeof jobStatus?.metrics?.test_error === "number"
+                      ? `${jobStatus.metrics.test_error.toFixed(2)} px`
+                      : "Not reported"}
                 </div>
                 <div style={{ fontSize: "12px", opacity: 0.7, marginTop: "4px" }}>Landmark Test Error</div>
               </div>
 
               <div style={{ background: isDark ? "#2a3a4e" : "#f5f5f5", padding: "20px", borderRadius: "12px", textAlign: "center" }}>
                 <div style={{ fontSize: "28px", fontWeight: 800, color: "#4CAF50" }}>
-                  Passed
+                  {jobStatus?.status === "completed" ? "Passed" : "Not complete"}
                 </div>
                 <div style={{ fontSize: "12px", opacity: 0.7, marginTop: "4px" }}>Validation Status</div>
               </div>
@@ -866,10 +892,10 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
               </button>
               <button
                 onClick={() => {
-                  setPublishedModelId(`model_${projectName.toLowerCase().replace(/\s+/g, "_")}_v1`);
                   setCurrentStep(7);
                 }}
                 className="btn-action"
+                disabled={jobStatus?.status !== "completed" || !publishedModelId}
               >
                 Proceed to Publish →
               </button>
@@ -905,7 +931,11 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
               <button onClick={onNavigateHome} className="btn-action btn-secondary">
                 Back to Landing Page
               </button>
-              <button onClick={onNavigateHome} className="btn-action">
+              <button
+                onClick={() => publishedModelId && onUseModel(publishedModelId)}
+                className="btn-action"
+                disabled={!publishedModelId}
+              >
                 Start Analyzing Images →
               </button>
             </div>
@@ -918,16 +948,16 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
         <h3 style={{ fontSize: "18px", fontWeight: 700, marginBottom: "16px" }}>
           Registered Models in Registry
         </h3>
-        {loadingPredictors && <p style={{ fontSize: "14px", opacity: 0.7 }}>Loading registered models...</p>}
-        {!loadingPredictors && predictors.length === 0 && (
+        {loadingModels && <p style={{ fontSize: "14px", opacity: 0.7 }}>Loading registered models...</p>}
+        {!loadingModels && registeredModels.length === 0 && (
           <p style={{ fontSize: "14px", opacity: 0.6, fontStyle: "italic" }}>
             No custom model bundles registered yet. Use the wizard above to train your first model!
           </p>
         )}
-        {!loadingPredictors && predictors.length > 0 && (
+        {!loadingModels && registeredModels.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            {predictors.map((p) => (
-              <div key={p.id} style={{
+            {registeredModels.map((model) => (
+              <div key={model.id} style={{
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
@@ -937,10 +967,18 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome }) => {
                 border: `1px solid ${t.borderLight}`,
               }}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: "14px" }}>{p.display_name}</div>
-                  <div style={{ fontSize: "12px", opacity: 0.6 }}>ID: {p.id}</div>
+                  <div style={{ fontWeight: 700, fontSize: "14px" }}>{model.name}</div>
+                  <div style={{ fontSize: "12px", opacity: 0.6 }}>
+                    ID: {model.id} · {model.manifest.classes.length} class{model.manifest.classes.length === 1 ? "" : "es"}
+                  </div>
                 </div>
-                <span style={{ fontSize: "12px", fontWeight: 700, color: "#4CAF50" }}>Ready</span>
+                <button
+                  className="btn-action btn-secondary"
+                  style={{ padding: "7px 12px", fontSize: "12px" }}
+                  onClick={() => onUseModel(model.id)}
+                >
+                  Use Model
+                </button>
               </div>
             ))}
           </div>

@@ -1,7 +1,7 @@
 import { Component } from "react";
 import { getHistoryPanelStyles } from "./HistoryPanel.style";
 import type { UploadHistoryItem } from "../models/UploadHistoryItem";
-import type { ResolvedTheme } from "../contexts/ThemeContext";
+import type { ResolvedTheme } from "../contexts/theme";
 
 interface HistoryPanelProps {
   uploadHistory: UploadHistoryItem[];

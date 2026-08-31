@@ -2,7 +2,7 @@
 import type { AnnotationsData } from "../models/AnnotationsData";
 import type { ImageSet } from "../models/ImageSet";
 import { SessionService } from "./SessionService";
-import { getApiUrl } from "./config";
+import { fetchWithBackendRetry, getApiUrl } from "./config";
 
 async function apiUrl(): Promise<string> {
   return getApiUrl();
@@ -28,7 +28,8 @@ export class ApiService {
   static async uploadMultipleImages(
     files: File[], 
     viewType: string, 
-    toepadPredictorType?: string
+    toepadPredictorType?: string,
+    modelId?: string
   ): Promise<AnnotationsData[]> {
     const clientAnnotations: AnnotationsData[] = [];
 
@@ -43,6 +44,10 @@ export class ApiService {
     // Add toepad predictor type if specified
     if (viewType === "toepads" && toepadPredictorType) {
       formData.append("toepad_predictor_type", toepadPredictorType);
+    }
+    // Add custom model ID if specified (for generic pipeline engine prediction)
+    if (modelId) {
+      formData.append("model_id", modelId);
     }
     if (clientAnnotations.length > 0) {
       formData.append("client_annotations", JSON.stringify(clientAnnotations));
@@ -107,13 +112,17 @@ export class ApiService {
   static async processExistingImage(
     filename: string,
     viewType: string,
-    toepadPredictorType?: string
+    toepadPredictorType?: string,
+    modelId?: string
   ): Promise<AnnotationsData> {
     const base = await apiUrl();
     const viewTypeParam = viewType === "toepads" ? "toepad" : viewType;
     let url = `${base}/process_existing?filename=${encodeURIComponent(filename)}&view_type=${encodeURIComponent(viewTypeParam)}`;
     if (viewType === "toepads" && toepadPredictorType) {
       url += `&toepad_predictor_type=${encodeURIComponent(toepadPredictorType)}`;
+    }
+    if (modelId) {
+      url += `&model_id=${encodeURIComponent(modelId)}`;
     }
     const res = await fetch(url, {
       method: "POST",
@@ -372,7 +381,7 @@ export class ApiService {
   static async getModels(): Promise<ModelVersionItem[]> {
     const base = await apiUrl();
     const url = buildEndpointUrl(base, "/api/models");
-    const response = await fetch(url, {
+    const response = await fetchWithBackendRetry(url, {
       headers: {
         ...SessionService.getSessionHeaders(),
       },
@@ -433,16 +442,23 @@ export class ApiService {
     return data.projects || [];
   }
 
-  static async submitTrain(projectId: string, dataset: any, config: any): Promise<{ job_id: string }> {
+  static async submitTrain(
+    projectId: string,
+    datasetFiles: File[],
+    config: Record<string, string | number | boolean>,
+  ): Promise<{ job_id: string }> {
     const base = await apiUrl();
     const url = buildEndpointUrl(base, "/api/train");
+    const formData = new FormData();
+    formData.append("project_id", projectId);
+    formData.append("config", JSON.stringify(config));
+    datasetFiles.forEach((file) => formData.append("dataset_files", file, file.name));
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
         ...SessionService.getSessionHeaders(),
       },
-      body: JSON.stringify({ project_id: projectId, dataset, config }),
+      body: formData,
     });
     if (!response.ok) {
       const err = await response.json().catch(() => ({ error: "Failed to submit training" }));
@@ -465,16 +481,18 @@ export class ApiService {
     return response.json();
   }
 
-  static async deriveBoxes(tpsContent: string, padding: number): Promise<DeriveBoxesResult> {
+  static async deriveBoxes(datasetFiles: File[], padding: number): Promise<DeriveBoxesResult> {
     const base = await apiUrl();
     const url = buildEndpointUrl(base, "/api/dataset/derive-boxes");
+    const formData = new FormData();
+    formData.append("padding", String(padding));
+    datasetFiles.forEach((file) => formData.append("dataset_files", file, file.name));
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
         ...SessionService.getSessionHeaders(),
       },
-      body: JSON.stringify({ tps_content: tpsContent, padding }),
+      body: formData,
     });
     if (!response.ok) {
       const err = await response.json().catch(() => ({ error: "Failed to derive boxes" }));
@@ -485,7 +503,7 @@ export class ApiService {
 
   static async cancelTrainJob(jobId: string): Promise<{ success: boolean; message: string }> {
     const base = await apiUrl();
-    const url = buildEndpointUrl(base, `/api/train/${jobId}/cancel`);
+    const url = buildEndpointUrl(base, `/api/train/${encodeURIComponent(jobId)}/cancel`);
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -514,7 +532,7 @@ export interface ModelVersionItem {
     detector: { artifact: string; geometry: string; confidence: number; iou: number };
     classes: Array<{ id: number; name: string; landmark_schema?: string; predictor?: string; crop_padding?: number }>;
     landmark_schemas: Record<string, { points: string[] }>;
-    evaluation?: Record<string, any>;
+    evaluation?: Record<string, unknown>;
   };
 }
 
@@ -531,11 +549,20 @@ export interface TrainJobStatusResult {
   status: string;
   stage: string;
   progress: number;
-  metrics: Record<string, any>;
+  metrics: {
+    mAP50?: number | null;
+    "mAP50-95"?: number | null;
+    test_error?: number | null;
+    mock?: boolean;
+    [key: string]: unknown;
+  };
+  error?: string | null;
 }
 
 export interface DeriveBoxesResult {
   success: boolean;
+  training_ready: boolean;
+  validation_errors: string[];
   padding: number;
   images: Array<{
     image_id: string;
