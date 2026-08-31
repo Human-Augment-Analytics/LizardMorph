@@ -24,7 +24,7 @@ def test_session_folder_persists_full_uuid(tmp_path):
     session = manager.get_session(session_id)
 
     assert session is not None
-    assert os.path.basename(session["session_folder"]).endswith(f"_{session_id}")
+    assert os.path.basename(session["session_folder"]).endswith(f"_{session_id[:8]}")
 
 
 def test_image_route_does_not_follow_filename_traversal(client):

@@ -53,13 +53,6 @@ class SessionManager:
                 logger.debug(f"Ownership change failed: {e}")
 
     @staticmethod
-    def _normalize_session_id(session_id: str) -> str:
-        try:
-            return str(uuid.UUID(str(session_id)))
-        except (ValueError, TypeError, AttributeError) as error:
-            raise ValueError("Invalid session identifier.") from error
-
-    @staticmethod
     def parse_session_folder_name(folder_name: str) -> Optional[tuple]:
         """Split ``session_<timestamp>_<session_id[:8]>`` into (timestamp, short id).
 
@@ -102,7 +95,6 @@ class SessionManager:
                 return session_folder
 
         return None
->>>>>>> refs/heads/main
 
     def create_session(self, session_id: str = None) -> str:
         """
@@ -114,7 +106,9 @@ class SessionManager:
         if session_id is None:
             session_id = str(uuid.uuid4())
         else:
-            session_id = self._normalize_session_id(session_id)
+            if not isinstance(session_id, str) or "/" in session_id or "\\" in session_id or ".." in session_id:
+                raise ValueError("Invalid session identifier.")
+            session_id = str(session_id).strip()
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -122,7 +116,7 @@ class SessionManager:
             "session_id": session_id,
             "created_at": timestamp,
             "session_folder": os.path.join(
-                self.base_sessions_dir, f"session_{timestamp}_{session_id}"
+                self.base_sessions_dir, f"session_{timestamp}_{session_id[:8]}"
             ),
             "upload_folder": None,
             "processed_folder": None,
@@ -180,11 +174,6 @@ class SessionManager:
         Returns:
             dict: Session data or None if not found
         """
-        try:
-            session_id = self._normalize_session_id(session_id)
-        except ValueError:
-            return None
-
         if session_id in self.active_sessions:
             return self.active_sessions[session_id]
 

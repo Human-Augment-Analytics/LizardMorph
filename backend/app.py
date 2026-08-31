@@ -1,6 +1,7 @@
 import multiprocessing
 import os
 import sys
+from dotenv import load_dotenv
 
 if __name__ == "__main__":
     # PyInstaller child processes must be dispatched before importing the
@@ -251,13 +252,11 @@ def safe_client_filename(value):
     if not isinstance(value, str) or not value.strip():
         raise ValueError("A valid filename is required.")
     basename = value.replace("\\", "/").rsplit("/", 1)[-1]
-    safe_name = secure_filename(basename)
-    if not safe_name or safe_name in (".", "..") or len(safe_name) > 255:
+    if not basename or basename in (".", "..") or len(basename) > 255 or "/" in basename or "\x00" in basename:
         raise ValueError("Invalid filename.")
-    return safe_name
+    return basename
 
 # Global predictor library (Free mode)
-<<<<<<< HEAD
 if getattr(sys, 'frozen', False) and not os.getenv("PREDICTOR_LIBRARY_DIR"):
     PREDICTOR_LIBRARY_DIR = os.path.join(RUNTIME_ROOT, "models", "custom_predictors")
 else:
@@ -2033,13 +2032,7 @@ def process_scatter_data():
             image_urls = []
             if output_paths:
                 for path in output_paths:
-<<<<<<< HEAD
-                    image_urls.append(
-                        f"images/{session_id}/{os.path.basename(path)}"
-                    )
-=======
                     image_urls.append(session_image_url(session_id, path))
->>>>>>> refs/heads/main
 
             logger.info(f"Annotated images created: {output_paths}")
 
