@@ -1,6 +1,7 @@
 
 import type { AnnotationsData } from "../models/AnnotationsData";
 import type { ImageSet } from "../models/ImageSet";
+import { SessionService } from "./SessionService";
 import { fetchWithBackendRetry, getApiUrl } from "./config";
 
 function buildEndpointUrl(base: string, endpoint: string): string {
@@ -374,7 +375,7 @@ export class ApiService {
   }
 
   static async getModels(): Promise<ModelVersionItem[]> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const url = buildEndpointUrl(base, "/api/models");
     const response = await fetchWithBackendRetry(url, {
       headers: {
@@ -389,7 +390,7 @@ export class ApiService {
   }
 
   static async deleteModel(modelId: string): Promise<void> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const url = buildEndpointUrl(base, `/api/models/${encodeURIComponent(modelId)}`);
     const response = await fetch(url, {
       method: "DELETE",
@@ -404,7 +405,7 @@ export class ApiService {
   }
 
   static async createProject(name: string, organism: string): Promise<ProjectItem> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const url = buildEndpointUrl(base, "/api/projects");
     const response = await fetch(url, {
       method: "POST",
@@ -423,7 +424,7 @@ export class ApiService {
   }
 
   static async listProjects(): Promise<ProjectItem[]> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const url = buildEndpointUrl(base, "/api/projects");
     const response = await fetch(url, {
       headers: {
@@ -442,7 +443,7 @@ export class ApiService {
     datasetFiles: File[],
     config: Record<string, string | number | boolean>,
   ): Promise<{ job_id: string }> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const url = buildEndpointUrl(base, "/api/train");
     const formData = new FormData();
     formData.append("project_id", projectId);
@@ -463,7 +464,7 @@ export class ApiService {
   }
 
   static async getTrainJobStatus(jobId: string): Promise<TrainJobStatusResult> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const url = buildEndpointUrl(base, `/api/train/${encodeURIComponent(jobId)}`);
     const response = await fetch(url, {
       headers: {
@@ -477,7 +478,7 @@ export class ApiService {
   }
 
   static async deriveBoxes(datasetFiles: File[], padding: number): Promise<DeriveBoxesResult> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const url = buildEndpointUrl(base, "/api/dataset/derive-boxes");
     const formData = new FormData();
     formData.append("padding", String(padding));
@@ -497,7 +498,7 @@ export class ApiService {
   }
 
   static async cancelTrainJob(jobId: string): Promise<{ success: boolean; message: string }> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const url = buildEndpointUrl(base, `/api/train/${encodeURIComponent(jobId)}/cancel`);
     const response = await fetch(url, {
       method: "POST",
