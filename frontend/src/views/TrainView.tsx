@@ -899,31 +899,13 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome, onUseModel }) => {
                               <rect width={curImg.width || 800} height={curImg.height || 600} fill="#222" />
                             )}
 
-                            {/* Bounding Boxes, Anatomical Polygons, & Landmarks */}
+                            {/* Bounding Boxes & Landmarks */}
                             {curImg.objects?.map((obj, oIdx) => {
                               const polyPoints = getObbPolygonPoints(obj.obb);
                               const classColors = ["#4CAF50", "#2196F3", "#FF9800", "#E91E63", "#9C27B0"];
                               const boxColor = classColors[oIdx % classColors.length];
                               const cx = obj.obb?.[0] || 0;
                               const cy = obj.obb?.[1] || 0;
-
-                              // Map points by name for anatomical polygon outline
-                              const lmMap: Record<string, { x: number; y: number }> = {};
-                              obj.landmarks?.forEach((lm) => {
-                                lmMap[lm.name] = { x: lm.x, y: lm.y };
-                              });
-
-                              // Claw line (0 to 1)
-                              const p0 = lmMap["0"];
-                              const p1 = lmMap["1"];
-
-                              // Toepad polygon (2, 3, 5, 7, 8, 6, 4)
-                              const polyIdxs = ["2", "3", "5", "7", "8", "6", "4"];
-                              const padPolygonPoints = polyIdxs
-                                .map((id) => lmMap[id])
-                                .filter(Boolean)
-                                .map((p) => `${p.x},${p.y}`)
-                                .join(" ");
 
                               return (
                                 <g key={`obj-${obj.object_id || oIdx}`}>
@@ -960,32 +942,6 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome, onUseModel }) => {
                                             {obj.class_name}
                                           </text>
                                         </>
-                                      )}
-                                    </>
-                                  )}
-
-                                  {/* Anatomical Outline Connections */}
-                                  {showPreviewLandmarks && (
-                                    <>
-                                      {/* Claw segment */}
-                                      {p0 && p1 && (
-                                        <line
-                                          x1={p0.x}
-                                          y1={p0.y}
-                                          x2={p1.x}
-                                          y2={p1.y}
-                                          stroke="#FFD700"
-                                          strokeWidth={strokeWidth}
-                                        />
-                                      )}
-                                      {/* Toepad polygon */}
-                                      {padPolygonPoints && (
-                                        <polygon
-                                          points={padPolygonPoints}
-                                          fill="rgba(0, 229, 255, 0.18)"
-                                          stroke="#00E5FF"
-                                          strokeWidth={strokeWidth}
-                                        />
                                       )}
                                     </>
                                   )}
