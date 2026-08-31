@@ -56,6 +56,14 @@
       ],
       "icon": "icons/icon.png"
     },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "icons/icon.png",
+      "category": "Education"
+    },
     "extraResources": [
       {
         "from": "dist/backend",

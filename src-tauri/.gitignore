@@ -1,2 +1,4 @@
 /target
 /binaries/python-backend-*
+/binaries/*.exe
+/binaries/*.dll

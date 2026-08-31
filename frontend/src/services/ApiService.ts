@@ -1,12 +1,7 @@
 
 import type { AnnotationsData } from "../models/AnnotationsData";
 import type { ImageSet } from "../models/ImageSet";
-import { SessionService } from "./SessionService";
 import { fetchWithBackendRetry, getApiUrl } from "./config";
-
-async function apiUrl(): Promise<string> {
-  return getApiUrl();
-}
 
 function buildEndpointUrl(base: string, endpoint: string): string {
   const cleanBase = base.replace(/\/+$/, "");
@@ -52,7 +47,7 @@ export class ApiService {
     if (clientAnnotations.length > 0) {
       formData.append("client_annotations", JSON.stringify(clientAnnotations));
     }
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const res = await fetch(`${base}/data`, {
       method: "POST",
       headers: {
@@ -71,7 +66,7 @@ export class ApiService {
     return res.json() as Promise<AnnotationsData[]>;
   }
   static async fetchImageSet(imageFilename: string): Promise<ImageSet> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     // Validate session
     const sessionId = SessionService.getSessionId();
     if (!sessionId) {
@@ -95,7 +90,7 @@ export class ApiService {
     };
   }
   static async fetchUploadedFiles(): Promise<{ filename: string; view_type: string }[]> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const res = await fetch(`${base}/list_uploads`, {
       method: "GET",
       headers: {
@@ -115,7 +110,7 @@ export class ApiService {
     toepadPredictorType?: string,
     modelId?: string
   ): Promise<AnnotationsData> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const viewTypeParam = viewType === "toepads" ? "toepad" : viewType;
     let url = `${base}/process_existing?filename=${encodeURIComponent(filename)}&view_type=${encodeURIComponent(viewTypeParam)}`;
     if (viewType === "toepads" && toepadPredictorType) {
@@ -140,7 +135,7 @@ export class ApiService {
   static async saveAnnotations(
     payload: AnnotationsData
   ): Promise<{ success: boolean }> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const res = await fetch(`${base}/save_annotations`, {
       method: "POST",
       headers: {
@@ -165,7 +160,7 @@ export class ApiService {
     coords: { x: number; y: number }[];
     name: string;
   }): Promise<{ image_urls?: string[] }> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const res = await fetch(`${base}/endpoint`, {
       method: "POST",
       headers: {
@@ -179,7 +174,7 @@ export class ApiService {
   }
 
   static async clearHistory(): Promise<{ success: boolean }> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const res = await fetch(`${base}/clear_history`, {
       method: "POST",
       headers: {
@@ -208,7 +203,7 @@ export class ApiService {
       formData.append("id_box", JSON.stringify(idBox));
     }
 
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const res = await fetch(`${base}/extract_id`, {
       method: "POST",
       headers: {
@@ -239,7 +234,7 @@ export class ApiService {
   }
 
   static async listPredictors(): Promise<PredictorMeta[]> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const url = buildEndpointUrl(base, "/api/predictors");
     const res = await fetch(url, {
       method: "GET",
@@ -260,7 +255,7 @@ export class ApiService {
   static async uploadPredictor(file: File): Promise<PredictorMeta> {
     const formData = new FormData();
     formData.append("predictor", file);
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const url = buildEndpointUrl(base, "/api/predictors");
     const res = await fetch(url, {
       method: "POST",
@@ -281,7 +276,7 @@ export class ApiService {
   }
 
   static async deletePredictor(id: string): Promise<void> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const url = buildEndpointUrl(base, `/api/predictors/${encodeURIComponent(id)}`);
     const res = await fetch(url, {
       method: "DELETE",
@@ -299,7 +294,7 @@ export class ApiService {
     filename: string,
     predictorId: string
   ): Promise<AnnotationsData> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const url = buildEndpointUrl(base, `/api/free_autoplace?filename=${encodeURIComponent(filename)}`);
     const res = await fetch(url, {
       method: "POST",
@@ -329,7 +324,7 @@ export class ApiService {
       test_split?: number;
     }
   ): Promise<{ success: boolean; job_id: string; message: string }> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const formData = new FormData();
     formData.append("model_name", modelName);
     formData.append("dataset", file);
@@ -366,7 +361,7 @@ export class ApiService {
     error: string | null;
     predictor: PredictorMeta | null;
   }> {
-    const base = await apiUrl();
+    const base = await getApiUrl();
     const response = await fetch(`${base}/train_status/${encodeURIComponent(jobId)}`, {
       headers: {
         ...SessionService.getSessionHeaders(),

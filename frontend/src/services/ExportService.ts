@@ -6,12 +6,18 @@ import type { ScaleSettings } from "../models/ScaleSettings";
 import { getApiUrl } from "./config";
 
 export class ExportService {
+  static baseName(imageName: string): string {
+    const fileName = imageName.replace(/^.*[\\/]/, "");
+    const lastDot = fileName.lastIndexOf(".");
+    return lastDot > 0 ? fileName.slice(0, lastDot) : fileName;
+  }
+
   static createTpsContent(coords: Point[], imageName: string): string {
     let tpsContent = `LM=${coords.length}\n`;
     coords.forEach(point => {
       tpsContent += `${point.x} ${point.y}\n`;
     });
-    tpsContent += `IMAGE=${imageName.split('.')[0]}`;
+    tpsContent += `IMAGE=${this.baseName(imageName)}`;
     return tpsContent;
   }
 
@@ -94,7 +100,7 @@ export class ExportService {
     try {
       const tpsContent = this.createTpsContent(coords, imageName);
       const blob = new Blob([tpsContent], { type: "text/plain" });
-      await this.downloadFile(blob, `${imageName.split(".")[0]}.tps`);
+      await this.downloadFile(blob, `${this.baseName(imageName)}.tps`);
       console.log("TPS file downloaded successfully:", imageName);
     } catch (error) {
       console.error("Error downloading TPS file:", error);
@@ -150,9 +156,11 @@ export class ExportService {
 
           let imageBlob: Blob | undefined;
           if (result.image_urls && result.image_urls.length > 0) {
-            const imageUrl = result.image_urls[0].startsWith('http')
-              ? result.image_urls[0]
-              : `${apiBase}/${result.image_urls[0].replace(/^\/+/, "")}`;
+            const advertisedUrl = result.image_urls[0];
+            const base = await getApiUrl();
+            const imageUrl = advertisedUrl.startsWith('http')
+              ? advertisedUrl
+              : `${base}${advertisedUrl.startsWith('/') ? '' : '/'}${advertisedUrl}`;
 
             try {
               imageBlob = await ApiService.downloadAnnotatedImage(imageUrl);
@@ -201,7 +209,7 @@ export class ExportService {
       }
 
       successfulResults.forEach(result => {
-        const baseName = result.name.split('.')[0];
+        const baseName = this.baseName(result.name);
         
         zip.file(`${baseName}.tps`, result.tpsContent);
         if (result.imageBlob) {

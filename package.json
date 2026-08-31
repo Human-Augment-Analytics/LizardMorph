@@ -3,15 +3,13 @@
   "version": "1.0.8",
   "private": true,
   "scripts": {
-    "tauri": "./frontend/node_modules/.bin/tauri",
-    "tauri:dev": "./frontend/node_modules/.bin/tauri dev",
-    "tauri:build": "./frontend/node_modules/.bin/tauri build",
+    "tauri": "node node_modules/@tauri-apps/cli/tauri.js",
+    "tauri:dev": "node node_modules/@tauri-apps/cli/tauri.js dev",
+    "tauri:build": "node node_modules/@tauri-apps/cli/tauri.js build",
     "sidecar:build": "bash scripts/build-tauri-sidecar.sh",
     "dev": "npm --prefix frontend run dev",
-    "build": "npm --prefix frontend run build"
-  },
-  "engines": {
-    "node": "22.15.x"
+    "build": "npm --prefix frontend run build",
+    "test": "npm --prefix frontend run test"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.2.0"

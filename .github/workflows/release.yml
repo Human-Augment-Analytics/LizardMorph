@@ -175,8 +175,84 @@ jobs:
           name: exe-win
           path: electron/release/*.exe
 
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake libx11-dev libopenblas-dev liblapack-dev
+
+      - name: Download model files
+        run: |
+          gh release download models -p "models.tar.gz" -D /tmp
+          tar xzf /tmp/models.tar.gz
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Python dependencies for PyInstaller
+        run: |
+          pip install pyinstaller
+          pip install flask==2.2.3 flask-cors==3.0.10 werkzeug==2.2.2
+          pip install numpy pandas opencv-python pillow
+          pip install dlib
+          pip install onnxruntime
+          pip install pydicom python-dotenv
+          pip install prometheus-client psutil
+          pip install matplotlib
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build frontend
+        env:
+          VITE_RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
+        run: |
+          cd frontend
+          npm ci
+          VITE_BASE_URL="./" npm run build
+
+      - name: Copy frontend to Electron
+        run: |
+          rm -rf electron/frontend
+          cp -r frontend/dist electron/frontend
+
+      - name: Build Python backend
+        run: |
+          cd electron
+          python -m PyInstaller pyinstaller.spec \
+            --distpath "$PWD/dist" \
+            --workpath "$PWD/build-temp" \
+            --clean -y
+        env:
+          PYTHON_PATH: python
+
+      - name: Package Electron app
+        run: |
+          cd electron
+          npm ci
+          npx electron-builder --linux --publish never
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-binaries
+          path: |
+            electron/release/*.AppImage
+            electron/release/*.deb
+
   create-release:
-    needs: [build-mac, build-win]
+    needs: [build-mac, build-win, build-linux]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -197,6 +273,8 @@ jobs:
             artifacts/dmg-arm64/*.dmg
             artifacts/dmg-x64/*.dmg
             artifacts/exe-win/*.exe
+            artifacts/linux-binaries/*.AppImage
+            artifacts/linux-binaries/*.deb
           body: |
             ## Downloads
 
@@ -205,8 +283,10 @@ jobs:
             | macOS (Apple Silicon) | `AutoMorph-*-arm64.dmg` | M1/M2/M3/M4 Macs |
             | macOS (Intel) | `AutoMorph-*-x64.dmg` | 2015–2020 Intel Macs |
             | Windows | `AutoMorph.Setup.*.exe` | Windows 10+ |
+            | Linux (AppImage) | `AutoMorph-*.AppImage` | Universal Linux (Ubuntu, Fedora, Arch, etc.) |
+            | Linux (Debian/Ubuntu) | `AutoMorph_*_amd64.deb` | Debian / Ubuntu / Mint |
 
             ### macOS: Which download do I need?
-            - Click  → **About This Mac**
+            - Click  → **About This Mac**
             - If you see **Apple M1/M2/M3/M4** → download the **arm64** DMG
             - If you see **Intel** → download the **x64** DMG

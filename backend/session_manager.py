@@ -17,14 +17,20 @@ class SessionManager:
     and handling cleanup of session-specific files.
     """
 
-    def __init__(self, base_sessions_dir="sessions"):
+    def __init__(self, base_sessions_dir="sessions", runtime_root=None):
         """
         Initialize the session manager.
 
         Args:
             base_sessions_dir (str): Base directory for all session folders
+            runtime_root (str): Writable data root the session sweep operates on.
+                Defaults to the parent of base_sessions_dir.
         """
         self.base_sessions_dir = base_sessions_dir
+        if runtime_root:
+            self.runtime_root = os.path.abspath(runtime_root)
+        else:
+            self.runtime_root = os.path.dirname(os.path.abspath(base_sessions_dir))
         self.active_sessions = {}
         self.ensure_directory_exists(self.base_sessions_dir)
 
@@ -52,6 +58,51 @@ class SessionManager:
             return str(uuid.UUID(str(session_id)))
         except (ValueError, TypeError, AttributeError) as error:
             raise ValueError("Invalid session identifier.") from error
+
+    @staticmethod
+    def parse_session_folder_name(folder_name: str) -> Optional[tuple]:
+        """Split ``session_<timestamp>_<session_id[:8]>`` into (timestamp, short id).
+
+        The timestamp itself contains an underscore (``%Y%m%d_%H%M%S``), so the
+        short session ID is the last segment, not the third one.
+        """
+        if not folder_name.startswith("session_"):
+            return None
+
+        parts = folder_name.split("_")
+        if len(parts) < 3:
+            return None
+
+        return "_".join(parts[1:-1]), parts[-1]
+
+    def session_folders(self) -> List[tuple]:
+        """Every session folder as ``(timestamp, short id, name, path)``, newest first."""
+        if not os.path.exists(self.base_sessions_dir):
+            return []
+
+        folders = []
+        for folder_name in os.listdir(self.base_sessions_dir):
+            parsed = self.parse_session_folder_name(folder_name)
+            if not parsed:
+                continue
+
+            session_folder = os.path.join(self.base_sessions_dir, folder_name)
+            if not os.path.isdir(session_folder):
+                continue
+
+            folders.append((parsed[0], parsed[1], folder_name, session_folder))
+
+        folders.sort(key=lambda entry: (entry[0], entry[2]), reverse=True)
+        return folders
+
+    def find_session_folder(self, session_id_short: str) -> Optional[str]:
+        """Locate the newest session folder carrying the short ID image URLs use."""
+        for _, short_id, _, session_folder in self.session_folders():
+            if short_id == session_id_short:
+                return session_folder
+
+        return None
+>>>>>>> refs/heads/main
 
     def create_session(self, session_id: str = None) -> str:
         """
@@ -150,49 +201,39 @@ class SessionManager:
         Returns:
             dict: Session data or None if not found
         """
-        # Look for session folders that contain this session ID
-        if not os.path.exists(self.base_sessions_dir):
+        session_folder = self.find_session_folder(session_id[:8])
+        if not session_folder:
             return None
 
-        expected_suffix = f"_{session_id}"
-        for folder_name in os.listdir(self.base_sessions_dir):
-            if folder_name.startswith("session_") and folder_name.endswith(expected_suffix):
-                session_folder = os.path.join(self.base_sessions_dir, folder_name)
-                if os.path.isdir(session_folder):
-                    created_at = folder_name[
-                        len("session_") : -len(expected_suffix)
-                    ]
-                    # Reconstruct session data
-                    session_data = {
-                        "session_id": session_id,
-                        "created_at": created_at,
-                        "session_folder": session_folder,
-                        "upload_folder": os.path.join(session_folder, "uploads"),
-                        "processed_folder": os.path.join(session_folder, "processed"),
-                        "inverted_folder": os.path.join(session_folder, "inverted"),
-                        "tps_folder": os.path.join(session_folder, "tps"),
-                        "image_download_folder": os.path.join(
-                            session_folder, "annotated"
-                        ),
-                        "outputs_folder": os.path.join(session_folder, "outputs"),
-                    }
+        parsed = self.parse_session_folder_name(os.path.basename(session_folder))
 
-                    # Ensure all subfolders exist
-                    for folder in [
-                        session_data["upload_folder"],
-                        session_data["processed_folder"],
-                        session_data["inverted_folder"],
-                        session_data["tps_folder"],
-                        session_data["image_download_folder"],
-                        session_data["outputs_folder"],
-                    ]:
-                        self.ensure_directory_exists(folder)
+        # Reconstruct session data
+        session_data = {
+            "session_id": session_id,
+            "created_at": parsed[0] if parsed else "",
+            "session_folder": session_folder,
+            "upload_folder": os.path.join(session_folder, "uploads"),
+            "processed_folder": os.path.join(session_folder, "processed"),
+            "inverted_folder": os.path.join(session_folder, "inverted"),
+            "tps_folder": os.path.join(session_folder, "tps"),
+            "image_download_folder": os.path.join(session_folder, "annotated"),
+            "outputs_folder": os.path.join(session_folder, "outputs"),
+        }
 
-                    self.active_sessions[session_id] = session_data
-                    logger.info(f"Loaded existing session: {session_id}")
-                    return session_data
+        # Ensure all subfolders exist
+        for folder in [
+            session_data["upload_folder"],
+            session_data["processed_folder"],
+            session_data["inverted_folder"],
+            session_data["tps_folder"],
+            session_data["image_download_folder"],
+            session_data["outputs_folder"],
+        ]:
+            self.ensure_directory_exists(folder)
 
-        return None
+        self.active_sessions[session_id] = session_data
+        logger.info(f"Loaded existing session: {session_id}")
+        return session_data
 
     def clear_session(self, session_id: str) -> Dict:
         """
@@ -246,9 +287,9 @@ class SessionManager:
             logger.error(f"Error clearing session {session_id}: {str(e)}")
             errors.append(f"Error clearing session: {str(e)}")
 
-        # Clear any output files in the backend root directory that might be related to this session
+        # Clear any output files in the runtime data root that might be related to this session
         try:
-            backend_dir = os.getcwd()
+            backend_dir = self.runtime_root
             root_files_cleared = 0
             for filename in os.listdir(backend_dir):
                 if filename.startswith("output_") and (
@@ -296,37 +337,22 @@ class SessionManager:
         """
         sessions = []
 
-        if not os.path.exists(self.base_sessions_dir):
-            return sessions
+        for timestamp, session_id_part, folder_name, session_folder in self.session_folders():
+            # Count files in session
+            file_count = 0
+            for root, dirs, files in os.walk(session_folder):
+                file_count += len(files)
 
-        for folder_name in os.listdir(self.base_sessions_dir):
-            if folder_name.startswith("session_") and os.path.isdir(
-                os.path.join(self.base_sessions_dir, folder_name)
-            ):
-                parts = folder_name.rsplit("_", 1)
-                if len(parts) == 2:
-                    timestamp = parts[0].removeprefix("session_")
-                    session_id_part = parts[1]
+            sessions.append(
+                {
+                    "session_id_short": session_id_part,
+                    "created_at": timestamp,
+                    "folder_name": folder_name,
+                    "session_folder": session_folder,
+                    "file_count": file_count,
+                }
+            )
 
-                    session_folder = os.path.join(self.base_sessions_dir, folder_name)
-
-                    # Count files in session
-                    file_count = 0
-                    for root, dirs, files in os.walk(session_folder):
-                        file_count += len(files)
-
-                    sessions.append(
-                        {
-                            "session_id_short": session_id_part,
-                            "created_at": timestamp,
-                            "folder_name": folder_name,
-                            "session_folder": session_folder,
-                            "file_count": file_count,
-                        }
-                    )
-
-        # Sort by creation time, newest first
-        sessions.sort(key=lambda x: x["created_at"], reverse=True)
         return sessions
 
     def delete_session(self, session_id: str) -> Dict:

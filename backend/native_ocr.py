@@ -37,11 +37,15 @@ def _create_reader():
         return _LinuxTesseractPlaceholderReader()
 
 
-class _LinuxTesseractPlaceholderReader:
-    """No-op OCR when tesseract is missing; avoids loading EasyOCR/torch on small servers."""
+class _NullReader:
+    """No-op OCR for runtimes with no usable backend; reports 'no text found'."""
 
     def readtext(self, image, detail=1, allowlist=None):
         return []
+
+
+class _LinuxTesseractPlaceholderReader(_NullReader):
+    """No-op OCR when tesseract is missing; avoids loading EasyOCR/torch on small servers."""
 
 
 class _MacOSReader:

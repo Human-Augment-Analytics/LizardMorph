@@ -8,9 +8,8 @@ if __name__ == "__main__":
     # second backend server on port 3005.
     multiprocessing.freeze_support()
 
-from dotenv import load_dotenv
-
-load_dotenv()
+if not getattr(sys, "frozen", False):
+    load_dotenv()
 
 # Server-side ID OCR loads EasyOCR/torch and can OOM low-RAM hosts; set ENABLE_ID_OCR=false to skip.
 ENABLE_ID_OCR = os.getenv("ENABLE_ID_OCR", "true").lower() in ("1", "true", "yes")
@@ -57,6 +56,34 @@ import shutil
 import psutil
 import threading
 import uuid
+from urllib.parse import quote
+
+def cleanup_frozen_temp_dir():
+    if not getattr(sys, "frozen", False):
+        return False
+    meipass = getattr(sys, "_MEIPASS", None)
+    if not meipass or not os.path.basename(meipass).startswith("_MEI"):
+        return False
+    shutil.rmtree(meipass, ignore_errors=True)
+    return True
+
+
+def watch_parent_process():
+    parent_pid = os.getenv("AUTOMORPH_PARENT_PID")
+    if not parent_pid:
+        return
+    try:
+        parent_pid_value = int(parent_pid)
+    except ValueError:
+        return
+
+    def monitor():
+        while psutil.pid_exists(parent_pid_value):
+            time.sleep(1)
+        cleanup_frozen_temp_dir()
+        os._exit(0)
+
+    threading.Thread(target=monitor, name="automorph-parent-watchdog", daemon=True).start()
 
 try:
     from backend.storage.db import DatabaseManager
@@ -98,6 +125,71 @@ if getattr(sys, 'frozen', False):
     os.environ.setdefault("YOLO_BASE_MODEL", os.path.join(BASE_DIR, "yolov8n-obb.pt"))
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def get_runtime_root():
+    configured_root = os.getenv("AUTOMORPH_DATA_DIR")
+    if configured_root:
+        return os.path.abspath(os.path.expanduser(configured_root))
+    if sys.platform == "darwin":
+        return os.path.expanduser("~/Library/Application Support/AutoMorph")
+    if sys.platform == "win32":
+        return os.path.join(os.getenv("APPDATA", os.path.expanduser("~")), "AutoMorph")
+    return os.path.join(
+        os.getenv("XDG_DATA_HOME", os.path.expanduser("~/.local/share")),
+        "AutoMorph",
+    )
+
+RUNTIME_ROOT = get_runtime_root() if getattr(sys, 'frozen', False) else os.getcwd()
+
+
+def get_bind_host():
+    if getattr(sys, "frozen", False) or os.getenv("AUTOMORPH_PARENT_PID"):
+        return "127.0.0.1"
+    return "0.0.0.0"
+
+
+DESKTOP_WEBVIEW_ORIGINS = [
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "https://tauri.localhost",
+]
+
+
+CORS_ORIGINS_FILE = "cors-origins.txt"
+
+
+def parse_cors_origins(raw):
+    origins = []
+    for line in (raw or "").splitlines():
+        for origin in line.split("#", 1)[0].split(","):
+            origin = origin.strip()
+            if origin:
+                origins.append(origin)
+    if not origins:
+        return None
+    return "*" if "*" in origins else origins
+
+
+def read_cors_origins_override():
+    """Read the desktop CORS allowlist from a file in the runtime data root."""
+    try:
+        with open(os.path.join(RUNTIME_ROOT, CORS_ORIGINS_FILE), encoding="utf-8") as handle:
+            return parse_cors_origins(handle.read())
+    except (OSError, ValueError):
+        return None
+
+
+def get_cors_origins():
+    configured = parse_cors_origins(os.getenv("AUTOMORPH_CORS_ORIGINS"))
+    if get_bind_host() != "127.0.0.1":
+        return configured or "*"
+    override = configured or read_cors_origins_override()
+    if override == "*":
+        return "*"
+    return list(DESKTOP_WEBVIEW_ORIGINS) + [
+        origin for origin in (override or []) if origin not in DESKTOP_WEBVIEW_ORIGINS
+    ]
+
 
 def get_model_path(relative_path):
     if relative_path is None:
@@ -165,8 +257,9 @@ def safe_client_filename(value):
     return safe_name
 
 # Global predictor library (Free mode)
-if getattr(sys, "frozen", False) and not os.getenv("PREDICTOR_LIBRARY_DIR"):
-    PREDICTOR_LIBRARY_DIR = get_runtime_path("custom_predictors")
+<<<<<<< HEAD
+if getattr(sys, 'frozen', False) and not os.getenv("PREDICTOR_LIBRARY_DIR"):
+    PREDICTOR_LIBRARY_DIR = os.path.join(RUNTIME_ROOT, "models", "custom_predictors")
 else:
     PREDICTOR_LIBRARY_DIR = get_model_path(
         os.getenv("PREDICTOR_LIBRARY_DIR", "../models/custom_predictors")
@@ -441,7 +534,7 @@ PREDICTOR_INDEX_LOCK = threading.Lock()
 TRAINING_SEMAPHORE = threading.Semaphore(1)
 
 # Persistent file-based job store
-JOBS_DIR = os.path.join(os.path.dirname(__file__), "sessions", "jobs")
+JOBS_DIR = os.path.join(RUNTIME_ROOT, "sessions", "jobs")
 
 def save_job_status(job_id, status_dict):
     try:
@@ -513,80 +606,112 @@ logger.info(f"Toepad finger predictor: {TOEPAD_FINGER_PREDICTOR}")
 
 # Cache YOLO model at startup to avoid reloading on each request
 _cached_yolo_model = None
+_yolo_model_lock = threading.Lock()
+
+
+def _load_yolo_model():
+    if not TOEPAD_YOLO_MODEL or not os.path.exists(TOEPAD_YOLO_MODEL):
+        return None
+    use_ort = os.environ.get("USE_ORT_QUANTIZED", "").lower() in ("true", "1", "yes")
+    if use_ort:
+        from ort_inference import OrtYoloDetector
+        base, ext = os.path.splitext(TOEPAD_YOLO_MODEL)
+        int8_path = f"{base}_int8{ext}"
+        if os.path.exists(int8_path):
+            logger.info(f"Loading ORT INT8 model: {int8_path}")
+            model = OrtYoloDetector(int8_path)
+            logger.info("ORT INT8 model loaded and cached")
+            return model
+        logger.warning(f"INT8 model not found at {int8_path}, falling back")
+    try:
+        from ultralytics import YOLO
+        logger.info(f"Loading YOLO model: {TOEPAD_YOLO_MODEL}")
+        model = YOLO(TOEPAD_YOLO_MODEL, task="obb")
+        logger.info("YOLO model loaded and cached")
+        return model
+    except ImportError:
+        from ort_inference import OrtYoloDetector
+        logger.info(f"ultralytics not available, using ORT: {TOEPAD_YOLO_MODEL}")
+        model = OrtYoloDetector(TOEPAD_YOLO_MODEL)
+        logger.info("ORT YOLO model loaded and cached")
+        return model
+
 
 def get_cached_yolo_model():
     """Get cached YOLO model, loading it on first call.
 
     Uses OrtYoloDetector (INT8 quantized) if USE_ORT_QUANTIZED=true,
     falls back to OrtYoloDetector with the standard model if ultralytics
-    is not available (e.g. in packaged Electron builds).
+    is not available (e.g. in packaged desktop builds, which exclude ultralytics).
     """
     global _cached_yolo_model
-    if _cached_yolo_model is None:
-        if TOEPAD_YOLO_MODEL and os.path.exists(TOEPAD_YOLO_MODEL):
-            use_ort = os.environ.get("USE_ORT_QUANTIZED", "").lower() in ("true", "1", "yes")
-            if use_ort:
-                from ort_inference import OrtYoloDetector
-                base, ext = os.path.splitext(TOEPAD_YOLO_MODEL)
-                int8_path = f"{base}_int8{ext}"
-                if os.path.exists(int8_path):
-                    logger.info(f"Loading ORT INT8 model: {int8_path}")
-                    _cached_yolo_model = OrtYoloDetector(int8_path)
-                    logger.info("ORT INT8 model loaded and cached")
-                else:
-                    logger.warning(f"INT8 model not found at {int8_path}, falling back")
-                    use_ort = False
-            if not use_ort:
-                try:
-                    from ultralytics import YOLO
-                    logger.info(f"Loading YOLO model: {TOEPAD_YOLO_MODEL}")
-                    _cached_yolo_model = YOLO(TOEPAD_YOLO_MODEL, task="obb")
-                    logger.info("YOLO model loaded and cached")
-                except ImportError:
-                    from ort_inference import OrtYoloDetector
-                    logger.info(f"ultralytics not available, using ORT: {TOEPAD_YOLO_MODEL}")
-                    _cached_yolo_model = OrtYoloDetector(TOEPAD_YOLO_MODEL)
-                    logger.info("ORT YOLO model loaded and cached")
-    return _cached_yolo_model
+    if _cached_yolo_model is not None:
+        return _cached_yolo_model
+    with _yolo_model_lock:
+        if _cached_yolo_model is None:
+            _cached_yolo_model = _load_yolo_model()
+        return _cached_yolo_model
 
 _cached_id_model = None
+_id_model_lock = threading.Lock()
+
+
+def _load_id_model():
+    if not ID_EXTRACTOR_MODEL or not os.path.exists(ID_EXTRACTOR_MODEL):
+        return None
+    from ultralytics import YOLO
+    logger.info(f"Loading ID extractor model: {ID_EXTRACTOR_MODEL}")
+    model = YOLO(ID_EXTRACTOR_MODEL, task="obb")
+    logger.info("ID extractor model loaded and cached")
+    return model
+
 
 def get_cached_id_model():
     """Get cached ID extractor YOLO model, loading it on first call."""
     global _cached_id_model
-    if _cached_id_model is None:
-        if ID_EXTRACTOR_MODEL and os.path.exists(ID_EXTRACTOR_MODEL):
-            from ultralytics import YOLO
-            logger.info(f"Loading ID extractor model: {ID_EXTRACTOR_MODEL}")
-            _cached_id_model = YOLO(ID_EXTRACTOR_MODEL, task="obb")
-            logger.info("ID extractor model loaded and cached")
-    return _cached_id_model
+    if _cached_id_model is not None:
+        return _cached_id_model
+    with _id_model_lock:
+        if _cached_id_model is None:
+            _cached_id_model = _load_id_model()
+        return _cached_id_model
 
 # Cache dlib predictors at startup to avoid reloading on each request
-_cached_dlib_predictors = {}
+_cached_dlib_predictors = None
+_dlib_predictors_lock = threading.Lock()
+
+
+def _load_dlib_predictors():
+    predictors = {}
+    try:
+        import dlib
+        if DORSAL_PREDICTOR_FILE and os.path.exists(DORSAL_PREDICTOR_FILE):
+            logger.info(f"Loading dorsal predictor: {DORSAL_PREDICTOR_FILE}")
+            predictors['dorsal'] = dlib.shape_predictor(DORSAL_PREDICTOR_FILE)
+        if SCALE_PREDICTOR_FILE and os.path.exists(SCALE_PREDICTOR_FILE):
+            logger.info(f"Loading scale predictor: {SCALE_PREDICTOR_FILE}")
+            predictors['scale'] = dlib.shape_predictor(SCALE_PREDICTOR_FILE)
+        if TOEPAD_TOE_PREDICTOR and os.path.exists(TOEPAD_TOE_PREDICTOR):
+            logger.info(f"Loading toe predictor: {TOEPAD_TOE_PREDICTOR}")
+            predictors['toe'] = dlib.shape_predictor(TOEPAD_TOE_PREDICTOR)
+        if TOEPAD_FINGER_PREDICTOR and os.path.exists(TOEPAD_FINGER_PREDICTOR):
+            logger.info(f"Loading finger predictor: {TOEPAD_FINGER_PREDICTOR}")
+            predictors['finger'] = dlib.shape_predictor(TOEPAD_FINGER_PREDICTOR)
+        logger.info(f"Dlib predictors loaded and cached: {list(predictors.keys())}")
+    except ImportError:
+        logger.warning("dlib not installed, skipping predictor caching")
+    return predictors
+
 
 def get_cached_dlib_predictors():
     """Get cached dlib predictors, loading them on first call."""
     global _cached_dlib_predictors
-    if not _cached_dlib_predictors:
-        try:
-            import dlib
-            if DORSAL_PREDICTOR_FILE and os.path.exists(DORSAL_PREDICTOR_FILE):
-                logger.info(f"Loading dorsal predictor: {DORSAL_PREDICTOR_FILE}")
-                _cached_dlib_predictors['dorsal'] = dlib.shape_predictor(DORSAL_PREDICTOR_FILE)
-            if SCALE_PREDICTOR_FILE and os.path.exists(SCALE_PREDICTOR_FILE):
-                logger.info(f"Loading scale predictor: {SCALE_PREDICTOR_FILE}")
-                _cached_dlib_predictors['scale'] = dlib.shape_predictor(SCALE_PREDICTOR_FILE)
-            if TOEPAD_TOE_PREDICTOR and os.path.exists(TOEPAD_TOE_PREDICTOR):
-                logger.info(f"Loading toe predictor: {TOEPAD_TOE_PREDICTOR}")
-                _cached_dlib_predictors['toe'] = dlib.shape_predictor(TOEPAD_TOE_PREDICTOR)
-            if TOEPAD_FINGER_PREDICTOR and os.path.exists(TOEPAD_FINGER_PREDICTOR):
-                logger.info(f"Loading finger predictor: {TOEPAD_FINGER_PREDICTOR}")
-                _cached_dlib_predictors['finger'] = dlib.shape_predictor(TOEPAD_FINGER_PREDICTOR)
-            logger.info(f"Dlib predictors loaded and cached: {list(_cached_dlib_predictors.keys())}")
-        except ImportError:
-            logger.warning("dlib not installed, skipping predictor caching")
-    return _cached_dlib_predictors
+    if _cached_dlib_predictors is not None:
+        return _cached_dlib_predictors
+    with _dlib_predictors_lock:
+        if _cached_dlib_predictors is None:
+            _cached_dlib_predictors = _load_dlib_predictors()
+        return _cached_dlib_predictors
 
 
 def _supplement_client_annotations_with_yolo(client_ann, image_path, yolo_model):
@@ -686,36 +811,23 @@ app.secret_key = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 app.config["SESSION_TYPE"] = "filesystem"
 
 
-CORS(
-    app,
-    resources={
-        r"/*": {
-            "origins": "*",  # Allow all origins during development
-            "methods": ["GET", "POST", "OPTIONS"],
-            "allow_headers": ["Content-Type", "X-Session-ID"],
-        }
-    },
-)
+CORS_ORIGINS = get_cors_origins()
+CORS_ALLOW_HEADERS = ["Content-Type", "X-Session-ID"]
+CORS_METHODS = ["GET", "HEAD", "POST", "DELETE", "OPTIONS"]
 
-SESSIONS_FOLDER = (
-    get_runtime_path("sessions")
-    if getattr(sys, "frozen", False) and not os.getenv("SESSION_DIR")
-    else os.path.abspath(os.path.join(os.getcwd(), session_dir))
-)
-if getattr(sys, "frozen", False):
-    UPLOAD_FOLDER = get_runtime_path("upload")
-    COLOR_CONTRAST_FOLDER = get_runtime_path("color_constrasted")
-    TPS_DOWNLOAD_FOLDER = get_runtime_path("tps_download")
-    IMAGE_DOWNLOAD_FOLDER = get_runtime_path("image_download")
-    INVERT_IMAGE_FOLDER = get_runtime_path("invert_image")
-    OUTPUTS_FOLDER = get_runtime_path("outputs")
-else:
-    UPLOAD_FOLDER = os.path.join(os.getcwd(), "upload")
-    COLOR_CONTRAST_FOLDER = os.path.join(os.getcwd(), "color_constrasted")
-    TPS_DOWNLOAD_FOLDER = os.path.join(os.getcwd(), "tps_download")
-    IMAGE_DOWNLOAD_FOLDER = os.path.join(os.getcwd(), "image_download")
-    INVERT_IMAGE_FOLDER = os.path.join(os.getcwd(), "invert_image")
-    OUTPUTS_FOLDER = os.path.join(os.getcwd(), "outputs")
+app.config["CORS_ORIGINS"] = CORS_ORIGINS
+app.config["CORS_ALLOW_HEADERS"] = CORS_ALLOW_HEADERS
+app.config["CORS_METHODS"] = CORS_METHODS
+
+CORS(app)
+
+SESSIONS_FOLDER = os.path.join(RUNTIME_ROOT, session_dir)
+UPLOAD_FOLDER = os.path.join(RUNTIME_ROOT, "upload")
+COLOR_CONTRAST_FOLDER = os.path.join(RUNTIME_ROOT, "color_constrasted")
+TPS_DOWNLOAD_FOLDER = os.path.join(RUNTIME_ROOT, "tps_download")
+IMAGE_DOWNLOAD_FOLDER = os.path.join(RUNTIME_ROOT, "image_download")
+INVERT_IMAGE_FOLDER = os.path.join(RUNTIME_ROOT, "invert_image")
+OUTPUTS_FOLDER = os.path.join(RUNTIME_ROOT, "outputs")
 
 app.config.update(
     SESSIONS_FOLDER=SESSIONS_FOLDER,
@@ -742,7 +854,7 @@ for folder in [
 
 # Initialize the export handler and session manager
 export_handler = ExportHandler(OUTPUTS_FOLDER)
-session_manager = SessionManager(SESSIONS_FOLDER)
+session_manager = SessionManager(SESSIONS_FOLDER, runtime_root=RUNTIME_ROOT)
 
 # Initialize Prometheus metrics (no-op if prometheus_client missing)
 if Counter and Histogram and Gauge:
@@ -783,10 +895,15 @@ if CPU_USAGE or MEMORY_USAGE or DISK_USAGE:
     metrics_thread = threading.Thread(target=update_system_metrics, daemon=True)
     metrics_thread.start()
 
-# Health check endpoint (used by Electron to detect backend readiness)
+# Health check endpoint (desktop hosts poll it to detect backend readiness).
+# supervisor_pid echoes AUTOMORPH_PARENT_PID so a desktop host can tell its own
+# sidecar apart from an unrelated process that already holds the API port.
 @app.route("/health", methods=["GET"])
 def health_check():
-    return {"status": "ok"}, 200
+    return {
+        "status": "ok",
+        "supervisor_pid": os.getenv("AUTOMORPH_PARENT_PID", ""),
+    }, 200
 
 # Prometheus metrics endpoint
 @app.route('/metrics')
@@ -1831,6 +1948,11 @@ def serve_image_file():
 
 
 
+def session_image_url(session_id, image_path):
+    """URL the API advertises for an annotated image belonging to a session."""
+    return f"/images/{session_id[:8]}/{quote(os.path.basename(image_path))}"
+
+
 @app.route("/endpoint", methods=["POST"])
 @cross_origin()
 @track_metrics
@@ -1856,7 +1978,7 @@ def process_scatter_data():
         session_data = get_session_folders(session_id)
 
         # Remove file extension if present
-        base_name = name.split(".")[0] if "." in name else name
+        base_name = os.path.splitext(name)[0]
 
         # Create export directory for this output
         export_dir = export_handler.create_export_directory(name)
@@ -1898,7 +2020,9 @@ def process_scatter_data():
         try:
             logger.info(f"Creating annotated image for: {tps_file_path}")
             output_paths = visual_individual_performance.create_image(
-                tps_file_path, session_data["image_download_folder"]
+                tps_file_path,
+                session_data["image_download_folder"],
+                session_data["upload_folder"],
             )
 
             # Copy annotated images to export directory
@@ -1909,9 +2033,13 @@ def process_scatter_data():
             image_urls = []
             if output_paths:
                 for path in output_paths:
+<<<<<<< HEAD
                     image_urls.append(
                         f"images/{session_id}/{os.path.basename(path)}"
                     )
+=======
+                    image_urls.append(session_image_url(session_id, path))
+>>>>>>> refs/heads/main
 
             logger.info(f"Annotated images created: {output_paths}")
 
@@ -1941,20 +2069,19 @@ def process_scatter_data():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/images/<session_id>/<path:filename>")
+@app.route("/images/<session_id_short>/<path:filename>")
 @track_metrics
-def serve_session_image(session_id, filename):
+def serve_session_image(session_id_short, filename):
     """Serve images from session-specific folders."""
     try:
-        session_id = str(uuid.UUID(session_id))
-        filename = safe_client_filename(filename)
-        session_data = session_manager.get_session(session_id)
-        if not session_data:
-            return jsonify({"error": "Session not found"}), 404
-        image_download_folder = session_data["image_download_folder"]
-        if not os.path.isfile(os.path.join(image_download_folder, filename)):
-            return jsonify({"error": "Image not found"}), 404
-        return send_from_directory(image_download_folder, filename)
+        session_folder = session_manager.find_session_folder(session_id_short)
+        if session_folder:
+            image_download_folder = os.path.join(session_folder, "annotated")
+            if os.path.exists(os.path.join(image_download_folder, filename)):
+                return send_from_directory(image_download_folder, filename)
+
+        # Fallback to global folder for backward compatibility
+        return send_from_directory(IMAGE_DOWNLOAD_FOLDER, filename)
 
     except Exception as e:
         logger.error(f"Error serving session image: {str(e)}", exc_info=True)
@@ -2243,7 +2370,7 @@ def save_annotations():
         session_data = get_session_folders(session_id)
 
         # Remove file extension if present for base name
-        base_name = name.split(".")[0] if "." in name else name
+        base_name = os.path.splitext(name)[0]
 
         # Create timestamp for version control
         timestamp = int(time.time())
@@ -2344,7 +2471,9 @@ def save_annotations():
         # Generate annotated image with updated points
         try:
             output_paths = visual_individual_performance.create_image(
-                tps_file_path, session_data["image_download_folder"]
+                tps_file_path,
+                session_data["image_download_folder"],
+                session_data["upload_folder"],
             )
 
             # Copy all generated files to the export directory
@@ -2386,58 +2515,6 @@ def save_annotations():
                     "message": "Annotations saved but image creation failed",
                     "export_dir": export_dir,
                     "session_id": session_id,
-                    "error": str(img_e),
-                }
-            )
-
-    except Exception as e:
-        logger.error(f"Error saving annotations: {str(e)}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-
-        logger.info(f"Created TPS file at: {tps_file_path}")
-        logger.info(f"Created TPS file in export directory: {export_tps_path}")
-
-        # Generate annotated image with updated points
-        try:
-            output_paths = visual_individual_performance.create_image(
-                tps_file_path, IMAGE_DOWNLOAD_FOLDER
-            )
-
-            # Copy all generated files to the export directory
-            if os.path.exists(xml_path):
-                export_handler.copy_file_to_export(
-                    xml_path, export_dir, os.path.basename(xml_path)
-                )
-            if os.path.exists(csv_path):
-                export_handler.copy_file_to_export(
-                    csv_path, export_dir, os.path.basename(csv_path)
-                )
-
-            # Copy the annotated images
-            for path in output_paths:
-                export_handler.copy_file_to_export(path, export_dir)
-
-            logger.info(f"Annotations saved successfully for {name}")
-
-            return jsonify(
-                {
-                    "message": "Annotations saved successfully",
-                    "export_dir": export_dir,
-                    "files": {
-                        "xml": xml_path if os.path.exists(xml_path) else None,
-                        "csv": csv_path if os.path.exists(csv_path) else None,
-                        "tps": tps_path if os.path.exists(tps_path) else None,
-                        "images": output_paths,
-                    },
-                }
-            )
-
-        except Exception as img_e:
-            logger.error(f"Error creating annotated image: {str(img_e)}", exc_info=True)
-            return jsonify(
-                {
-                    "message": "Annotations saved but image creation failed",
-                    "export_dir": export_dir,
                     "error": str(img_e),
                 }
             )
@@ -3364,7 +3441,6 @@ if __name__ == "__main__":
             )
             raise SystemExit(1) from training_error
     else:
+        watch_parent_process()
         port = int(os.getenv("API_PORT", 3005))
-        default_host = "0.0.0.0" if IS_HOSTED else "127.0.0.1"
-        start_app_parent_watchdog()
-        app.run(host=os.getenv("API_HOST", default_host), port=port)
+        app.run(host=get_bind_host(), port=port)

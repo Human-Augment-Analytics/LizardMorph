@@ -1,33 +1,52 @@
+function hasDom(): boolean {
+  return typeof window !== "undefined";
+}
+
 export function isDesktopRuntime(): boolean {
+  if (!hasDom()) {
+    return false;
+  }
   const electronAPI = window.electronAPI;
-  return Boolean(electronAPI?.isElectron) ||
-    Boolean(window.__TAURI__) ||
-    Boolean(window.__TAURI_INTERNALS__) ||
+  const runtimeWindow = window as typeof window & { __TAURI__?: unknown; __TAURI_INTERNALS__?: unknown };
+  return (
+    Boolean(electronAPI?.isElectron) ||
+    Boolean(runtimeWindow.__TAURI__) ||
+    Boolean(runtimeWindow.__TAURI_INTERNALS__) ||
     window.location.protocol === "tauri:" ||
     window.location.hostname === "tauri.localhost" ||
-    window.location.protocol === "file:";
+    window.location.protocol === "file:"
+  );
+}
+
+export function isTauriRuntime(): boolean {
+  if (!hasDom()) {
+    return false;
+  }
+  const runtimeWindow = window as typeof window & { __TAURI__?: unknown };
+  return (
+    Boolean(runtimeWindow.__TAURI__) ||
+    window.location.hostname === "tauri.localhost" ||
+    window.location.protocol === "tauri:"
+  );
+}
+
+export function fallbackApiUrl(): string {
+  if (isTauriRuntime()) {
+    return "http://127.0.0.1:3005";
+  }
+  return import.meta.env.VITE_API_URL || "/api";
 }
 
 async function resolveApiUrl(): Promise<string> {
-  const electronAPI = window.electronAPI;
-  const isElectron = Boolean(electronAPI?.isElectron);
-  const isTauri = isDesktopRuntime() && !isElectron;
-
-  if (isElectron && electronAPI) {
+  if (hasDom() && window.electronAPI?.isElectron) {
     try {
-      const port = await electronAPI.getBackendPort();
-      return `http://127.0.0.1:${port}`;
+      const port = await window.electronAPI.getBackendPort();
+      if (port) return `http://127.0.0.1:${port}`;
     } catch {
       // fallback
     }
   }
-
-  if (isTauri) {
-    const defaultPort = import.meta.env.VITE_API_PORT || "3005";
-    return `http://127.0.0.1:${defaultPort}`;
-  }
-
-  return import.meta.env.VITE_API_URL || "/api";
+  return fallbackApiUrl();
 }
 
 let _apiUrlPromise: Promise<string> | null = null;
