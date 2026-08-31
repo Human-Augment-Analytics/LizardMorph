@@ -1,4 +1,3 @@
-import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,10 +11,16 @@ describe("LandingPage Component", () => {
         id: "custom-wing-model",
         project_id: "proj-wing",
         name: "Drosophila Wing v1",
-        version: 1,
-        organism: "Drosophila melanogaster",
-        description: "Wing landmarks detector",
         created_at: "2026-08-31T00:00:00Z",
+        manifest: {
+          schema_version: 1,
+          id: "custom-wing-model",
+          name: "Drosophila Wing v1",
+          description: "Wing landmarks detector",
+          detector: { artifact: "", geometry: "obb", confidence: 0.25, iou: 0.45 },
+          classes: [],
+          landmark_schemas: {},
+        },
       },
     ]);
   });
@@ -27,10 +32,7 @@ describe("LandingPage Component", () => {
   it("renders the AutoMorph hero title and preinstalled modes", () => {
     const markup = renderToStaticMarkup(
       <MemoryRouter>
-        <LandingPage
-          onSelectMode={() => {}}
-          onOpenTrainWizard={() => {}}
-        />
+        <LandingPage />
       </MemoryRouter>
     );
 
@@ -45,10 +47,7 @@ describe("LandingPage Component", () => {
   it("renders the Train Custom Model action card", () => {
     const markup = renderToStaticMarkup(
       <MemoryRouter>
-        <LandingPage
-          onSelectMode={() => {}}
-          onOpenTrainWizard={() => {}}
-        />
+        <LandingPage />
       </MemoryRouter>
     );
 

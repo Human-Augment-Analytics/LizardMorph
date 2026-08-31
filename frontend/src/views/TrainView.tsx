@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import JSZip from "jszip";
 import { ApiService } from "../services/ApiService";
 import type { ModelVersionItem, ProjectItem, DeriveBoxesResult, TrainJobStatusResult } from "../services/ApiService";
 import { useTheme } from "../contexts/theme";
@@ -31,9 +32,14 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome, onUseModel }) => {
   const [padding, setPadding] = useState<number>(0.2);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Step 3: Check Data State
+  // Step 3: Check Data & Visual Preview State
   const [derivedBoxes, setDerivedBoxes] = useState<DeriveBoxesResult | null>(null);
   const [isCheckingData, setIsCheckingData] = useState(false);
+  const [previewImageUrls, setPreviewImageUrls] = useState<Record<string, string>>({});
+  const [selectedImageIndex, setSelectedImageIndex] = useState<number>(0);
+  const [showPreviewLandmarks, setShowPreviewLandmarks] = useState<boolean>(true);
+  const [showPreviewBoxes, setShowPreviewBoxes] = useState<boolean>(true);
+  const [showPreviewLabels, setShowPreviewLabels] = useState<boolean>(true);
 
   // Step 4: Train Setup State
   const [trainingPreset, setTrainingPreset] = useState<"fast" | "standard" | "accurate">("standard");
@@ -138,6 +144,32 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome, onUseModel }) => {
         throw new Error(result.validation_errors[0] || "Dataset is not ready for training.");
       }
       setDerivedBoxes(result);
+      setSelectedImageIndex(0);
+
+      // Unpack / generate preview URLs for the images in the dataset
+      const urls: Record<string, string> = {};
+      for (const file of datasetFiles) {
+        if (file.name.toLowerCase().endsWith(".zip")) {
+          try {
+            const zip = await JSZip.loadAsync(file);
+            for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+              if (!zipEntry.dir && /\.(jpe?g|png|bmp|webp|tif?f)$/i.test(relativePath)) {
+                const blob = await zipEntry.async("blob");
+                const objectUrl = URL.createObjectURL(blob);
+                const baseName = relativePath.split("/").pop() || relativePath;
+                urls[baseName.toLowerCase()] = objectUrl;
+                urls[relativePath.toLowerCase()] = objectUrl;
+              }
+            }
+          } catch (e) {
+            console.warn("Failed to unpack images for preview:", e);
+          }
+        } else if (/\.(jpe?g|png|bmp|webp|tif?f)$/i.test(file.name)) {
+          const objectUrl = URL.createObjectURL(file);
+          urls[file.name.toLowerCase()] = objectUrl;
+        }
+      }
+      setPreviewImageUrls(urls);
       setCurrentStep(3);
     } catch (err: unknown) {
       setError(`Dataset validation error: ${errorMessage(err)}`);
@@ -606,7 +638,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome, onUseModel }) => {
               Step 3: Check Data & Preview Bounding Boxes
             </h2>
             <p style={{ fontSize: "14px", opacity: 0.7, marginBottom: "24px" }}>
-              Inspect data health, image counts, and preview derived bounding box extents.
+              Inspect data health, image counts, and preview derived bounding box extents and landmark points.
             </p>
 
             <div style={{
@@ -643,6 +675,267 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome, onUseModel }) => {
                 </div>
               </div>
             </div>
+
+            {/* Interactive Visual Dataset & Landmark Inspector */}
+            {derivedBoxes && derivedBoxes.images && derivedBoxes.images.length > 0 && (
+              <div style={{
+                marginBottom: "24px",
+                borderRadius: "14px",
+                border: `1px solid ${t.borderLight}`,
+                background: isDark ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.01)",
+                padding: "20px",
+              }}>
+                {/* Controls Header */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <span style={{ fontSize: "14px", fontWeight: 700 }}>Inspect Specimen Image:</span>
+                    <select
+                      value={selectedImageIndex}
+                      onChange={(e) => setSelectedImageIndex(parseInt(e.target.value))}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: "8px",
+                        border: `1px solid ${t.border}`,
+                        background: isDark ? "#1e293b" : "#ffffff",
+                        color: t.text,
+                        fontSize: "13px",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {derivedBoxes.images.map((img, idx) => (
+                        <option key={img.file_path || idx} value={idx}>
+                          {idx + 1}. {img.file_path.split("/").pop()} ({img.objects?.length || 0} objects)
+                        </option>
+                      ))}
+                    </select>
+                    <div style={{ display: "flex", gap: "4px" }}>
+                      <button
+                        type="button"
+                        disabled={selectedImageIndex <= 0}
+                        onClick={() => setSelectedImageIndex(prev => Math.max(0, prev - 1))}
+                        className="btn-action btn-secondary"
+                        style={{ padding: "6px 12px", fontSize: "12px" }}
+                      >
+                        ← Prev
+                      </button>
+                      <button
+                        type="button"
+                        disabled={selectedImageIndex >= derivedBoxes.images.length - 1}
+                        onClick={() => setSelectedImageIndex(prev => Math.min(derivedBoxes.images.length - 1, prev + 1))}
+                        className="btn-action btn-secondary"
+                        style={{ padding: "6px 12px", fontSize: "12px" }}
+                      >
+                        Next →
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", cursor: "pointer", fontWeight: 600 }}>
+                      <input
+                        type="checkbox"
+                        checked={showPreviewLandmarks}
+                        onChange={(e) => setShowPreviewLandmarks(e.target.checked)}
+                        style={{ accentColor: "#00E5FF" }}
+                      />
+                      Show Landmarks (Points)
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", cursor: "pointer", fontWeight: 600 }}>
+                      <input
+                        type="checkbox"
+                        checked={showPreviewBoxes}
+                        onChange={(e) => setShowPreviewBoxes(e.target.checked)}
+                        style={{ accentColor: "#4CAF50" }}
+                      />
+                      Show Bounding Boxes
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", cursor: "pointer", fontWeight: 600 }}>
+                      <input
+                        type="checkbox"
+                        checked={showPreviewLabels}
+                        onChange={(e) => setShowPreviewLabels(e.target.checked)}
+                        style={{ accentColor: "#FFD700" }}
+                      />
+                      Show Point IDs
+                    </label>
+                  </div>
+                </div>
+
+                {/* Canvas / SVG Image Display */}
+                {(() => {
+                  const curImg = derivedBoxes.images[selectedImageIndex];
+                  if (!curImg) return null;
+                  const baseKey = curImg.file_path.split("/").pop()?.toLowerCase() || "";
+                  const imgSrc = previewImageUrls[baseKey] || previewImageUrls[curImg.file_path.toLowerCase()];
+
+                  const getObbPolygonPoints = (obb: number[]): string => {
+                    if (!obb || obb.length < 4) return "";
+                    const [cx, cy, w, h, angle = 0] = obb;
+                    const rad = (angle * Math.PI) / 180;
+                    const cos = Math.cos(rad);
+                    const sin = Math.sin(rad);
+                    const hw = w / 2;
+                    const hh = h / 2;
+                    const corners = [
+                      [-hw, -hh],
+                      [hw, -hh],
+                      [hw, hh],
+                      [-hw, hh],
+                    ];
+                    return corners
+                      .map(([dx, dy]) => `${cx + dx * cos - dy * sin},${cy + dx * sin + dy * cos}`)
+                      .join(" ");
+                  };
+
+                  return (
+                    <div style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 280px",
+                      gap: "20px",
+                      alignItems: "start",
+                    }}>
+                      {/* Main Visual SVG */}
+                      <div style={{
+                        position: "relative",
+                        width: "100%",
+                        borderRadius: "10px",
+                        overflow: "hidden",
+                        background: "#111",
+                        border: `1px solid ${t.border}`,
+                        boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+                      }}>
+                        <svg
+                          viewBox={`0 0 ${curImg.width || 800} ${curImg.height || 600}`}
+                          style={{ width: "100%", height: "auto", display: "block" }}
+                        >
+                          {imgSrc ? (
+                            <image
+                              href={imgSrc}
+                              width={curImg.width || 800}
+                              height={curImg.height || 600}
+                            />
+                          ) : (
+                            <rect width={curImg.width || 800} height={curImg.height || 600} fill="#222" />
+                          )}
+
+                          {/* Bounding Boxes & Landmarks */}
+                          {curImg.objects?.map((obj, oIdx) => {
+                            const polyPoints = getObbPolygonPoints(obj.obb);
+                            const classColors = ["#4CAF50", "#2196F3", "#FF9800", "#E91E63", "#9C27B0"];
+                            const boxColor = classColors[oIdx % classColors.length];
+                            const cx = obj.obb?.[0] || 0;
+                            const cy = obj.obb?.[1] || 0;
+
+                            return (
+                              <g key={`obj-${obj.object_id || oIdx}`}>
+                                {/* Bounding Box */}
+                                {showPreviewBoxes && polyPoints && (
+                                  <>
+                                    <polygon
+                                      points={polyPoints}
+                                      fill={boxColor}
+                                      fillOpacity="0.12"
+                                      stroke={boxColor}
+                                      strokeWidth="3"
+                                      strokeDasharray="4 2"
+                                    />
+                                    <rect
+                                      x={cx - 38}
+                                      y={cy - 12}
+                                      width="76"
+                                      height="20"
+                                      rx="4"
+                                      fill={boxColor}
+                                      fillOpacity="0.85"
+                                    />
+                                    <text
+                                      x={cx}
+                                      y={cy + 2}
+                                      fill="#ffffff"
+                                      fontSize="11"
+                                      fontWeight="700"
+                                      textAnchor="middle"
+                                    >
+                                      {obj.class_name}
+                                    </text>
+                                  </>
+                                )}
+
+                                {/* Landmarks */}
+                                {showPreviewLandmarks && obj.landmarks?.map((pt, pIdx) => (
+                                  <g key={`lm-${obj.object_id}-${pt.name}-${pIdx}`}>
+                                    <circle
+                                      cx={pt.x}
+                                      cy={pt.y}
+                                      r="5"
+                                      fill="#00E5FF"
+                                      stroke="#000000"
+                                      strokeWidth="1.5"
+                                    />
+                                    {showPreviewLabels && (
+                                      <text
+                                        x={pt.x + 6}
+                                        y={pt.y - 6}
+                                        fill="#FFD700"
+                                        stroke="#000000"
+                                        strokeWidth="0.6"
+                                        fontSize="13"
+                                        fontWeight="800"
+                                      >
+                                        {pt.name}
+                                      </text>
+                                    )}
+                                  </g>
+                                ))}
+                              </g>
+                            );
+                          })}
+                        </svg>
+                      </div>
+
+                      {/* Sidebar: Object and Landmark Breakdown */}
+                      <div style={{
+                        maxHeight: "520px",
+                        overflowY: "auto",
+                        background: isDark ? "#1e293b" : "#ffffff",
+                        padding: "16px",
+                        borderRadius: "10px",
+                        border: `1px solid ${t.border}`,
+                      }}>
+                        <h4 style={{ fontSize: "14px", fontWeight: 700, marginBottom: "12px" }}>
+                          Detected Objects ({curImg.objects?.length || 0})
+                        </h4>
+                        {curImg.objects?.map((obj, oIdx) => (
+                          <div
+                            key={obj.object_id || oIdx}
+                            style={{
+                              marginBottom: "12px",
+                              padding: "10px",
+                              borderRadius: "8px",
+                              background: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
+                              border: `1px solid ${t.borderLight}`,
+                            }}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                              <span style={{ fontWeight: 700, fontSize: "13px", color: "#4CAF50" }}>
+                                {obj.class_name}
+                              </span>
+                              <span style={{ fontSize: "11px", opacity: 0.7 }}>
+                                {obj.landmarks?.length || 0} points
+                              </span>
+                            </div>
+                            <div style={{ fontSize: "11px", opacity: 0.8, lineHeight: "1.4" }}>
+                              <div>Center: ({obj.obb?.[0]?.toFixed(1)}, {obj.obb?.[1]?.toFixed(1)})</div>
+                              <div>Dim: {obj.obb?.[2]?.toFixed(1)} × {obj.obb?.[3]?.toFixed(1)} px</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
 
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <button onClick={() => setCurrentStep(2)} className="btn-action btn-secondary">

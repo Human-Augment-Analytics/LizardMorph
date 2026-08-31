@@ -58,7 +58,21 @@ describe("ApiService custom pipeline methods", () => {
       json: async () => ({
         success: true,
         models: [
-          { id: "m-1", project_id: "p-1", name: "Model 1", version: 1, organism: "Anolis" },
+          {
+            id: "m-1",
+            project_id: "p-1",
+            name: "Model 1",
+            created_at: "2026-08-31T00:00:00Z",
+            manifest: {
+              schema_version: 1,
+              id: "m-1",
+              name: "Model 1",
+              description: "Test Model",
+              detector: { artifact: "", geometry: "obb", confidence: 0.25, iou: 0.45 },
+              classes: [],
+              landmark_schemas: {},
+            },
+          },
         ],
       }),
     });
@@ -105,7 +119,11 @@ describe("ApiService custom pipeline methods", () => {
       ok: true,
       json: async () => ({
         success: true,
-        job: { id: "job-abc", status: "running", stage: "Epoch 3/10", progress: 0.3 },
+        job_id: "job-abc",
+        status: "running",
+        stage: "Epoch 3/10",
+        progress: 0.3,
+        metrics: {},
       }),
     });
     globalThis.fetch = mockFetch;
@@ -113,7 +131,7 @@ describe("ApiService custom pipeline methods", () => {
     const status = await ApiService.getTrainJobStatus("job-abc");
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(mockFetch.mock.calls[0][0]).toBe("http://127.0.0.1:3005/api/train/job-abc");
-    expect(status.job.status).toBe("running");
+    expect(status.status).toBe("running");
   });
 
   it("cancelTrainJob calls POST /api/train/:jobId/cancel", async () => {
