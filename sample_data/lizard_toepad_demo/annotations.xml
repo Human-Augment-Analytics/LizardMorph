@@ -1,0 +1,257 @@
+<?xml version='1.0' encoding='utf-8'?>
+<dataset>
+  <name>Lizard Toepad Morphometrics Demo</name>
+  <comment>Curated demo dataset for YOLO OBB + ML-Morph training with 9 landmark points per digit</comment>
+  <images>
+    <image file="toepad_specimen_001.jpg">
+      <box top="169" left="228" width="80" height="153">
+        <label>up_finger</label>
+        <part name="0" x="246" y="199" />
+        <part name="1" x="236" y="178" />
+        <part name="2" x="243" y="227" />
+        <part name="3" x="270" y="215" />
+        <part name="4" x="251" y="259" />
+        <part name="5" x="289" y="241" />
+        <part name="6" x="269" y="286" />
+        <part name="7" x="298" y="272" />
+        <part name="8" x="300" y="315" />
+      </box>
+      <box top="113" left="394" width="68" height="203">
+        <label>up_toe</label>
+        <part name="0" x="416" y="151" />
+        <part name="1" x="411" y="122" />
+        <part name="2" x="402" y="184" />
+        <part name="3" x="440" y="177" />
+        <part name="4" x="402" y="225" />
+        <part name="5" x="454" y="215" />
+        <part name="6" x="415" y="263" />
+        <part name="7" x="455" y="256" />
+        <part name="8" x="444" y="309" />
+      </box>
+      <box top="172" left="536" width="72" height="167">
+        <label>bot_finger</label>
+        <part name="0" x="592" y="204" />
+        <part name="1" x="601" y="180" />
+        <part name="2" x="568" y="223" />
+        <part name="3" x="599" y="234" />
+        <part name="4" x="551" y="252" />
+        <part name="5" x="593" y="268" />
+        <part name="6" x="544" y="286" />
+        <part name="7" x="577" y="298" />
+        <part name="8" x="546" y="332" />
+      </box>
+      <box top="397" left="312" width="193" height="65">
+        <label>bot_toe</label>
+        <part name="0" x="470" y="418" />
+        <part name="1" x="499" y="414" />
+        <part name="2" x="439" y="406" />
+        <part name="3" x="446" y="441" />
+        <part name="4" x="401" y="406" />
+        <part name="5" x="409" y="454" />
+        <part name="6" x="364" y="418" />
+        <part name="7" x="371" y="456" />
+        <part name="8" x="321" y="445" />
+      </box>
+    </image>
+    <image file="toepad_specimen_002.jpg">
+      <box top="169" left="238" width="80" height="153">
+        <label>up_finger</label>
+        <part name="0" x="256" y="199" />
+        <part name="1" x="246" y="178" />
+        <part name="2" x="253" y="227" />
+        <part name="3" x="280" y="215" />
+        <part name="4" x="261" y="259" />
+        <part name="5" x="299" y="241" />
+        <part name="6" x="279" y="286" />
+        <part name="7" x="308" y="272" />
+        <part name="8" x="310" y="315" />
+      </box>
+      <box top="113" left="402" width="68" height="203">
+        <label>up_toe</label>
+        <part name="0" x="424" y="151" />
+        <part name="1" x="419" y="122" />
+        <part name="2" x="410" y="184" />
+        <part name="3" x="448" y="177" />
+        <part name="4" x="410" y="225" />
+        <part name="5" x="462" y="215" />
+        <part name="6" x="423" y="263" />
+        <part name="7" x="463" y="256" />
+        <part name="8" x="452" y="309" />
+      </box>
+      <box top="172" left="528" width="72" height="167">
+        <label>bot_finger</label>
+        <part name="0" x="584" y="204" />
+        <part name="1" x="593" y="180" />
+        <part name="2" x="560" y="223" />
+        <part name="3" x="591" y="234" />
+        <part name="4" x="543" y="252" />
+        <part name="5" x="585" y="268" />
+        <part name="6" x="536" y="286" />
+        <part name="7" x="569" y="298" />
+        <part name="8" x="538" y="332" />
+      </box>
+      <box top="397" left="317" width="193" height="65">
+        <label>bot_toe</label>
+        <part name="0" x="475" y="418" />
+        <part name="1" x="504" y="414" />
+        <part name="2" x="444" y="406" />
+        <part name="3" x="451" y="441" />
+        <part name="4" x="406" y="406" />
+        <part name="5" x="414" y="454" />
+        <part name="6" x="369" y="418" />
+        <part name="7" x="376" y="456" />
+        <part name="8" x="326" y="445" />
+      </box>
+    </image>
+    <image file="toepad_specimen_003.jpg">
+      <box top="169" left="248" width="80" height="153">
+        <label>up_finger</label>
+        <part name="0" x="266" y="199" />
+        <part name="1" x="256" y="178" />
+        <part name="2" x="263" y="227" />
+        <part name="3" x="290" y="215" />
+        <part name="4" x="271" y="259" />
+        <part name="5" x="309" y="241" />
+        <part name="6" x="289" y="286" />
+        <part name="7" x="318" y="272" />
+        <part name="8" x="320" y="315" />
+      </box>
+      <box top="113" left="410" width="68" height="203">
+        <label>up_toe</label>
+        <part name="0" x="432" y="151" />
+        <part name="1" x="427" y="122" />
+        <part name="2" x="418" y="184" />
+        <part name="3" x="456" y="177" />
+        <part name="4" x="418" y="225" />
+        <part name="5" x="470" y="215" />
+        <part name="6" x="431" y="263" />
+        <part name="7" x="471" y="256" />
+        <part name="8" x="460" y="309" />
+      </box>
+      <box top="172" left="520" width="72" height="167">
+        <label>bot_finger</label>
+        <part name="0" x="576" y="204" />
+        <part name="1" x="585" y="180" />
+        <part name="2" x="552" y="223" />
+        <part name="3" x="583" y="234" />
+        <part name="4" x="535" y="252" />
+        <part name="5" x="577" y="268" />
+        <part name="6" x="528" y="286" />
+        <part name="7" x="561" y="298" />
+        <part name="8" x="530" y="332" />
+      </box>
+      <box top="397" left="322" width="193" height="65">
+        <label>bot_toe</label>
+        <part name="0" x="480" y="418" />
+        <part name="1" x="509" y="414" />
+        <part name="2" x="449" y="406" />
+        <part name="3" x="456" y="441" />
+        <part name="4" x="411" y="406" />
+        <part name="5" x="419" y="454" />
+        <part name="6" x="374" y="418" />
+        <part name="7" x="381" y="456" />
+        <part name="8" x="331" y="445" />
+      </box>
+    </image>
+    <image file="toepad_specimen_004.jpg">
+      <box top="169" left="258" width="80" height="153">
+        <label>up_finger</label>
+        <part name="0" x="276" y="199" />
+        <part name="1" x="266" y="178" />
+        <part name="2" x="273" y="227" />
+        <part name="3" x="300" y="215" />
+        <part name="4" x="281" y="259" />
+        <part name="5" x="319" y="241" />
+        <part name="6" x="299" y="286" />
+        <part name="7" x="328" y="272" />
+        <part name="8" x="330" y="315" />
+      </box>
+      <box top="113" left="418" width="68" height="203">
+        <label>up_toe</label>
+        <part name="0" x="440" y="151" />
+        <part name="1" x="435" y="122" />
+        <part name="2" x="426" y="184" />
+        <part name="3" x="464" y="177" />
+        <part name="4" x="426" y="225" />
+        <part name="5" x="478" y="215" />
+        <part name="6" x="439" y="263" />
+        <part name="7" x="479" y="256" />
+        <part name="8" x="468" y="309" />
+      </box>
+      <box top="172" left="512" width="72" height="167">
+        <label>bot_finger</label>
+        <part name="0" x="568" y="204" />
+        <part name="1" x="577" y="180" />
+        <part name="2" x="544" y="223" />
+        <part name="3" x="575" y="234" />
+        <part name="4" x="527" y="252" />
+        <part name="5" x="569" y="268" />
+        <part name="6" x="520" y="286" />
+        <part name="7" x="553" y="298" />
+        <part name="8" x="522" y="332" />
+      </box>
+      <box top="397" left="327" width="193" height="65">
+        <label>bot_toe</label>
+        <part name="0" x="485" y="418" />
+        <part name="1" x="514" y="414" />
+        <part name="2" x="454" y="406" />
+        <part name="3" x="461" y="441" />
+        <part name="4" x="416" y="406" />
+        <part name="5" x="424" y="454" />
+        <part name="6" x="379" y="418" />
+        <part name="7" x="386" y="456" />
+        <part name="8" x="336" y="445" />
+      </box>
+    </image>
+    <image file="toepad_specimen_005.jpg">
+      <box top="169" left="268" width="80" height="153">
+        <label>up_finger</label>
+        <part name="0" x="286" y="199" />
+        <part name="1" x="276" y="178" />
+        <part name="2" x="283" y="227" />
+        <part name="3" x="310" y="215" />
+        <part name="4" x="291" y="259" />
+        <part name="5" x="329" y="241" />
+        <part name="6" x="309" y="286" />
+        <part name="7" x="338" y="272" />
+        <part name="8" x="340" y="315" />
+      </box>
+      <box top="113" left="426" width="68" height="203">
+        <label>up_toe</label>
+        <part name="0" x="448" y="151" />
+        <part name="1" x="443" y="122" />
+        <part name="2" x="434" y="184" />
+        <part name="3" x="472" y="177" />
+        <part name="4" x="434" y="225" />
+        <part name="5" x="486" y="215" />
+        <part name="6" x="447" y="263" />
+        <part name="7" x="487" y="256" />
+        <part name="8" x="476" y="309" />
+      </box>
+      <box top="172" left="504" width="72" height="167">
+        <label>bot_finger</label>
+        <part name="0" x="560" y="204" />
+        <part name="1" x="569" y="180" />
+        <part name="2" x="536" y="223" />
+        <part name="3" x="567" y="234" />
+        <part name="4" x="519" y="252" />
+        <part name="5" x="561" y="268" />
+        <part name="6" x="512" y="286" />
+        <part name="7" x="545" y="298" />
+        <part name="8" x="514" y="332" />
+      </box>
+      <box top="397" left="332" width="193" height="65">
+        <label>bot_toe</label>
+        <part name="0" x="490" y="418" />
+        <part name="1" x="519" y="414" />
+        <part name="2" x="459" y="406" />
+        <part name="3" x="466" y="441" />
+        <part name="4" x="421" y="406" />
+        <part name="5" x="429" y="454" />
+        <part name="6" x="384" y="418" />
+        <part name="7" x="391" y="456" />
+        <part name="8" x="341" y="445" />
+      </box>
+    </image>
+  </images>
+</dataset>
