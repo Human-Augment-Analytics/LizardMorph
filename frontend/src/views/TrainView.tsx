@@ -38,6 +38,7 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome, onUseModel }) => {
   const [previewImageUrls, setPreviewImageUrls] = useState<Record<string, string>>({});
   const [selectedImageIndex, setSelectedImageIndex] = useState<number>(0);
   const [selectedDigitIndex, setSelectedDigitIndex] = useState<number | null>(null);
+  const [previewPointScale, setPreviewPointScale] = useState<number>(0.5);
   const [showPreviewLandmarks, setShowPreviewLandmarks] = useState<boolean>(true);
   const [showPreviewBoxes, setShowPreviewBoxes] = useState<boolean>(true);
   const [showPreviewLabels, setShowPreviewLabels] = useState<boolean>(true);
@@ -759,6 +760,21 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome, onUseModel }) => {
                       />
                       Show Point IDs
                     </label>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: 600 }}>
+                      <span>Point Size:</span>
+                      <input
+                        type="range"
+                        min="0.2"
+                        max="2.0"
+                        step="0.1"
+                        value={previewPointScale}
+                        onChange={(e) => setPreviewPointScale(parseFloat(e.target.value))}
+                        style={{ width: "80px", accentColor: "#00E5FF", cursor: "pointer" }}
+                        title={`Point size: ${previewPointScale}x`}
+                      />
+                      <span style={{ minWidth: "28px", opacity: 0.8 }}>{(previewPointScale * 100).toFixed(0)}%</span>
+                    </div>
                   </div>
                 </div>
 
@@ -801,9 +817,9 @@ export const TrainView: React.FC<Props> = ({ onNavigateHome, onUseModel }) => {
                     viewBox = `${vX} ${vY} ${vW} ${vH}`;
                   }
 
-                  const lmRadius = isZoomed ? 3.0 : Math.max(8, (curImg.width || 800) / 100);
-                  const strokeWidth = isZoomed ? 0.8 : Math.max(2, (curImg.width || 800) / 400);
-                  const fontSize = isZoomed ? 8 : Math.max(14, (curImg.width || 800) / 70);
+                  const lmRadius = (isZoomed ? 1.6 : Math.max(3.0, (curImg.width || 800) / 280)) * previewPointScale;
+                  const strokeWidth = (isZoomed ? 0.4 : Math.max(0.6, (curImg.width || 800) / 900)) * Math.max(0.6, previewPointScale);
+                  const fontSize = (isZoomed ? 6 : Math.max(8, (curImg.width || 800) / 140)) * Math.max(0.6, previewPointScale);
 
                   return (
                     <div>
