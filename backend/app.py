@@ -1560,6 +1560,7 @@ def list_sessions():
 
 
 @app.route("/data", methods=["POST", "OPTIONS"])
+@app.route("/api/data", methods=["POST", "OPTIONS"])
 @track_metrics
 def upload():
     if request.method == "OPTIONS":
@@ -2106,6 +2107,7 @@ def serve_image(filename):
 
 # New endpoint to list all files in the session upload folder
 @app.route("/list_uploads", methods=["GET"])
+@app.route("/api/list_uploads", methods=["GET"])
 @cross_origin()
 @track_metrics
 def list_uploads():
@@ -2140,6 +2142,7 @@ def list_uploads():
 
 # Endpoint to process an existing image from the session uploads folder
 @app.route("/process_existing", methods=["POST"])
+@app.route("/api/process_existing", methods=["POST"])
 @cross_origin()
 @track_metrics
 def process_existing():
@@ -2329,6 +2332,7 @@ def process_existing():
 
 # New endpoint to save annotations (updated landmark points)
 @app.route("/save_annotations", methods=["POST"])
+@app.route("/api/save_annotations", methods=["POST"])
 @cross_origin()
 @track_metrics
 def save_annotations():
@@ -2519,6 +2523,7 @@ def save_annotations():
 
 # New endpoint to create zip from all export directories
 @app.route("/download_all", methods=["GET"])
+@app.route("/api/download_all", methods=["GET"])
 @cross_origin()
 @track_metrics
 def download_all_exports():
@@ -2752,6 +2757,7 @@ def github_webhook():
         return jsonify({"error": f"Webhook processing error: {str(e)}"}), 500
 
 @app.route("/extract_id", methods=["POST"])
+@app.route("/api/extract_id", methods=["POST"])
 @cross_origin()
 @track_metrics
 def extract_id():

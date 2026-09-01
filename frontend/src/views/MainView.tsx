@@ -836,12 +836,17 @@ export class MainView extends Component<MainProps, MainState> {
         },
         currentImageURL: null,
         imageFilename: null,
+        imageWidth: 0,
+        imageHeight: 0,
         dataFetched: false,
         lizardCount: 0,
         currentBoundingBoxes: [],
         extractedId: null,
         extractedIdConfidence: null,
         selectedPoint: null,
+        measurements: [],
+        downloadData: [],
+        selectedImageVersion: "original",
         dataError: null,
       });
 
