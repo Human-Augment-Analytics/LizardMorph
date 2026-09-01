@@ -1097,11 +1097,13 @@ export class MainView extends Component<MainProps, MainState> {
       });
     } catch (error) {
       console.error("Error loading image from uploads:", error);
-      this.setState({
+      this.setState((prev) => ({
+        uploadHistory: prev.uploadHistory.filter((item) => item.name !== filename),
+        lizardCount: Math.max(0, prev.lizardCount - 1),
         dataError: error instanceof Error ? error : new Error("Unknown error"),
-      });
+      }));
     } finally {
-      this.setState({ loading: false });
+      this.setState({ loading: false, dataLoading: false });
     }
   };
 

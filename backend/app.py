@@ -2125,7 +2125,10 @@ def list_uploads():
 
         results = []
         for filename in sorted(os.listdir(upload_folder)):
-            if os.path.isfile(os.path.join(upload_folder, filename)):
+            if filename.startswith("annotations.") or filename.endswith((".xml", ".tps", ".csv", ".json", ".txt")):
+                continue
+            file_path = os.path.join(upload_folder, filename)
+            if os.path.isfile(file_path):
                 _, ext = os.path.splitext(filename)
                 if ext.lower() in valid_extensions:
                     view_type = image_views.get(filename, "dorsal")  # Default to dorsal if unknown

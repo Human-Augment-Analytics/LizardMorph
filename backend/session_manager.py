@@ -89,9 +89,25 @@ class SessionManager:
         return folders
 
     def find_session_folder(self, session_id_short: str) -> Optional[str]:
-        """Locate the newest session folder carrying the short ID image URLs use."""
-        for _, short_id, _, session_folder in self.session_folders():
-            if short_id == session_id_short:
+        """Locate the session folder matching full folder name, short ID, or UUID prefix."""
+        if not session_id_short:
+            return None
+
+        # Check direct folder match
+        direct_path = os.path.join(self.base_sessions_dir, session_id_short)
+        if os.path.isdir(direct_path):
+            return direct_path
+
+        clean_id = session_id_short.strip()
+        short_candidate = clean_id.split("_")[-1] if clean_id.startswith("session_") else clean_id[:8]
+
+        for _, short_id, folder_name, session_folder in self.session_folders():
+            if (
+                folder_name == clean_id
+                or short_id == short_candidate
+                or short_id == clean_id[:8]
+                or clean_id.startswith(short_id)
+            ):
                 return session_folder
 
         return None
