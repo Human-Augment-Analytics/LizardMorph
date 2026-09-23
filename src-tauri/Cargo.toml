@@ -1,6 +1,6 @@
 [package]
 name = "automorph"
-version = "1.0.8"
+version = "1.2.0"
 description = "AutoMorph Tauri Desktop Application"
 authors = ["Human Augment Analytics"]
 edition = "2021"
