@@ -783,7 +783,8 @@ def score_landmark_quality(landmarks):
     return ratio * max(0.0, corr)
 
 
-def _predict_toepad_crop(predictor, img_bgr, corners, predictor_path, padding_ratio=0.3):
+def _predict_toepad_crop(predictor, img_bgr, corners, predictor_path, padding_ratio=0.3,
+                         *, rectify_512=None):
     """Match the bundled predictor's training geometry; return image-space points.
 
     ml_morph_best.dat uses a BGR, perspective-rectified, letterboxed 512 canvas.
@@ -793,7 +794,9 @@ def _predict_toepad_crop(predictor, img_bgr, corners, predictor_path, padding_ra
     corners = np.asarray(corners, dtype=np.float32)
     if corners.shape != (4, 2) or not np.isfinite(corners).all():
         raise ValueError("Expected four finite toepad OBB corners")
-    if os.path.basename(predictor_path or "") != "ml_morph_best.dat":
+    if rectify_512 is None:
+        rectify_512 = os.path.basename(predictor_path or "") == "ml_morph_best.dat"
+    if not rectify_512:
         x, y, bw, bh = cv2.boundingRect(corners.astype(np.int32))
         ih, iw = img_bgr.shape[:2]
         px, py = int(bw * padding_ratio), int(bh * padding_ratio)

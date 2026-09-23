@@ -1,5 +1,6 @@
 """Regression coverage for pretrained toepad crop geometry and both entry points."""
 from types import SimpleNamespace
+import json
 import xml.etree.ElementTree as ET
 
 import cv2
@@ -95,7 +96,48 @@ def test_builtin_engine_uses_same_pretrained_geometry(monkeypatch):
         classes=[ClassConfig(id=0, name='up_toe', predictor='ml_morph_best.dat', landmark_schema='toe')],
         landmark_schemas={'toe': LandmarkSchemaConfig(points=['0'])})
     result = engine.predict(image, manifest)
+    json.dumps(result)  # Public engine output must be safe for Flask's JSON response.
     point = result[0]['landmarks'][0]
     assert abs(point['x'] - 100) <= 1
     assert abs(point['y'] - 129) <= 1
     assert predictor.calls[0][0].shape == (512, 512, 3)
+
+
+def test_transfer_manifest_preserves_protocol_after_rename_and_roundtrip(monkeypatch):
+    from backend.domain.models import Manifest, DetectorConfig, ClassConfig, LandmarkSchemaConfig
+    from backend.inference.engine import GenericPipelineEngine
+
+    manifest = Manifest(
+        schema_version=1, id='anolis-transfer-test', name='Transfer', description='Test',
+        detector=DetectorConfig(artifact='renamed-detector.onnx', inference_protocol='toepad-dual-pass'),
+        classes=[ClassConfig(id=1, name='up_toe', predictor='renamed-landmarks.dat',
+                             landmark_schema='toe', preprocessing='toepad-rectify-512')],
+        landmark_schemas={'toe': LandmarkSchemaConfig(points=['0'])})
+    restored = Manifest.from_dict(manifest.to_dict())
+    assert restored.detector.inference_protocol == 'toepad-dual-pass'
+    assert restored.classes[0].preprocessing == 'toepad-rectify-512'
+    corners = np.array([[80, 30], [140, 50], [120, 110], [60, 90]], np.float32)
+    detector = SimpleNamespace(detect=lambda *a, **k: {
+        'up_toe': [{'corners': corners, 'conf': .95}]})
+    engine = GenericPipelineEngine()
+    predictor = RecordingPredictor()
+    monkeypatch.setattr(engine, '_resolve_artifact_path', lambda path, bundle: path)
+    def get_detector(*args, **kwargs):
+        assert kwargs['legacy_toepad'] is True
+        return detector
+    monkeypatch.setattr(engine, '_get_detector', get_detector)
+    monkeypatch.setattr(engine, '_get_shape_predictor', lambda path: predictor)
+    result = engine.predict(np.full((200, 300, 3), 127, np.uint8), restored)
+    json.dumps(result)  # Public engine output must be safe for Flask's JSON response.
+    point = result[0]['landmarks'][0]
+    assert abs(point['x'] - 100) <= 1
+    assert abs(point['y'] - 129) <= 1
+    assert predictor.calls[0][0].shape == (512, 512, 3)
+
+
+def test_unknown_model_protocols_are_rejected():
+    from backend.domain.models import DetectorConfig, ClassConfig
+    with pytest.raises(ValueError, match='detector protocol'):
+        DetectorConfig(artifact='model.onnx', inference_protocol='typo')
+    with pytest.raises(ValueError, match='landmark preprocessing'):
+        ClassConfig(id=0, name='toe', preprocessing='typo')

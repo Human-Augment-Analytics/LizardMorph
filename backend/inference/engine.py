@@ -101,7 +101,9 @@ class GenericPipelineEngine:
             return self._detector_cache[cache_key]
 
         if artifact_path.endswith(".onnx"):
-            if legacy_toepad and OrtYoloDetector is not None:
+            if legacy_toepad:
+                if OrtYoloDetector is None:
+                    raise RuntimeError("The toepad dual-pass detector is unavailable.")
                 detector = OrtYoloDetector(artifact_path)
             else:
                 detector = GenericOrtYoloOBBDetector(
@@ -189,6 +191,12 @@ class GenericPipelineEngine:
             raise ValueError(f"Model '{manifest.name}' does not define any classes.")
 
         h_img, w_img = image.shape[:2]
+        toepad_dual_pass = (
+            manifest.detector.inference_protocol == "toepad-dual-pass"
+            or manifest.id == "lizard-toepad-v1"
+        )
+        if toepad_dual_pass and not manifest.detector.artifact.endswith(".onnx"):
+            raise ValueError("The toepad dual-pass protocol requires an ONNX detector.")
         targets = []
 
         # Run detector if available
@@ -204,7 +212,7 @@ class GenericPipelineEngine:
             detector = self._get_detector(
                 artifact_path,
                 class_names,
-                legacy_toepad=manifest.id == "lizard-toepad-v1",
+                legacy_toepad=toepad_dual_pass,
                 iou_threshold=manifest.detector.iou,
             )
             conf = manifest.detector.confidence if manifest.detector else 0.25
@@ -213,7 +221,7 @@ class GenericPipelineEngine:
                 for detection in detections.get(cls_cfg.name, []):
                     corners = detection.get("corners")
                     if (
-                        manifest.id == "lizard-toepad-v1"
+                        toepad_dual_pass
                         and cls_cfg.name.startswith("up_")
                         and corners is not None
                     ):
@@ -268,8 +276,9 @@ class GenericPipelineEngine:
                 try:
                     schema = manifest.landmark_schemas.get(cls_cfg.landmark_schema or "")
                     expected_names = schema.points if schema else []
-                    if (manifest.id == "lizard-toepad-v1"
-                            and os.path.basename(pred_path) == "ml_morph_best.dat"):
+                    if (cls_cfg.preprocessing == "toepad-rectify-512"
+                            or (manifest.id == "lizard-toepad-v1"
+                                and os.path.basename(pred_path) == "ml_morph_best.dat")):
                         try:
                             from backend.utils import _predict_toepad_crop
                         except ImportError:
@@ -283,7 +292,8 @@ class GenericPipelineEngine:
                         if class_name.startswith("up_"):
                             source = cv2.flip(image, 0)
                             corners[:, 1] = h_img - 1 - corners[:, 1]
-                        pts_orig = _predict_toepad_crop(sp, source, corners, pred_path)
+                        pts_orig = _predict_toepad_crop(
+                            sp, source, corners, pred_path, rectify_512=True)
                         if class_name.startswith("up_"):
                             pts_orig[:, 1] = h_img - 1 - pts_orig[:, 1]
                         if expected_names and len(pts_orig) != len(expected_names):
@@ -330,7 +340,10 @@ class GenericPipelineEngine:
                 {
                     "class_name": class_name,
                     "obb": obb,
-                    "corners": target.get("corners"),
+                    "corners": (
+                        np.asarray(target["corners"], dtype=float).tolist()
+                        if target.get("corners") is not None else None
+                    ),
                     "confidence": target.get("confidence"),
                     "landmarks": landmarks,
                 }

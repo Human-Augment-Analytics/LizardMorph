@@ -9,6 +9,11 @@ class DetectorConfig:
     geometry: str = "obb"
     confidence: float = 0.25
     iou: float = 0.45
+    inference_protocol: str = "generic-obb"
+
+    def __post_init__(self):
+        if self.inference_protocol not in {"generic-obb", "toepad-dual-pass"}:
+            raise ValueError(f"Unknown detector protocol: {self.inference_protocol}")
 
 
 @dataclass
@@ -18,6 +23,11 @@ class ClassConfig:
     landmark_schema: Optional[str] = None
     predictor: Optional[str] = None
     crop_padding: float = 0.2
+    preprocessing: str = "affine"
+
+    def __post_init__(self):
+        if self.preprocessing not in {"affine", "toepad-rectify-512"}:
+            raise ValueError(f"Unknown landmark preprocessing: {self.preprocessing}")
 
 
 @dataclass
@@ -59,6 +69,7 @@ class Manifest:
                 geometry=detector_data.get("geometry", "obb"),
                 confidence=float(detector_data.get("confidence", 0.25)),
                 iou=float(detector_data.get("iou", 0.45)),
+                inference_protocol=detector_data.get("inference_protocol", "generic-obb"),
             )
         else:
             detector = detector_data
@@ -120,6 +131,7 @@ class Manifest:
                 "geometry": self.detector.geometry,
                 "confidence": self.detector.confidence,
                 "iou": self.detector.iou,
+                "inference_protocol": self.detector.inference_protocol,
             },
             "classes": [
                 {
@@ -128,6 +140,7 @@ class Manifest:
                     "landmark_schema": c.landmark_schema,
                     "predictor": c.predictor,
                     "crop_padding": c.crop_padding,
+                    "preprocessing": c.preprocessing,
                 }
                 for c in self.classes
             ],
