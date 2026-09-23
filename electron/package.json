@@ -2,6 +2,8 @@
   "name": "automorph",
   "version": "1.0.8",
   "description": "AutoMorph - Automated lizard morphology analysis",
+  "author": "Human Augment Analytics <info@humanaugmentanalytics.com>",
+  "homepage": "https://github.com/Human-Augment-Analytics/LizardMorph",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -62,7 +64,8 @@
         "deb"
       ],
       "icon": "icons/icon.png",
-      "category": "Education"
+      "category": "Education",
+      "maintainer": "Human Augment Analytics <info@humanaugmentanalytics.com>"
     },
     "extraResources": [
       {
