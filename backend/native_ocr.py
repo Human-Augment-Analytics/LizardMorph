@@ -17,20 +17,24 @@ def _create_reader():
     """Create a platform-native OCR reader."""
     system = platform.system()
     if system == "Darwin":
-        return _MacOSReader()
-    elif system == "Windows":
-        return _WindowsReader()
-    elif system == "Linux":
         try:
-            return _LinuxTesseractReader()
+            return _MacOSReader()
         except ImportError:
-            _logger.warning(
-                "Linux: tesseract not available (install apt package tesseract-ocr). "
-                "ID OCR will return no text until it is installed."
-            )
-            return _LinuxTesseractPlaceholderReader()
-    else:
-        raise ImportError(f"No native OCR available for {system}. Install easyocr as fallback.")
+            _logger.info("Apple Vision is unavailable; falling back to Tesseract OCR.")
+    elif system == "Windows":
+        try:
+            return _WindowsReader()
+        except ImportError:
+            _logger.info("Windows OCR is unavailable; falling back to Tesseract OCR.")
+
+    try:
+        return _LinuxTesseractReader()
+    except (ImportError, RuntimeError):
+        _logger.warning(
+            "%s: native OCR and tesseract are unavailable. ID OCR is disabled.",
+            system,
+        )
+        return _LinuxTesseractPlaceholderReader()
 
 
 class _NullReader:

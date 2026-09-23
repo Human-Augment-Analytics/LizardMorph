@@ -2,7 +2,23 @@ function hasDom(): boolean {
   return typeof window !== "undefined";
 }
 
-function isTauriRuntime(): boolean {
+export function isDesktopRuntime(): boolean {
+  if (!hasDom()) {
+    return false;
+  }
+  const electronAPI = window.electronAPI;
+  const runtimeWindow = window as typeof window & { __TAURI__?: unknown; __TAURI_INTERNALS__?: unknown };
+  return (
+    Boolean(electronAPI?.isElectron) ||
+    Boolean(runtimeWindow.__TAURI__) ||
+    Boolean(runtimeWindow.__TAURI_INTERNALS__) ||
+    window.location.protocol === "tauri:" ||
+    window.location.hostname === "tauri.localhost" ||
+    window.location.protocol === "file:"
+  );
+}
+
+export function isTauriRuntime(): boolean {
   if (!hasDom()) {
     return false;
   }
@@ -14,7 +30,7 @@ function isTauriRuntime(): boolean {
   );
 }
 
-function fallbackApiUrl(): string {
+export function fallbackApiUrl(): string {
   if (isTauriRuntime()) {
     return "http://127.0.0.1:3005";
   }
@@ -25,7 +41,7 @@ async function resolveApiUrl(): Promise<string> {
   if (hasDom() && window.electronAPI?.isElectron) {
     try {
       const port = await window.electronAPI.getBackendPort();
-      return `http://127.0.0.1:${port}`;
+      if (port) return `http://127.0.0.1:${port}`;
     } catch {
       // fallback
     }
@@ -40,4 +56,26 @@ export function getApiUrl(): Promise<string> {
     _apiUrlPromise = resolveApiUrl();
   }
   return _apiUrlPromise;
+}
+
+export async function fetchWithBackendRetry(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  // The bundled PyInstaller backend can take over a minute to extract on a
+  // cold macOS launch. Keep the desktop UI in its loading state long enough
+  // for that first boot instead of surfacing a false connection error.
+  const attempts = isDesktopRuntime() ? 360 : 1;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await fetch(input, init);
+    } catch (error: unknown) {
+      lastError = error;
+      if (attempt + 1 < attempts) {
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Backend is unavailable");
 }

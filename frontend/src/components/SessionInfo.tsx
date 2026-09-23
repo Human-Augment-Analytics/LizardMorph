@@ -1,8 +1,8 @@
 import { Component } from "react";
-import lizard_logo from "../../public/lizard.svg";
+import lizard_logo from "../assets/lizard.svg";
 import { ApiService } from "../services/ApiService";
 import { SessionService } from "../services/SessionService";
-import type { ResolvedTheme, ThemePreference } from "../contexts/ThemeContext";
+import type { ResolvedTheme, ThemePreference } from "../contexts/theme";
 import { getTokens } from "../contexts/themeTokens";
 
 interface SessionInfoState {

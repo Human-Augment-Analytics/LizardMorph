@@ -14,7 +14,10 @@ import shutil
 import random
 import numpy as np
 import cv2
-import predictor_library
+if __package__:
+    from backend import predictor_library
+else:
+    import predictor_library
 try:
     import dlib
 except ImportError:
@@ -780,6 +783,61 @@ def score_landmark_quality(landmarks):
     return ratio * max(0.0, corr)
 
 
+def _predict_toepad_crop(predictor, img_bgr, corners, predictor_path, padding_ratio=0.3,
+                         *, rectify_512=None):
+    """Match the bundled predictor's training geometry; return image-space points.
+
+    ml_morph_best.dat uses a BGR, perspective-rectified, letterboxed 512 canvas.
+    Older predictors retain their padded RGB axis-aligned crop. Callers must pass
+    corners in the coordinate system of img_bgr (including for flipped images).
+    """
+    corners = np.asarray(corners, dtype=np.float32)
+    if corners.shape != (4, 2) or not np.isfinite(corners).all():
+        raise ValueError("Expected four finite toepad OBB corners")
+    if rectify_512 is None:
+        rectify_512 = os.path.basename(predictor_path or "") == "ml_morph_best.dat"
+    if not rectify_512:
+        x, y, bw, bh = cv2.boundingRect(corners.astype(np.int32))
+        ih, iw = img_bgr.shape[:2]
+        px, py = int(bw * padding_ratio), int(bh * padding_ratio)
+        x1, y1 = max(0, x - px), max(0, y - py)
+        x2, y2 = min(iw, x + bw + px), min(ih, y + bh + py)
+        crop = img_bgr[y1:y2, x1:x2]
+        if not crop.size:
+            raise ValueError("Toepad crop is outside the image")
+        crop = np.ascontiguousarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
+        h, w = crop.shape[:2]
+        shape = predictor(crop, dlib.rectangle(0, 0, w, h))
+        return np.array([(p.x + x1, p.y + y1) for p in shape.parts()], dtype=float)
+
+    # Keep corner ordering, integer crop dimensions, and letterbox rounding in
+    # parity with the ml-morph training/evaluation protocol.
+    by_y = corners[np.argsort(corners[:, 1])]
+    top = by_y[:2][np.argsort(by_y[:2, 0])]
+    bottom = by_y[2:][np.argsort(by_y[2:, 0])]
+    box = np.array([top[0], top[1], bottom[1], bottom[0]], dtype=np.float32)
+    w = int(round(np.linalg.norm(box[1] - box[0])))
+    h = int(round(np.linalg.norm(box[2] - box[1])))
+    if w < 2 or h < 2 or abs(cv2.contourArea(box)) < 1:
+        raise ValueError("Degenerate toepad OBB")
+    dst = np.array([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], dtype=np.float32)
+    transform = cv2.getPerspectiveTransform(box, dst)
+    crop = cv2.warpPerspective(img_bgr, transform, (w, h))
+    scale = min(512.0 / h, 512.0 / w)
+    nw, nh = int(w * scale), int(h * scale)
+    if nw < 1 or nh < 1:
+        raise ValueError("Toepad OBB aspect ratio is too extreme")
+    pad_x, pad_y = (512 - nw) // 2, (512 - nh) // 2
+    canvas = np.zeros((512, 512, 3), dtype=np.uint8)
+    canvas[pad_y:pad_y + nh, pad_x:pad_x + nw] = cv2.resize(crop, (nw, nh))
+    shape = predictor(canvas, dlib.rectangle(0, 0, 512, 512))
+    points = np.array([(p.x, p.y) for p in shape.parts()], dtype=float)
+    points = (points - [pad_x, pad_y]) / scale
+    homogeneous = np.column_stack([points, np.ones(len(points))])
+    projected = homogeneous @ np.linalg.inv(transform).T
+    return projected[:, :2] / projected[:, 2:3]
+
+
 def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                                         yolo_model_path: str = None,
                                         toe_predictor_path: str = None,
@@ -799,8 +857,8 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
     For scale bars: Uses YOLO only (no ml-morph/dlib predictor). Creates two landmarks by removing
     0mm from the left and 1mm from the right edges of the YOLO bounding box (asymmetrical padding).
     
-    For all toe/finger detections: The image region is cropped to the YOLO bounding box
-    before running the dlib predictor, then coordinates are transformed back.
+    ml_morph_best.dat uses the training-compatible rectify-512 OBB crop. Legacy
+    predictors use padded axis-aligned crops; both return original-image coordinates.
     
     Parameters:
     ----------
@@ -879,7 +937,10 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
     if model is not None:
         try:
             # Check if model is an OrtYoloDetector (direct ONNX Runtime inference)
-            from ort_inference import OrtYoloDetector
+            if __package__:
+                from backend.ort_inference import OrtYoloDetector
+            else:
+                from ort_inference import OrtYoloDetector
             _is_ort = isinstance(model, OrtYoloDetector)
 
             obj_count = 0
@@ -986,33 +1047,6 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                         continue
                     survivors.append(det)
                 return survivors[0] if survivors else None
-
-            def _get_padded_crop(img_bgr, corners_orig):
-                """Crop padded bbox from full-res image, return (crop_rgb, x_off, y_off)."""
-                x, y, bw, bh = cv2.boundingRect(corners_orig.astype(np.int32))
-                ih, iw = img_bgr.shape[:2]
-                px = int(bw * padding_ratio)
-                py = int(bh * padding_ratio)
-                x1 = max(0, x - px)
-                y1 = max(0, y - py)
-                x2 = min(iw, x + bw + px)
-                y2 = min(ih, y + bh + py)
-                crop = img_bgr[y1:y2, x1:x2]
-                crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-                crop_rgb = np.ascontiguousarray(crop_rgb, dtype=np.uint8)
-                return crop_rgb, x1, y1
-
-            def _predict_on_crop(predictor, img_bgr, corners_orig):
-                """Run dlib predictor on a cropped region, return landmarks in original coords."""
-                crop_rgb, x_off, y_off = _get_padded_crop(img_bgr, corners_orig)
-                crop_h, crop_w = crop_rgb.shape[:2]
-                rect = dlib.rectangle(0, 0, crop_w, crop_h)
-                shape = predictor(crop_rgb, rect)
-                points = []
-                for k in range(shape.num_parts):
-                    p = shape.part(k)
-                    points.append((float(p.x + x_off), float(p.y + y_off)))
-                return np.array(points, dtype=float)
 
             def _generate_landmark_xml(landmarks_global, label=None, box_idx=0):
                 """Generate XML box element from landmark coordinates with unique IDs."""
@@ -1194,7 +1228,8 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                          curr_predictor = predictors.get('finger') if 'finger' in category else predictors.get('toe')
                          print(f"DEBUG {category}: predictors={list(predictors.keys())}, curr_predictor={'FOUND' if curr_predictor else 'NONE'}")
                          if curr_predictor:
-                              landmarks_global = _predict_on_crop(curr_predictor, img_raw_bgr, best_det['corners'])
+                              landmarks_global = _predict_toepad_crop(curr_predictor, img_raw_bgr, best_det['corners'],
+                                  finger_predictor_path if 'finger' in category else toe_predictor_path, padding_ratio)
                               image_e.append(_generate_landmark_xml(landmarks_global, label=category, box_idx=obj_count))
                               obj_count += 1
                          else:
@@ -1209,7 +1244,8 @@ def predictions_to_xml_single_with_yolo(image_path: str, output: str,
                         if curr_predictor:
                              # Both ORT and Ultralytics flip-pass return up_finger/up_toe corners
                              # already in flipped image space — use them directly.
-                             landmarks_flipped = _predict_on_crop(curr_predictor, flipped_bgr, best_det['corners'])
+                             landmarks_flipped = _predict_toepad_crop(curr_predictor, flipped_bgr, best_det['corners'],
+                                 finger_predictor_path if 'finger' in category else toe_predictor_path, padding_ratio)
                              # Flip the y-coordinate back: y_orig = h_img - 1 - y_flipped
                              landmarks_global = landmarks_flipped.copy()
                              landmarks_global[:, 1] = h_img - 1 - landmarks_flipped[:, 1]
@@ -1727,33 +1763,6 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
             survivors.append(det)
         return survivors[0] if survivors else None
 
-    def _get_padded_crop(img_bgr, corners_orig):
-        """Crop padded bbox from full-res image, return (crop_rgb, x_off, y_off)."""
-        x, y, bw, bh = cv2.boundingRect(corners_orig.astype(np.int32))
-        ih, iw = img_bgr.shape[:2]
-        px = int(bw * padding_ratio)
-        py = int(bh * padding_ratio)
-        x1 = max(0, x - px)
-        y1 = max(0, y - py)
-        x2 = min(iw, x + bw + px)
-        y2 = min(ih, y + bh + py)
-        crop = img_bgr[y1:y2, x1:x2]
-        crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-        crop_rgb = np.ascontiguousarray(crop_rgb, dtype=np.uint8)
-        return crop_rgb, x1, y1
-
-    def _predict_on_crop(curr_predictor, img_bgr, corners_orig):
-        """Run dlib predictor on a cropped region, return landmarks in original coords."""
-        crop_rgb, x_off, y_off = _get_padded_crop(img_bgr, corners_orig)
-        crop_h, crop_w = crop_rgb.shape[:2]
-        rect = dlib.rectangle(0, 0, crop_w, crop_h)
-        shape = curr_predictor(crop_rgb, rect)
-        points = []
-        for k in range(shape.num_parts):
-            p = shape.part(k)
-            points.append((float(p.x + x_off), float(p.y + y_off)))
-        return np.array(points, dtype=float)
-
     def _generate_landmark_xml(landmarks_global, label=None, box_idx=0):
         """Generate XML box element from landmark coordinates with unique IDs."""
         min_lx, min_ly = np.min(landmarks_global, axis=0)
@@ -1886,7 +1895,8 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
             elif category in ['bot_finger', 'bot_toe']:
                 curr_predictor = predictors.get('finger') if 'finger' in category else predictors.get('toe')
                 if curr_predictor:
-                     landmarks_global = _predict_on_crop(curr_predictor, img_raw_bgr, best_det['corners'])
+                     landmarks_global = _predict_toepad_crop(curr_predictor, img_raw_bgr, best_det['corners'],
+                                  finger_predictor_path if 'finger' in category else toe_predictor_path, padding_ratio)
                      image_e.append(_generate_landmark_xml(landmarks_global, label=category, box_idx=obj_count))
                      obj_count += 1
 
@@ -1900,17 +1910,11 @@ def predictions_to_xml_single_from_client_annotations(image_path: str, output: s
                      # To crop from flipped_bgr, we need to flip y coords.
                      corners_for_crop = np.copy(best_det['corners'])
                      corners_for_crop[:, 1] = h_img - 1 - corners_for_crop[:, 1]
-                     crop_rgb, x_off, y_off = _get_padded_crop(flipped_bgr, corners_for_crop)
-                     crop_h, crop_w = crop_rgb.shape[:2]
-                     rect = dlib.rectangle(0, 0, crop_w, crop_h)
-                     shape = curr_predictor(crop_rgb, rect)
-                     
-                     points = []
-                     for k in range(shape.num_parts):
-                         p = shape.part(k)
-                         points.append((float(p.x + x_off), float(h_img - 1 - (p.y + y_off))))
-                     
-                     landmarks_global = np.array(points, dtype=float)
+                     landmarks_global = _predict_toepad_crop(
+                         curr_predictor, flipped_bgr, corners_for_crop,
+                         finger_predictor_path if 'finger' in category else toe_predictor_path,
+                         padding_ratio)
+                     landmarks_global[:, 1] = h_img - 1 - landmarks_global[:, 1]
                      image_e.append(_generate_landmark_xml(landmarks_global, label=category, box_idx=obj_count))
                      obj_count += 1
 
@@ -2226,5 +2230,4 @@ def train_predictor_from_zip(model_name, zip_path, predictor_id, index_path, fil
         
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
-
 

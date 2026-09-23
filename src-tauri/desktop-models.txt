@@ -8,3 +8,4 @@ required models/lizard-toe-pad/lizard_scale.dat models/lizard-toe-pad
 optional models/lizard-toe-pad/yolo_obb_6class_h7.onnx models/lizard-toe-pad
 optional models/lizard-toe-pad/toe_predictor_obb.dat models/lizard-toe-pad
 optional models/lizard-toe-pad/finger_predictor_obb.dat models/lizard-toe-pad
+optional models/lizard-toe-pad/yolov8n-obb.pt models/lizard-toe-pad

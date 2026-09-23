@@ -34,7 +34,10 @@ def _now_iso() -> str:
 
 def _safe_filename(original: str) -> str:
     # Keep only basename; avoid path traversal
-    return os.path.basename(original or "")
+    safe = os.path.basename((original or "").replace("\\", "/"))
+    if not safe:
+        raise ValueError("A predictor filename is required")
+    return safe
 
 
 def _validate_dat_name(filename: str) -> None:
@@ -73,7 +76,10 @@ def get_predictor(index_path: str, predictor_id: str) -> Optional[PredictorMeta]
 
 
 def resolve_predictor_path(files_dir: str, meta: PredictorMeta) -> str:
-    return os.path.join(files_dir, meta.stored_filename)
+    stored_filename = os.path.basename(meta.stored_filename)
+    if stored_filename != meta.stored_filename:
+        raise ValueError("Predictor index contains an unsafe stored filename")
+    return os.path.join(files_dir, stored_filename)
 
 
 def add_predictor(
@@ -105,11 +111,12 @@ def add_predictor(
     if validate_with_dlib and dlib is not None:
         try:
             sp = dlib.shape_predictor(stored_path)
-            # dlib python bindings commonly expose `num_parts` as attribute
-            try:
-                num_parts = int(getattr(sp, "num_parts"))
-            except Exception:
-                num_parts = None
+            # dlib's Python shape_predictor does not expose num_parts directly.
+            # A tiny in-memory probe is enough to inspect the trained schema.
+            import numpy as np
+
+            probe = np.zeros((10, 10), dtype=np.uint8)
+            num_parts = int(sp(probe, dlib.rectangle(0, 0, 9, 9)).num_parts)
         except Exception as e:
             try:
                 os.remove(stored_path)
@@ -153,9 +160,11 @@ def delete_predictor(*, index_path: str, files_dir: str, predictor_id: str) -> b
 
     stored_filename = target.get("stored_filename")
     if stored_filename:
+        safe_stored_filename = os.path.basename(stored_filename)
+        if safe_stored_filename != stored_filename:
+            raise ValueError("Predictor index contains an unsafe stored filename")
         try:
-            os.remove(os.path.join(files_dir, stored_filename))
+            os.remove(os.path.join(files_dir, safe_stored_filename))
         except FileNotFoundError:
             pass
     return True
-

@@ -14,10 +14,11 @@ backend/test/
 backend/landmark_visualizations/
 /models/
 test.xml
-images/
+/images/
 *svm
 
 # Node.js
+node_modules/
 frontend/node_modules
 frontend/build
 frontend/dist/
@@ -103,6 +104,13 @@ monitoring/web.yml
 
 # Local experiments / training artifacts
 Experiment/
+/runs/
+/ml_morph_examples/
+/*.db
+/backend/*.db
+/*.pt
+/backend/*.pt
+/frontend/src-tauri
 
 # Electron build and runtime
 electron/dist/
@@ -119,5 +127,9 @@ electron/color_constrasted/
 electron/node_modules/
 electron/frontend/
 
+# Generated Tauri sidecars (built for the local target triple)
+src-tauri/binaries/python-backend-*
+
 # Local training datasets
 ml_morph_dataset.zip
+artifacts/

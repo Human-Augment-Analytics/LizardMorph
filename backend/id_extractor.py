@@ -33,7 +33,10 @@ def _get_reader():
     if _reader is not None:
         return _reader
     try:
-        from native_ocr import _create_reader
+        if __package__:
+            from backend.native_ocr import _create_reader
+        else:
+            from native_ocr import _create_reader
 
         _reader = _create_reader()
     except Exception as native_error:

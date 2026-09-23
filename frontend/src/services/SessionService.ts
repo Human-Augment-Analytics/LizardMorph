@@ -1,7 +1,5 @@
-// Session management service for handling session lifecycle and storage
-import { getApiUrl } from "./config";
+import { fetchWithBackendRetry, getApiUrl } from "./config";
 import { CookieUtils } from "./CookieUtils";
-
 interface SessionInfo {
   success: boolean;
   session_id: string;
@@ -74,7 +72,7 @@ export class SessionService {
   static async startNewSession(): Promise<string> {
     try {
       const base = await getApiUrl();
-      const response = await fetch(`${base}/session/start`, {
+      const response = await fetchWithBackendRetry(`${base}/session/start`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

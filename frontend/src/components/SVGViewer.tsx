@@ -1,7 +1,7 @@
 import { Component, createRef } from "react";
 import * as d3 from "d3";
 import { getSVGViewerStyles } from "./SVGViewer.style";
-import type { ResolvedTheme } from "../contexts/ThemeContext";
+import type { ResolvedTheme } from "../contexts/theme";
 import type { Point } from "../models/Point";
 import type { UploadHistoryItem } from "../models/UploadHistoryItem";
 import type { BoundingBox } from "../models/AnnotationsData";
@@ -101,6 +101,13 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   }
 
   componentDidUpdate(prevProps: SVGViewerProps) {
+    // If image URL cleared to null/empty (e.g. on clear history), wipe SVG DOM completely
+    if (!this.props.currentImageURL && this.svgRef.current) {
+      const svg = d3.select(this.svgRef.current);
+      svg.selectAll("*").remove();
+      return;
+    }
+
     // Handle image URL changes without full re-render to preserve zoom
     if (prevProps.currentImageURL !== this.props.currentImageURL && 
         this.props.currentImageURL && 

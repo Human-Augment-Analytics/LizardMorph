@@ -14,6 +14,9 @@ psutil
 ultralytics
 torch
 torchvision
+onnx
+onnxslim
+lap>=0.5.12
 easyocr
 pytesseract  # Linux /extract_id OCR via system tesseract (no torch); apt install tesseract-ocr
 pyobjc-framework-Vision; sys_platform == "darwin"  # macOS /extract_id OCR via the Vision framework

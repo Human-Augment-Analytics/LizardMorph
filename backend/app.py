@@ -1,9 +1,12 @@
-import os
 import multiprocessing
+import os
 import sys
 from dotenv import load_dotenv
 
 if __name__ == "__main__":
+    # PyInstaller child processes must be dispatched before importing the
+    # Flask application, otherwise multiprocessing helpers try to start a
+    # second backend server on port 3005.
     multiprocessing.freeze_support()
 
 if not getattr(sys, "frozen", False):
@@ -14,34 +17,45 @@ ENABLE_ID_OCR = os.getenv("ENABLE_ID_OCR", "true").lower() in ("1", "true", "yes
 id_extractor = None
 if ENABLE_ID_OCR:
     try:
-        import id_extractor as _id_extractor_mod
+        if __package__:
+            from backend import id_extractor as _id_extractor_mod
+        else:
+            import id_extractor as _id_extractor_mod
 
         id_extractor = _id_extractor_mod
     except ImportError:
         id_extractor = None
 
-import utils
-import visual_individual_performance
-import xray_preprocessing
-from export_handler import ExportHandler
-from session_manager import SessionManager
+if __package__:
+    from backend import predictor_library, utils, visual_individual_performance, xray_preprocessing
+    from backend.export_handler import ExportHandler
+    from backend.session_manager import SessionManager
+else:
+    import predictor_library
+    import utils
+    import visual_individual_performance
+    import xray_preprocessing
+    from export_handler import ExportHandler
+    from session_manager import SessionManager
 
 import copy
 import hmac
 import hashlib
 import subprocess
 import json
+import math
+import numpy as np
 import cv2
 import xml.etree.ElementTree as ET
 from flask import Flask, jsonify, request, send_from_directory, send_file, session
 from flask_cors import CORS, cross_origin
+from werkzeug.utils import secure_filename
 from base64 import b64encode
 import time
 import logging
 import shutil
 import psutil
 import threading
-import predictor_library
 import uuid
 from urllib.parse import quote
 
@@ -72,6 +86,28 @@ def watch_parent_process():
 
     threading.Thread(target=monitor, name="automorph-parent-watchdog", daemon=True).start()
 
+try:
+    from backend.storage.db import DatabaseManager
+    from backend.storage.repository import ModelRegistryRepository, ProjectRepository
+    from backend.domain.models import Manifest, DetectorConfig, ClassConfig, LandmarkSchemaConfig
+    from backend.inference.engine import GenericPipelineEngine
+    from backend.training.orchestration import TrainingBusyError, TrainingOrchestrator
+    from backend.training.runner import validate_training_dataset
+    from backend.datasets.canonical import CanonicalDataset
+    from backend.datasets.importers import TPSImporter, DlibXMLImporter
+    from backend.datasets.package import parse_dataset_package, padded_preview
+except ImportError:
+    from storage.db import DatabaseManager
+    from storage.repository import ModelRegistryRepository, ProjectRepository
+    from domain.models import Manifest, DetectorConfig, ClassConfig, LandmarkSchemaConfig
+    from inference.engine import GenericPipelineEngine
+    from training.orchestration import TrainingBusyError, TrainingOrchestrator
+    from training.runner import validate_training_dataset
+    from datasets.canonical import CanonicalDataset
+    from datasets.importers import TPSImporter, DlibXMLImporter
+    from datasets.package import parse_dataset_package, padded_preview
+
+
 # prometheus_client is optional in some environments (e.g. minimal installs, tests)
 try:
     from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
@@ -87,6 +123,7 @@ session_dir = os.getenv("SESSION_DIR", "sessions")
 # PyInstaller sets sys.frozen and sys._MEIPASS when running as a bundle
 if getattr(sys, 'frozen', False):
     BASE_DIR = sys._MEIPASS
+    os.environ.setdefault("YOLO_BASE_MODEL", os.path.join(BASE_DIR, "yolov8n-obb.pt"))
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -167,6 +204,58 @@ def get_model_path(relative_path):
         return os.path.join(BASE_DIR, clean)
     return os.path.abspath(os.path.join(BASE_DIR, relative_path))
 
+
+def get_runtime_path(name):
+    configured = os.getenv("AUTOMORPH_DATA_DIR")
+    if configured:
+        root = os.path.abspath(os.path.expanduser(configured))
+    elif sys.platform == "darwin":
+        root = os.path.expanduser("~/Library/Application Support/AutoMorph")
+    elif os.name == "nt":
+        root = os.path.join(os.getenv("APPDATA", os.path.expanduser("~")), "AutoMorph")
+    else:
+        root = os.path.join(
+            os.getenv("XDG_DATA_HOME", os.path.expanduser("~/.local/share")),
+            "automorph",
+        )
+    path = os.path.join(root, name)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    return path
+
+
+def start_app_parent_watchdog():
+    """Exit a bundled backend if its desktop-app parent disappears."""
+    expected_parent = os.getenv("AUTOMORPH_PARENT_PID")
+    if not expected_parent:
+        return
+    try:
+        parent_pid = int(expected_parent)
+    except ValueError:
+        logger.warning("Ignoring invalid AUTOMORPH_PARENT_PID=%r", expected_parent)
+        return
+
+    def watch_parent():
+        while psutil.pid_exists(parent_pid):
+            time.sleep(1)
+        logger.warning("AutoMorph parent process %s exited; stopping backend", parent_pid)
+        os._exit(0)
+
+    threading.Thread(
+        target=watch_parent,
+        name="automorph-parent-watchdog",
+        daemon=True,
+    ).start()
+
+
+def safe_client_filename(value):
+    """Return a basename safe for use inside a session directory."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("A valid filename is required.")
+    basename = value.replace("\\", "/").rsplit("/", 1)[-1]
+    if not basename or basename in (".", "..") or len(basename) > 255 or "/" in basename or "\x00" in basename:
+        raise ValueError("Invalid filename.")
+    return basename
+
 # Global predictor library (Free mode)
 if getattr(sys, 'frozen', False) and not os.getenv("PREDICTOR_LIBRARY_DIR"):
     PREDICTOR_LIBRARY_DIR = os.path.join(RUNTIME_ROOT, "models", "custom_predictors")
@@ -180,8 +269,10 @@ PREDICTOR_LIBRARY_FILES = os.path.join(PREDICTOR_LIBRARY_DIR, "files")
 IS_HOSTED = (os.getenv("AUTOMORPH_HOSTED") or os.getenv("LIZARDMORPH_HOSTED", "false")).lower() in ("true", "1", "yes")
 if IS_HOSTED:
     PREDICTOR_MAX_BYTES = int(os.getenv("PREDICTOR_MAX_BYTES", str(100 * 1024 * 1024)))
+    TRAINING_MAX_BYTES = int(os.getenv("TRAINING_MAX_BYTES", str(512 * 1024 * 1024)))
 else:
     PREDICTOR_MAX_BYTES = int(os.getenv("PREDICTOR_MAX_BYTES", str(10 * 1024 * 1024 * 1024)))  # 10GB
+    TRAINING_MAX_BYTES = int(os.getenv("TRAINING_MAX_BYTES", str(1024 * 1024 * 1024)))
 
 # Model files for different view types
 DORSAL_PREDICTOR_FILE = get_model_path(os.getenv("DORSAL_PREDICTOR_FILE", "../models/lizard-x-ray/dorsal_predictor_clahe_best.dat"))
@@ -215,6 +306,215 @@ ID_EXTRACTOR_MODEL = get_model_path(os.getenv("ID_EXTRACTOR_MODEL")) if os.geten
 # Default predictor file (fallback)
 predictor_file = get_model_path(os.getenv("PREDICTOR_FILE", "../models/lizard-x-ray/dorsal_predictor_clahe_best.dat"))
 
+# Initialize SQLite Meta-Store, Repository, and Generic Pipeline Engine
+if getattr(sys, "frozen", False) and not os.getenv("DB_PATH"):
+    DB_PATH = get_runtime_path("lizardmorph.db")
+else:
+    DB_PATH = get_model_path(os.getenv("DB_PATH", "lizardmorph.db"))
+db_mgr = DatabaseManager(DB_PATH)
+db_mgr.init_db()
+
+MODELS_DIR = get_model_path(os.getenv("MODELS_DIR", "../models"))
+if getattr(sys, "frozen", False) and not os.getenv("RUNS_DIR"):
+    RUNS_DIR = get_runtime_path("runs")
+else:
+    RUNS_DIR = get_model_path(os.getenv("RUNS_DIR", "../runs"))
+model_registry_repo = ModelRegistryRepository(
+    db_mgr, models_dir=MODELS_DIR, runs_dir=RUNS_DIR
+)
+generic_pipeline_engine = GenericPipelineEngine(model_registry_repo, models_dir=MODELS_DIR)
+project_repo = ProjectRepository(db_mgr)
+training_orchestrator = (
+    None
+    if "--run-training-job" in sys.argv
+    else TrainingOrchestrator(runs_dir=RUNS_DIR, db_path=DB_PATH)
+)
+
+
+def resolve_inference_model(model_id):
+    """Return a manifest and artifact base directory for a selectable model."""
+    model_version = model_registry_repo.get_model_version(model_id)
+    if model_version:
+        return model_version.manifest, os.path.dirname(RUNS_DIR)
+
+    # Run IDs are generated internally, but still guard filesystem lookups from
+    # path traversal when a model_id comes from a request.
+    if model_id and os.path.basename(model_id) == model_id and model_id not in (".", ".."):
+        for run_name in (f"job_{model_id}", model_id):
+            job_manifest_path = os.path.join(RUNS_DIR, run_name, "manifest.json")
+            if os.path.exists(job_manifest_path):
+                try:
+                    with open(job_manifest_path, "r", encoding="utf-8") as manifest_file:
+                        return Manifest.from_dict(json.load(manifest_file)), os.path.dirname(RUNS_DIR)
+                except Exception as err:
+                    logger.warning(f"Failed loading job manifest {job_manifest_path}: {err}")
+
+    # Predictor-library entries are also exposed as model cards by /api/models.
+    predictor_meta = predictor_library.get_predictor(PREDICTOR_LIBRARY_INDEX, model_id)
+    if predictor_meta:
+        predictor_path = predictor_library.resolve_predictor_path(
+            PREDICTOR_LIBRARY_FILES, predictor_meta
+        )
+        manifest = Manifest(
+            schema_version=1,
+            id=predictor_meta.id,
+            name=predictor_meta.display_name,
+            description="Custom predictor model",
+            detector=DetectorConfig(artifact="", geometry="aabb", confidence=0.25),
+            classes=[
+                ClassConfig(
+                    id=0,
+                    name="custom",
+                    landmark_schema="custom",
+                    predictor=predictor_path,
+                    crop_padding=0.0,
+                )
+            ],
+            landmark_schemas={
+                "custom": LandmarkSchemaConfig(
+                    points=[f"pt_{i}" for i in range(predictor_meta.num_parts or 0)]
+                )
+            },
+        )
+        return manifest, PREDICTOR_LIBRARY_FILES
+
+    return None, None
+
+
+def generic_predictions_to_annotations(predictions):
+    """Convert generic engine predictions into the existing frontend schema."""
+    coords = []
+    bounding_boxes = []
+    point_id = 0
+    for prediction in predictions:
+        landmarks = prediction.get("landmarks", [])
+        landmark_start_index = point_id
+        for landmark in landmarks:
+            coords.append(
+                {"x": landmark["x"], "y": landmark["y"], "id": point_id}
+            )
+            point_id += 1
+
+        obb = prediction.get("obb", [])
+        if len(obb) >= 4:
+            corners = prediction.get("corners")
+            if corners is None and len(obb) >= 5:
+                rect = ((float(obb[0]), float(obb[1])), (float(obb[2]), float(obb[3])), float(obb[4]))
+                corners = cv2.boxPoints(rect)
+            corner_points = [] if corners is None else np.asarray(corners)
+            bounding_boxes.append(
+                {
+                    "label": prediction.get("class_name", "object"),
+                    "left": obb[0] - obb[2] / 2,
+                    "top": obb[1] - obb[3] / 2,
+                    "width": obb[2],
+                    "height": obb[3],
+                    "landmark_start_index": landmark_start_index,
+                    "landmark_count": len(landmarks),
+                    "confidence": prediction.get("confidence"),
+                    "obb_corners": [
+                        {"x": float(point[0]), "y": float(point[1])}
+                        for point in corner_points
+                    ],
+                }
+            )
+    return coords, bounding_boxes
+
+
+def register_built_in_legacy_models(repo: ModelRegistryRepository):
+    dorsal_manifest = Manifest(
+        schema_version=1,
+        id="lizard-dorsal-v1",
+        name="Lizard Dorsal X-Ray Model",
+        description="Built-in legacy dorsal model for dorsal lizard X-rays",
+        detector=DetectorConfig(artifact="", geometry="obb", confidence=0.25, iou=0.45),
+        classes=[
+            ClassConfig(
+                id=0,
+                name="dorsal",
+                landmark_schema="dorsal",
+                predictor="lizard-x-ray/dorsal_predictor_clahe_best.dat",
+                crop_padding=0.0,
+            )
+        ],
+        landmark_schemas={
+            "dorsal": LandmarkSchemaConfig(points=[f"point_{i}" for i in range(34)])
+        },
+    )
+    repo.register_model_bundle("built-in", dorsal_manifest)
+
+    lateral_manifest = Manifest(
+        schema_version=1,
+        id="lizard-lateral-v1",
+        name="Lizard Lateral X-Ray Model",
+        description="Built-in legacy lateral model for lateral lizard X-rays",
+        detector=DetectorConfig(artifact="", geometry="obb", confidence=0.25, iou=0.45),
+        classes=[
+            ClassConfig(
+                id=0,
+                name="lateral",
+                landmark_schema="lateral",
+                predictor="lizard-x-ray/lateral_predictor_auto.dat",
+                crop_padding=0.0,
+            )
+        ],
+        landmark_schemas={
+            "lateral": LandmarkSchemaConfig(points=[f"point_{i}" for i in range(9)])
+        },
+    )
+    repo.register_model_bundle("built-in", lateral_manifest)
+
+    toepad_manifest = Manifest(
+        schema_version=1,
+        id="lizard-toepad-v1",
+        name="Lizard Toepad Model",
+        description="Built-in legacy toepad model using YOLO OBB detector and ML-Morph predictor",
+        detector=DetectorConfig(
+            artifact="lizard-toe-pad/yolo_obb_6class_h7_int8.onnx",
+            geometry="obb",
+            confidence=0.25,
+            iou=0.45,
+        ),
+        classes=[
+            ClassConfig(
+                id=0,
+                name="up_finger",
+                landmark_schema="toepad",
+                predictor="lizard-toe-pad/ml_morph_best.dat",
+                crop_padding=0.3,
+            ),
+            ClassConfig(
+                id=1,
+                name="up_toe",
+                landmark_schema="toepad",
+                predictor="lizard-toe-pad/ml_morph_best.dat",
+                crop_padding=0.3,
+            ),
+            ClassConfig(
+                id=2,
+                name="bot_finger",
+                landmark_schema="toepad",
+                predictor="lizard-toe-pad/ml_morph_best.dat",
+                crop_padding=0.3,
+            ),
+            ClassConfig(
+                id=3,
+                name="bot_toe",
+                landmark_schema="toepad",
+                predictor="lizard-toe-pad/ml_morph_best.dat",
+                crop_padding=0.3,
+            ),
+        ],
+        landmark_schemas={
+            "toepad": LandmarkSchemaConfig(points=[f"point_{i}" for i in range(9)])
+        },
+    )
+    repo.register_model_bundle("built-in", toepad_manifest)
+
+
+register_built_in_legacy_models(model_registry_repo)
+
+
 # Webhook configuration
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "your-webhook-secret-here")
 REPO_NAME = os.getenv("REPO_NAME", "AutoMorph")
@@ -239,8 +539,12 @@ def save_job_status(job_id, status_dict):
     try:
         os.makedirs(JOBS_DIR, exist_ok=True)
         job_file = os.path.join(JOBS_DIR, f"job_{job_id}.json")
-        with open(job_file, "w") as f:
+        temp_file = f"{job_file}.{threading.get_ident()}.tmp"
+        with open(temp_file, "w", encoding="utf-8") as f:
             json.dump(status_dict, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_file, job_file)
     except Exception as e:
         logger.error(f"Error saving job status for {job_id}: {e}")
 
@@ -504,6 +808,8 @@ app = Flask(__name__)
 # Configure Flask session
 app.secret_key = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 app.config["SESSION_TYPE"] = "filesystem"
+if os.getenv("TESTING", "").lower() in ("1", "true", "yes"):
+    app.config["TESTING"] = True
 
 
 CORS_ORIGINS = get_cors_origins()
@@ -734,6 +1040,13 @@ def get_session_id():
         # Try to get from session cookie as fallback
         session_id = session.get("session_id")
 
+    if session_id:
+        try:
+            session_id = str(uuid.UUID(str(session_id)))
+        except (ValueError, TypeError, AttributeError):
+            logger.warning("Ignoring an invalid session identifier")
+            session_id = None
+
     if not session_id:
         # Create new session
         session_id = session_manager.create_session()
@@ -744,6 +1057,7 @@ def get_session_id():
 
 def get_session_folders(session_id):
     """Get session-specific folder paths."""
+    session_id = str(uuid.UUID(str(session_id)))
     session_data = session_manager.get_session(session_id)
     if not session_data:
         # Create session if it doesn't exist
@@ -826,6 +1140,7 @@ def _create_minimal_xml(image_path, xml_output_path):
 
 
 @app.route("/predictors", methods=["GET"])
+@app.route("/api/predictors", methods=["GET"])
 @cross_origin()
 @track_metrics
 def list_predictors():
@@ -858,6 +1173,7 @@ def list_predictors():
 
 
 @app.route("/predictors", methods=["POST"])
+@app.route("/api/predictors", methods=["POST"])
 @cross_origin()
 @track_metrics
 def upload_predictor():
@@ -904,6 +1220,7 @@ def upload_predictor():
 
 
 @app.route("/predictors/<predictor_id>", methods=["DELETE"])
+@app.route("/api/predictors/<predictor_id>", methods=["DELETE"])
 @cross_origin()
 @track_metrics
 def delete_predictor(predictor_id):
@@ -1059,6 +1376,7 @@ def get_train_status(job_id):
 
 
 @app.route("/free_autoplace", methods=["POST"])
+@app.route("/api/free_autoplace", methods=["POST"])
 @cross_origin()
 @track_metrics
 def free_autoplace():
@@ -1081,7 +1399,7 @@ def free_autoplace():
         session_id = get_session_id()
         session_data = get_session_folders(session_id)
 
-        safe_name = os.path.basename(filename)
+        safe_name = safe_client_filename(filename)
         image_path = os.path.join(session_data["upload_folder"], safe_name)
         if not os.path.exists(image_path):
             return jsonify({"error": f"File {safe_name} not found in session uploads folder"}), 404
@@ -1149,6 +1467,7 @@ def cleanup_on_startup():
 
 
 @app.route("/session/start", methods=["POST"])
+@app.route("/api/session/start", methods=["POST"])
 @cross_origin()
 @track_metrics
 def start_session():
@@ -1180,6 +1499,7 @@ def start_session():
 
 
 @app.route("/session/info", methods=["GET"])
+@app.route("/api/session/info", methods=["GET"])
 @cross_origin()
 @track_metrics
 def get_session_info():
@@ -1223,6 +1543,7 @@ def get_session_info():
 
 
 @app.route("/session/list", methods=["GET"])
+@app.route("/api/session/list", methods=["GET"])
 @cross_origin()
 @track_metrics
 def list_sessions():
@@ -1241,6 +1562,7 @@ def list_sessions():
 
 
 @app.route("/data", methods=["POST", "OPTIONS"])
+@app.route("/api/data", methods=["POST", "OPTIONS"])
 @track_metrics
 def upload():
     if request.method == "OPTIONS":
@@ -1267,7 +1589,18 @@ def upload():
                 predictor_file_path = TOEPAD_TOE_PREDICTOR
         
         skip_prediction = request.form.get("skip_prediction", "false").lower() == "true"
-        logger.info(f"Processing images with view type: {view_type}, predictor: {predictor_file_path}, detector: {detector_file_path}, YOLO: {yolo_model_path}, skip_prediction: {skip_prediction}")
+
+        # Check for generic pipeline model_id (custom trained models)
+        model_id = request.form.get("model_id")
+        generic_manifest = None
+        generic_bundle_dir = None
+        if model_id:
+            generic_manifest, generic_bundle_dir = resolve_inference_model(model_id)
+            if not generic_manifest:
+                return jsonify({"error": f"Model '{model_id}' not found"}), 404
+            logger.info(f"Using generic pipeline engine with model_id={model_id}")
+
+        logger.info(f"Processing images with view type: {view_type}, predictor: {predictor_file_path}, detector: {detector_file_path}, YOLO: {yolo_model_path}, skip_prediction: {skip_prediction}, model_id: {model_id}")
 
         client_annotations_raw = request.form.get("client_annotations")
         client_annotations_dict = {}
@@ -1284,7 +1617,8 @@ def upload():
 
         for image in images:
             if image:
-                unique_name = f"{os.path.splitext(image.filename)[0]}.jpg"
+                upload_name = safe_client_filename(image.filename)
+                unique_name = f"{os.path.splitext(upload_name)[0]}.jpg"
 
                 # Use session-specific folders
                 image_path = os.path.join(session_data["upload_folder"], unique_name)
@@ -1323,6 +1657,34 @@ def upload():
                             "view_type": view_type,
                         })
                         logger.info(f"Free mode: skipped prediction for {unique_name}")
+                        continue
+
+                    # Generic pipeline engine path: use custom trained model for prediction
+                    if generic_manifest:
+                        _img = cv2.imread(image_path)
+                        if _img is not None:
+                            predictions = generic_pipeline_engine.predict(
+                                _img, generic_manifest, bundle_dir=generic_bundle_dir
+                            )
+                            coords, bounding_boxes = generic_predictions_to_annotations(predictions)
+
+                            all_data.append({
+                                "name": unique_name,
+                                "coords": coords,
+                                "bounding_boxes": bounding_boxes,
+                                "session_id": session_id,
+                                "view_type": view_type,
+                            })
+                            logger.info(f"Generic pipeline prediction for {unique_name}: {len(coords)} landmarks, {len(bounding_boxes)} objects")
+                        else:
+                            all_data.append({
+                                "name": unique_name,
+                                "coords": [],
+                                "bounding_boxes": [],
+                                "session_id": session_id,
+                                "view_type": view_type,
+                                "error": "Failed to read image",
+                            })
                         continue
 
                     # Generate the prediction XML in the session outputs folder
@@ -1477,6 +1839,7 @@ def get_input_image():
         return jsonify({"error": "image_filename query parameter is required"}), 400
 
     try:
+        image_filename = safe_client_filename(image_filename)
         # Get session-specific folders
         session_id = get_session_id()
         session_data = get_session_folders(session_id)
@@ -1552,6 +1915,7 @@ def serve_image_file():
         return jsonify({"error": "image_filename query parameter is required"}), 400
 
     try:
+        image_filename = safe_client_filename(image_filename)
         # Use explicit session_id from query params since HTTP GET from <image> tag lacks custom headers
         session_id = request.args.get("session_id")
         if not session_id:
@@ -1607,6 +1971,7 @@ def process_scatter_data():
         return jsonify({"error": "Missing required data: coords or name"}), 400
 
     try:
+        name = safe_client_filename(name)
         # Get view type configuration
         predictor_file_path, detector_file_path, yolo_model_path = get_view_type_config(view_type)
         
@@ -1698,15 +2063,6 @@ def process_scatter_data():
     except Exception as e:
         logger.error(f"Error processing scatter data: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
-        logger.error(f"Error creating annotated image: {str(e)}", exc_info=True)
-        return jsonify(
-            {
-                "message": "TPS file generated but image creation failed",
-                "tps_file": tps_file_path,
-                "export_dir": export_dir,
-                "error": str(e),
-            }
-        )
 
 
 @app.route("/images/<session_id_short>/<path:filename>")
@@ -1753,6 +2109,7 @@ def serve_image(filename):
 
 # New endpoint to list all files in the session upload folder
 @app.route("/list_uploads", methods=["GET"])
+@app.route("/api/list_uploads", methods=["GET"])
 @cross_origin()
 @track_metrics
 def list_uploads():
@@ -1770,7 +2127,10 @@ def list_uploads():
 
         results = []
         for filename in sorted(os.listdir(upload_folder)):
-            if os.path.isfile(os.path.join(upload_folder, filename)):
+            if filename.startswith("annotations.") or filename.endswith((".xml", ".tps", ".csv", ".json", ".txt")):
+                continue
+            file_path = os.path.join(upload_folder, filename)
+            if os.path.isfile(file_path):
                 _, ext = os.path.splitext(filename)
                 if ext.lower() in valid_extensions:
                     view_type = image_views.get(filename, "dorsal")  # Default to dorsal if unknown
@@ -1787,6 +2147,7 @@ def list_uploads():
 
 # Endpoint to process an existing image from the session uploads folder
 @app.route("/process_existing", methods=["POST"])
+@app.route("/api/process_existing", methods=["POST"])
 @cross_origin()
 @track_metrics
 def process_existing():
@@ -1794,10 +2155,12 @@ def process_existing():
         filename = request.args.get("filename")
         if not filename:
             return jsonify({"error": "filename parameter is required"}), 400
+        filename = safe_client_filename(filename)
 
         # Get view type from query parameters
         view_type = request.args.get("view_type", "dorsal")
         toepad_predictor_type = request.args.get("toepad_predictor_type", "toe")
+        model_id = request.args.get("model_id")
         predictor_file_path, detector_file_path, yolo_model_path = get_view_type_config(view_type)
         
         # For toepad view type, select the appropriate predictor
@@ -1846,6 +2209,27 @@ def process_existing():
 
         if not os.path.exists(inverted_path):
             visual_individual_performance.invert_single_image(image_path, inverted_path)
+
+        if model_id:
+            manifest, bundle_dir = resolve_inference_model(model_id)
+            if not manifest:
+                return jsonify({"error": f"Model '{model_id}' not found"}), 404
+            image_data = cv2.imread(image_path)
+            if image_data is None:
+                return jsonify({"error": f"Failed to read image {filename}"}), 400
+            predictions = generic_pipeline_engine.predict(
+                image_data, manifest, bundle_dir=bundle_dir
+            )
+            coords, bounding_boxes = generic_predictions_to_annotations(predictions)
+            return jsonify(
+                {
+                    "name": filename,
+                    "coords": coords,
+                    "bounding_boxes": bounding_boxes,
+                    "session_id": session_id,
+                    "view_type": view_type,
+                }
+            )
 
         # Generate XML if it doesn't exist
         if not os.path.exists(xml_path):
@@ -1953,6 +2337,7 @@ def process_existing():
 
 # New endpoint to save annotations (updated landmark points)
 @app.route("/save_annotations", methods=["POST"])
+@app.route("/api/save_annotations", methods=["POST"])
 @cross_origin()
 @track_metrics
 def save_annotations():
@@ -1967,6 +2352,7 @@ def save_annotations():
 
         if not coords or not name:
             return jsonify({"error": "Missing required data: coords or name"}), 400
+        name = safe_client_filename(name)
 
         # Get view type configuration
         predictor_file_path, detector_file_path, yolo_model_path = get_view_type_config(view_type)
@@ -2142,6 +2528,7 @@ def save_annotations():
 
 # New endpoint to create zip from all export directories
 @app.route("/download_all", methods=["GET"])
+@app.route("/api/download_all", methods=["GET"])
 @cross_origin()
 @track_metrics
 def download_all_exports():
@@ -2260,6 +2647,7 @@ def memory_cleanup():
         }), 500
 
 @app.route("/clear_history", methods=["POST"])
+@app.route("/api/clear_history", methods=["POST"])
 @cross_origin()
 @track_metrics
 def clear_history():
@@ -2374,6 +2762,7 @@ def github_webhook():
         return jsonify({"error": f"Webhook processing error: {str(e)}"}), 500
 
 @app.route("/extract_id", methods=["POST"])
+@app.route("/api/extract_id", methods=["POST"])
 @cross_origin()
 @track_metrics
 def extract_id():
@@ -2390,6 +2779,7 @@ def extract_id():
         return jsonify({"error": "image_filename is required"}), 400
 
     try:
+        image_filename = safe_client_filename(image_filename)
         session_id = get_session_id()
         session_data = get_session_folders(session_id)
 
@@ -2411,10 +2801,7 @@ def extract_id():
                     break
 
         if not image_path:
-             if os.path.exists(image_filename):
-                 image_path = image_filename
-             else:
-                 return jsonify({"error": f"Image not found: {image_filename}"}), 404
+            return jsonify({"error": f"Image not found: {image_filename}"}), 404
 
         # Check if client provided an ID bounding box (from client-side YOLO)
         id_box_json = request.form.get("id_box")
@@ -2530,8 +2917,540 @@ def extract_id():
 
 
 
+@app.route("/predict", methods=["POST"])
+@app.route("/api/predict", methods=["POST"])
+@cross_origin()
+@track_metrics
+def api_predict():
+    """Predict landmarks using registered model bundle or view_type."""
+    try:
+        req_data = request.get_json(silent=True) or {}
+        model_version_id = (
+            request.form.get("model_version_id")
+            or request.form.get("model_id")
+            or req_data.get("model_version_id")
+            or req_data.get("model_id")
+        )
+
+        if not model_version_id:
+            view_type = (
+                request.form.get("view_type")
+                or req_data.get("view_type")
+                or "dorsal"
+            ).lower()
+            if view_type in ("toepad", "toepads"):
+                model_version_id = "lizard-toepad-v1"
+            elif view_type == "lateral":
+                model_version_id = "lizard-lateral-v1"
+            else:
+                model_version_id = "lizard-dorsal-v1"
+
+        manifest, bundle_dir = resolve_inference_model(model_version_id)
+
+        if not manifest:
+            return jsonify({"success": False, "error": f"Model version '{model_version_id}' not found"}), 404
+
+        img = None
+        f = request.files.get("image") or request.files.get("file")
+        if f:
+            file_bytes = np.frombuffer(f.read(), np.uint8)
+            img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+
+        if img is None:
+            return jsonify({"success": False, "error": "A valid image upload is required"}), 400
+
+        predictions = generic_pipeline_engine.predict(img, manifest, bundle_dir=bundle_dir)
+        return jsonify({
+            "success": True,
+            "model_version_id": model_version_id,
+            "predictions": predictions,
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error in /api/predict: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/models", methods=["GET"])
+@app.route("/api/models", methods=["GET"])
+@cross_origin()
+@track_metrics
+def api_list_models():
+    """Returns list of published model versions & preinstalled bundles."""
+    try:
+        model_versions = model_registry_repo.list_model_versions()
+        models_data = [
+            {
+                "id": mv.id,
+                "project_id": mv.project_id,
+                "name": mv.name,
+                "created_at": mv.created_at,
+                "manifest": mv.manifest.to_dict(),
+            }
+            for mv in model_versions
+        ]
+
+        # Include custom predictors from predictor library as custom built models
+        try:
+            custom_preds = predictor_library.list_predictors(PREDICTOR_LIBRARY_INDEX)
+            for cp in custom_preds:
+                if not any(m["id"] == cp.id for m in models_data):
+                    manifest = Manifest(
+                        schema_version=1,
+                        id=cp.id,
+                        name=cp.display_name,
+                        description=f"Custom predictor model ({cp.num_parts or 'variable'} landmarks)",
+                        detector=DetectorConfig(artifact="", geometry="aabb", confidence=0.25),
+                        classes=[
+                            ClassConfig(
+                                id=0,
+                                name="custom",
+                                landmark_schema="custom",
+                                predictor=os.path.join("custom_predictors", "files", cp.stored_filename),
+                                crop_padding=0.0,
+                            )
+                        ],
+                        landmark_schemas={"custom": LandmarkSchemaConfig(points=[f"pt_{i}" for i in range(cp.num_parts or 0)])}
+                    )
+                    models_data.append({
+                        "id": cp.id,
+                        "project_id": "custom",
+                        "name": cp.display_name,
+                        "created_at": cp.uploaded_at,
+                        "manifest": manifest.to_dict(),
+                    })
+        except Exception as err:
+            logger.warning(f"Could not load custom predictor library in /api/models: {err}")
+
+        return jsonify({"success": True, "models": models_data}), 200
+    except Exception as e:
+        logger.error(f"Error listing models: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/models/<model_id>", methods=["DELETE"])
+@app.route("/api/models/<model_id>", methods=["DELETE"])
+@cross_origin()
+@track_metrics
+def api_delete_model(model_id):
+    """Deletes a custom model version from ModelRegistryRepository or PredictorLibrary."""
+    try:
+        builtin_ids = {"lizard-dorsal-v1", "lizard-lateral-v1", "lizard-toepad-v1"}
+        if model_id in builtin_ids:
+            return jsonify({"success": False, "error": "Built-in preinstalled models cannot be deleted"}), 400
+
+        if not model_id or os.path.basename(model_id) != model_id or model_id in (".", ".."):
+            return jsonify({"success": False, "error": "Invalid model identifier"}), 400
+
+        deleted_repo = model_registry_repo.delete_model_version(model_id)
+
+        deleted_lib = False
+        try:
+            deleted_lib = predictor_library.delete_predictor(
+                index_path=PREDICTOR_LIBRARY_INDEX,
+                files_dir=PREDICTOR_LIBRARY_FILES,
+                predictor_id=model_id,
+            )
+        except Exception as err:
+            logger.warning(f"Error deleting predictor from library index: {err}")
+
+        # Remove run execution directory if present
+        run_dir = os.path.join(RUNS_DIR, f"job_{model_id}")
+        deleted_run = os.path.exists(run_dir)
+        if deleted_run:
+            shutil.rmtree(run_dir)
+
+        if deleted_repo or deleted_lib or deleted_run:
+            return jsonify({"success": True, "message": f"Model {model_id} deleted successfully"}), 200
+        else:
+            return jsonify({"success": False, "error": "Model not found"}), 404
+    except Exception as e:
+        logger.error(f"Error deleting model {model_id}: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/projects", methods=["POST"])
+@app.route("/api/projects", methods=["POST"])
+@cross_origin()
+@track_metrics
+def api_create_project():
+    """Creates a new project in ProjectRepository."""
+    try:
+        req_data = request.get_json(silent=True) or {}
+        name = req_data.get("name") or request.form.get("name")
+        organism = req_data.get("organism") or request.form.get("organism", "Generic")
+
+        if not isinstance(name, str) or not name.strip():
+            return jsonify({"success": False, "error": "Project name is required"}), 400
+
+        name = " ".join(name.split())
+        organism = " ".join(organism.split()) if isinstance(organism, str) else "Generic"
+        if len(name) > 120 or len(organism) > 120:
+            return jsonify({
+                "success": False,
+                "error": "Project name and organism must be 120 characters or fewer",
+            }), 400
+
+        proj = project_repo.create_project(name, organism)
+        return jsonify({
+            "success": True,
+            "project": {
+                "id": proj.id,
+                "name": proj.name,
+                "organism": proj.organism,
+                "created_at": proj.created_at,
+            }
+        }), 201
+    except Exception as e:
+        logger.error(f"Error creating project: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/projects", methods=["GET"])
+@app.route("/api/projects", methods=["GET"])
+@cross_origin()
+@track_metrics
+def api_list_projects():
+    """Lists registered projects."""
+    try:
+        projects = project_repo.list_projects()
+        projects_data = [
+            {
+                "id": p.id,
+                "name": p.name,
+                "organism": p.organism,
+                "created_at": p.created_at,
+            }
+            for p in projects
+        ]
+        return jsonify({"success": True, "projects": projects_data}), 200
+    except Exception as e:
+        logger.error(f"Error listing projects: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/train", methods=["POST"])
+@app.route("/api/train", methods=["POST"])
+@cross_origin()
+@track_metrics
+def api_train():
+    """Submits training job using TrainingOrchestrator."""
+    try:
+        if request.content_length and request.content_length > TRAINING_MAX_BYTES:
+            return jsonify({
+                "success": False,
+                "error": "Training dataset upload exceeds the configured size limit",
+            }), 413
+        req_data = request.get_json(silent=True) or {}
+        project_id = (
+            req_data.get("project_id")
+            or request.form.get("project_id")
+            or "default"
+        )
+        if not isinstance(project_id, str) or not project_id or len(project_id) > 128:
+            return jsonify({"success": False, "error": "Invalid project identifier"}), 400
+        dataset_dict = req_data.get("dataset")
+        config = req_data.get("config") or {}
+        if not config and request.form.get("config"):
+            config = json.loads(request.form["config"])
+        if not isinstance(config, dict):
+            return jsonify({"success": False, "error": "Training config must be an object"}), 400
+        if (
+            app.config.get("TESTING")
+            and os.getenv("MOCK_TRAINING", "").lower() in ("1", "true", "yes")
+        ):
+            config["mock"] = True
+        elif config.get("mock") and not app.config.get("TESTING"):
+            return jsonify({"success": False, "error": "Mock training is test-only"}), 400
+
+        numeric_limits = {
+            "epochs": (1, 1000, int),
+            "padding": (0.0, 2.0, float),
+            "box_jitter": (0.0, 0.5, float),
+            "test_split": (0.0, 0.5, float),
+            "confidence": (0.0, 1.0, float),
+            "nu": (0.000001, 1.0, float),
+            "tree_depth": (1, 10, int),
+            "cascade_depth": (1, 50, int),
+            "oversampling_amount": (1, 100, int),
+            "feature_pool_size": (10, 10000, int),
+            "num_test_splits": (1, 1000, int),
+        }
+        for option, (minimum, maximum, converter) in numeric_limits.items():
+            if option not in config:
+                continue
+            if isinstance(config[option], bool):
+                return jsonify({"success": False, "error": f"Invalid value for {option}"}), 400
+            try:
+                value = converter(config[option])
+            except (TypeError, ValueError, OverflowError):
+                return jsonify({"success": False, "error": f"Invalid value for {option}"}), 400
+            if not math.isfinite(float(value)) or value < minimum or value > maximum:
+                return jsonify({
+                    "success": False,
+                    "error": f"{option} must be between {minimum} and {maximum}",
+                }), 400
+            config[option] = value
+        model_name = (
+            req_data.get("model_name")
+            or req_data.get("name")
+            or request.form.get("model_name")
+            or request.form.get("name")
+            or config.get("model_name")
+            or config.get("name")
+        )
+        if model_name:
+            if not isinstance(model_name, str):
+                return jsonify({"success": False, "error": "Model name must be text"}), 400
+            model_name = " ".join(model_name.split()).strip()
+            if not model_name or len(model_name) > 120:
+                return jsonify({
+                    "success": False,
+                    "error": "Model name must contain 1 to 120 characters",
+                }), 400
+            config["model_name"] = model_name
+        if config.get("base_model") not in (None, "yolov8n-obb.pt"):
+            return jsonify({
+                "success": False,
+                "error": "Unsupported detector base model",
+            }), 400
+
+        uploaded_files = []
+        seen_uploads = set()
+        for field_name in ("dataset_files", "dataset", "file", "images"):
+            for uploaded in request.files.getlist(field_name):
+                if not uploaded or not uploaded.filename or id(uploaded) in seen_uploads:
+                    continue
+                seen_uploads.add(id(uploaded))
+                uploaded_files.append((uploaded.filename, uploaded.read()))
+
+        source_files = {}
+        if uploaded_files:
+            parsed_package = parse_dataset_package(uploaded_files)
+            dataset_dict = parsed_package.dataset.to_dict()
+            source_files = parsed_package.source_files
+
+        if isinstance(dataset_dict, dict) and "content" in dataset_dict and not dataset_dict.get("images"):
+            content = dataset_dict["content"]
+            if content and isinstance(content, str):
+                if "<dataset>" in content or "<xml" in content:
+                    canonical_ds = DlibXMLImporter.parse_string(content)
+                    dataset_dict = canonical_ds.to_dict()
+                elif "LM=" in content or "lm=" in content or "IMAGE=" in content:
+                    canonical_ds = TPSImporter.parse_string(content)
+                    dataset_dict = canonical_ds.to_dict()
+
+        if not dataset_dict and "dataset" in request.form:
+            try:
+                dataset_dict = json.loads(request.form["dataset"])
+            except Exception:
+                dataset_dict = None
+
+        if not dataset_dict:
+            f = request.files.get("dataset") or request.files.get("file")
+            if f:
+                content = f.read().decode("utf-8", errors="ignore")
+                if "<dataset>" in content or "<xml" in content:
+                    canonical_ds = DlibXMLImporter.parse_string(content)
+                    dataset_dict = canonical_ds.to_dict()
+                elif "LM=" in content or "lm=" in content or "IMAGE=" in content:
+                    canonical_ds = TPSImporter.parse_string(content)
+                    dataset_dict = canonical_ds.to_dict()
+
+        if not dataset_dict:
+            return jsonify({"success": False, "error": "A dataset with images is required"}), 400
+
+        canonical_dataset = CanonicalDataset.from_dict(dataset_dict)
+        if len(canonical_dataset.images) < 2:
+            raise ValueError("Training requires at least two annotated images")
+        validate_training_dataset(canonical_dataset)
+
+        job_id = training_orchestrator.submit_job(
+            project_id=project_id,
+            dataset_dict=dataset_dict,
+            config=config,
+            source_files=source_files,
+        )
+        return jsonify({
+            "success": True,
+            "job_id": job_id,
+            "message": "Training job submitted successfully",
+        }), 200
+    except TrainingBusyError as e:
+        return jsonify({"success": False, "error": str(e)}), 409
+    except (KeyError, TypeError, ValueError, ET.ParseError, json.JSONDecodeError) as e:
+        logger.info(f"Invalid training request: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error submitting training job: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/train/<job_id>", methods=["GET"])
+@app.route("/api/train/<job_id>", methods=["GET"])
+@cross_origin()
+@track_metrics
+def api_train_job_status(job_id):
+    """Returns training job status (status, stage, progress, metrics)."""
+    try:
+        status_info = training_orchestrator.get_status(job_id)
+        return jsonify({
+            "success": True,
+            "job_id": job_id,
+            "status": status_info.get("status", "unknown"),
+            "stage": status_info.get("stage", ""),
+            "progress": status_info.get("progress", 0.0),
+            "metrics": status_info.get("metrics", {}),
+            "error": status_info.get("error"),
+        }), 200
+    except Exception as e:
+        logger.error(f"Error getting train status for job {job_id}: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/train/<job_id>/cancel", methods=["POST"])
+@app.route("/api/train/<job_id>/cancel", methods=["POST"])
+@cross_origin()
+@track_metrics
+def api_cancel_train_job(job_id):
+    """Cancels a running training job."""
+    try:
+        success = training_orchestrator.cancel_job(job_id)
+        return jsonify({
+            "success": success,
+            "job_id": job_id,
+            "message": "Training job cancelled successfully" if success else "Job not found or already finished",
+        }), 200
+    except Exception as e:
+        logger.error(f"Error cancelling train job {job_id}: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/dataset/derive-boxes", methods=["POST"])
+@app.route("/api/dataset/derive-boxes", methods=["POST"])
+@cross_origin()
+@track_metrics
+def api_derive_boxes():
+    """Previews padded bounding box extents for TPS datasets."""
+    try:
+        if request.content_length and request.content_length > TRAINING_MAX_BYTES:
+            return jsonify({
+                "success": False,
+                "error": "Training dataset upload exceeds the configured size limit",
+            }), 413
+        padding = 0.2
+        content = None
+
+        uploaded_files = []
+        seen_uploads = set()
+        for field_name in ("dataset_files", "dataset", "file", "images"):
+            for uploaded in request.files.getlist(field_name):
+                if not uploaded or not uploaded.filename or id(uploaded) in seen_uploads:
+                    continue
+                seen_uploads.add(id(uploaded))
+                uploaded_files.append((uploaded.filename, uploaded.read()))
+
+        if request.is_json:
+            req_data = request.get_json() or {}
+            content = req_data.get("tps_content") or req_data.get("content")
+            if "padding" in req_data:
+                padding = float(req_data["padding"])
+        else:
+            content = request.form.get("tps_content") or request.form.get("content")
+            if "padding" in request.form:
+                padding = float(request.form["padding"])
+
+        if uploaded_files:
+            parsed_package = parse_dataset_package(uploaded_files)
+            dataset = parsed_package.dataset
+        else:
+            if not content:
+                return jsonify({"success": False, "error": "No dataset provided"}), 400
+            if "<dataset" in content or "<xml" in content:
+                dataset = DlibXMLImporter.parse_string(content)
+            else:
+                dataset = TPSImporter.parse_string(content)
+
+        if not math.isfinite(padding) or padding < 0 or padding > 2:
+            return jsonify({
+                "success": False,
+                "error": "padding must be between 0 and 2",
+            }), 400
+
+        dataset = padded_preview(dataset, padding)
+        validation_errors = []
+        try:
+            if len(dataset.images) < 2:
+                raise ValueError("Training requires at least two annotated images")
+            validate_training_dataset(dataset)
+        except ValueError as validation_error:
+            validation_errors.append(str(validation_error))
+
+        derived_images = []
+        for img in dataset.images:
+            img_objs = []
+            for obj in img.objects:
+                obj_dict = obj.to_dict()
+                img_objs.append(obj_dict)
+            derived_images.append({
+                "image_id": img.image_id,
+                "file_path": img.file_path,
+                "width": img.width,
+                "height": img.height,
+                "objects": img_objs,
+            })
+
+        return jsonify({
+            "success": True,
+            "padding": padding,
+            "images": derived_images,
+            "total_images": len(derived_images),
+            "total_objects": sum(len(img["objects"]) for img in derived_images),
+            "training_ready": not validation_errors,
+            "validation_errors": validation_errors,
+        }), 200
+    except (KeyError, TypeError, ValueError, ET.ParseError, json.JSONDecodeError) as e:
+        logger.info(f"Invalid dataset preview request: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error deriving boxes: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # Make sure your app runs on the correct host and port if started directly
 if __name__ == "__main__":
-    watch_parent_process()
-    port = int(os.getenv("API_PORT", 3005))
-    app.run(host=get_bind_host(), port=port)
+    if "--run-training-job" in sys.argv:
+        job_arg_index = sys.argv.index("--run-training-job") + 1
+        if job_arg_index >= len(sys.argv):
+            raise SystemExit("--run-training-job requires a job directory")
+        if __package__:
+            from backend.training.runner import (
+                run_training_pipeline,
+                start_parent_watchdog,
+                update_status,
+            )
+        else:
+            from training.runner import (
+                run_training_pipeline,
+                start_parent_watchdog,
+                update_status,
+            )
+
+        training_job_dir = os.path.abspath(sys.argv[job_arg_index])
+        start_parent_watchdog()
+        try:
+            run_training_pipeline(training_job_dir)
+        except Exception as training_error:
+            logger.exception("Training subprocess failed")
+            update_status(
+                training_job_dir,
+                status="failed",
+                stage=f"Failed: {training_error}",
+                progress=0.0,
+                error=str(training_error),
+            )
+            raise SystemExit(1) from training_error
+    else:
+        watch_parent_process()
+        port = int(os.getenv("API_PORT", 3005))
+        app.run(host=get_bind_host(), port=port)

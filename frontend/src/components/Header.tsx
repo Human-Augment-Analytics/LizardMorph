@@ -1,7 +1,7 @@
 import React, { Component } from "react";
 import { getHeaderStyles } from "./Header.style";
-import type { ResolvedTheme } from "../contexts/ThemeContext";
-import lizard_logo from "../../public/lizard.svg";
+import type { ResolvedTheme } from "../contexts/theme";
+import lizard_logo from "../assets/lizard.svg";
 
 interface HeaderProps {
   lizardCount: number;
@@ -9,6 +9,7 @@ interface HeaderProps {
   dataFetched: boolean;
   dataError: Error | null;
   selectedViewType: string;
+  modelName?: string | null;
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onExportAll: () => void;
   onClearHistory: () => void;
@@ -48,15 +49,17 @@ export class Header extends Component<HeaderProps, HeaderState> {
       onClearHistory,
       onOpenMeasurementsModal,
       selectedViewType,
+      modelName,
       theme,
     } = this.props;
 
     const styles = getHeaderStyles(theme);
     const { isMenuOpen } = this.state;
     const isFree = selectedViewType === "free";
+    const isCustom = selectedViewType === "custom";
     const uploadLabel = loading
       ? "Uploading..."
-      : isFree
+      : (isFree || isCustom)
         ? "Upload Images"
         : "Upload X-Ray Images";
 
@@ -137,7 +140,10 @@ export class Header extends Component<HeaderProps, HeaderState> {
               {isMenuOpen && (
                 <div style={styles.dropdownContent}>
                   <button
-                    onClick={onClearHistory}
+                    onClick={() => {
+                      this.setState({ isMenuOpen: false });
+                      onClearHistory();
+                    }}
                     disabled={loading}
                     style={{
                       ...styles.clearHistoryButton,
@@ -201,12 +207,16 @@ export class Header extends Component<HeaderProps, HeaderState> {
               <h2 style={styles.title}>
                 {isFree
                   ? "Free Mode — Manual Landmarking"
-                  : "AutoMorph Auto-Annotator"}
+                  : isCustom && modelName
+                    ? modelName
+                    : "AutoMorph"}
               </h2>
             </div>
             <p style={styles.viewType}>
               View Type:{" "}
-              {selectedViewType
+              {isCustom && modelName
+                ? `Custom Model · ${modelName}`
+                : selectedViewType
                 ? selectedViewType.charAt(0).toUpperCase() +
                   selectedViewType.slice(1)
                 : ""}

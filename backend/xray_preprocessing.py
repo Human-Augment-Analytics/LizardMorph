@@ -4,7 +4,10 @@ import glob
 # matplotlib.pyplot lazy-loaded if needed
 import os
 import pydicom
-from pydicom.pixel_data_handlers.util import apply_voi_lut
+try:
+    from pydicom.pixels import apply_voi_lut
+except ImportError:  # pydicom < 3
+    from pydicom.pixel_data_handlers.util import apply_voi_lut
 import numpy as np
 from PIL import Image, ImageEnhance
 

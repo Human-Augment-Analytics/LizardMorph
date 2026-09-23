@@ -17,9 +17,10 @@ import { HistoryPanel } from "../components/HistoryPanel";
 import { MeasurementsAndScalePanel } from "../components/MeasurementsAndScalePanel";
 import { SessionInfo } from "../components/SessionInfo";
 import { getMainViewStyles } from "./MainView.style";
-import { ThemeContext } from "../contexts/ThemeContext";
+import { ThemeContext } from "../contexts/theme";
 import { SVGViewer } from "../components/SVGViewer";
 import { ApiService } from "../services/ApiService";
+import { SessionService } from "../services/SessionService";
 import { extractIdFromImageUrl } from "../services/IdOcrService";
 import { ExportService } from "../services/ExportService";
 import { FreePredictorPanel } from "../components/FreePredictorPanel";
@@ -57,6 +58,8 @@ interface MainState {
     originalScatterData: Point[]
   ) => void;
   isMeasurementsAndScaleModalOpen: boolean;
+  isClearHistoryModalOpen: boolean;
+  isDeletePredictorModalOpen: boolean;
   toepadPredictorType: string;
   currentBoundingBoxes: BoundingBox[];
   extractedId: string | null;
@@ -66,10 +69,12 @@ interface MainState {
   predictorsLoading: boolean;
   predictorsError: string | null;
   isFreePredictorPanelOpen: boolean;
+  selectedModelName: string | null;
 }
 
 interface MainProps {
   selectedViewType: LizardViewType;
+  modelId?: string;
   onNavigateHome?: () => void;
 }
 
@@ -116,6 +121,8 @@ export class MainView extends Component<MainProps, MainState> {
     onPointSelect: () => {},
     onScatterDataUpdate: () => {},
     isMeasurementsAndScaleModalOpen: false,
+    isClearHistoryModalOpen: false,
+    isDeletePredictorModalOpen: false,
     toepadPredictorType: "toe",
     currentBoundingBoxes: [],
     extractedId: null,
@@ -125,6 +132,7 @@ export class MainView extends Component<MainProps, MainState> {
     predictorsLoading: false,
     predictorsError: null,
     isFreePredictorPanelOpen: this.props.selectedViewType === "free",
+    selectedModelName: null,
   };
   componentDidMount(): void {
     this.initializeApp();
@@ -141,6 +149,18 @@ export class MainView extends Component<MainProps, MainState> {
 
       // Initialize session management (will reuse existing session if available)
       await ApiService.initialize();
+
+      if (this.props.selectedViewType === "custom") {
+        if (!this.props.modelId) {
+          throw new Error("No custom model was selected.");
+        }
+        const models = await ApiService.getModels();
+        const selectedModel = models.find((model) => model.id === this.props.modelId);
+        if (!selectedModel) {
+          throw new Error(`Custom model '${this.props.modelId}' was not found.`);
+        }
+        this.setState({ selectedModelName: selectedModel.name });
+      }
 
       // Mark session as ready
       this.setState({ sessionReady: true });
@@ -221,6 +241,7 @@ export class MainView extends Component<MainProps, MainState> {
         };
       });
     } catch (e) {
+      console.error("refreshPredictors error:", e);
       this.setState({
         predictorsError: e instanceof Error ? e.message : "Failed to load predictors",
       });
@@ -247,13 +268,21 @@ export class MainView extends Component<MainProps, MainState> {
     }
   };
 
-  private readonly handleDeleteSelectedFreePredictor = async (): Promise<void> => {
+  private readonly handleDeleteSelectedFreePredictor = (): void => {
     const id = this.state.freePredictorId;
     if (!id) return;
-    const ok = window.confirm("Delete the selected predictor? This cannot be undone.");
-    if (!ok) return;
+    this.setState({ isDeletePredictorModalOpen: true });
+  };
+
+  private readonly handleCloseDeletePredictorModal = (): void => {
+    this.setState({ isDeletePredictorModalOpen: false });
+  };
+
+  private readonly executeDeleteSelectedFreePredictor = async (): Promise<void> => {
+    const id = this.state.freePredictorId;
+    if (!id) return;
+    this.setState({ isDeletePredictorModalOpen: false, predictorsLoading: true, predictorsError: null });
     try {
-      this.setState({ predictorsLoading: true, predictorsError: null });
       await ApiService.deletePredictor(id);
       const predictors = await ApiService.listPredictors();
       this.setState({ availablePredictors: predictors, freePredictorId: null });
@@ -339,7 +368,8 @@ export class MainView extends Component<MainProps, MainState> {
           const results = await ApiService.uploadMultipleImages(
             [file], 
             this.props.selectedViewType,
-            this.props.selectedViewType === "toepads" ? this.state.toepadPredictorType : undefined
+            this.props.selectedViewType === "toepads" ? this.state.toepadPredictorType : undefined,
+            this.props.modelId
           );
           
           // Check if we got a valid result
@@ -352,6 +382,9 @@ export class MainView extends Component<MainProps, MainState> {
           // Validate result has required properties
           if (!result || !result.name) {
             throw new Error(`Invalid result for image: ${file.name}`);
+          }
+          if (result.error) {
+            throw new Error(`Failed to process ${file.name}: ${result.error}`);
           }
           
           // Update progress to 50% after upload
@@ -542,6 +575,7 @@ export class MainView extends Component<MainProps, MainState> {
           imageWidth: img.width,
           imageHeight: img.height,
           dataLoading: false,
+          dataError: null,
           needsScaling: true, // Reset scaling flag when new image is loaded, forcing recalculation
         });
       };
@@ -550,9 +584,10 @@ export class MainView extends Component<MainProps, MainState> {
         console.error("Failed to load image:", e);
         this.setState({
           dataError: new Error(
-            "Failed to load image. Please try again with a different file."
+            "Failed to load image. Please select or upload a valid file."
           ),
           dataLoading: false,
+          currentImageURL: null,
         });
       };
 
@@ -771,59 +806,67 @@ export class MainView extends Component<MainProps, MainState> {
     }
   };
 
-  private readonly handleClearHistory = async (): Promise<void> => {
-    const confirmed = window.confirm(
-      `Are you sure you want to clear all history for ${this.props.selectedViewType} view? This will delete all uploaded images, processed files, and session data for this view type. This action cannot be undone.`
-    );
+  private readonly handleClearHistory = (): void => {
+    this.setState({ isClearHistoryModalOpen: true });
+  };
 
-    if (confirmed) {
+  private readonly handleCloseClearHistoryModal = (): void => {
+    this.setState({ isClearHistoryModalOpen: false });
+  };
+
+  private readonly executeClearHistory = async (): Promise<void> => {
+    this.setState({ isClearHistoryModalOpen: false, loading: true });
+
+    try {
+      // Clear backend session (best-effort, don't block frontend reset)
       try {
-        this.setState({ loading: true });
-        // Clear backend session (this clears all files, but we'll filter frontend history)
-        await this.clearHistory();
-        
-        // Filter frontend history to only keep items for other viewTypes
-        this.setState((prevState) => {
-          const historyToKeep = prevState.uploadHistory.filter(
-            item => item.viewType !== this.props.selectedViewType
-          );
-          const indicesToKeep = new Set(historyToKeep.map(item => item.index).filter(idx => idx >= 0));
-          
-          // Filter images to only keep those referenced by remaining history items
-          const filteredImages = prevState.images.filter((_img, idx) => indicesToKeep.has(idx));
-          
-          // Reindex history items to match new image indices
-          const reindexedHistory = historyToKeep.map(item => {
-            if (item.index >= 0) {
-              const newIndex = Array.from(indicesToKeep).indexOf(item.index);
-              return { ...item, index: newIndex >= 0 ? newIndex : -1 };
-            }
-            return item;
-          });
-          
-          return {
-            uploadHistory: reindexedHistory,
-            images: filteredImages,
-            currentImageIndex: filteredImages.length > 0 ? 0 : 0,
-            scatterData: filteredImages.length > 0 ? filteredImages[0].coords : [],
-            originalScatterData: filteredImages.length > 0 ? filteredImages[0].originalCoords : [],
-            imageSet: filteredImages.length > 0 ? filteredImages[0].imageSets : {
-              original: "",
-              inverted: "",
-              color_contrasted: "",
-            },
-            currentImageURL: filteredImages.length > 0 ? filteredImages[0].imageSets.original : null,
-            imageFilename: filteredImages.length > 0 ? filteredImages[0].name : null,
-          };
-        });
-        
-        alert("History cleared successfully");
-      } catch (error) {
-        alert("Error clearing history");
-        console.error("Clear history error:", error);
-      } finally {
-        this.setState({ loading: false });
+        await ApiService.clearHistory();
+      } catch (err) {
+        console.warn("Backend clear_history failed (continuing with frontend reset):", err);
       }
+
+      // Clear client session token cache
+      SessionService.clearSession();
+      
+      // Reset all frontend state completely
+      this.setState({
+        uploadHistory: [],
+        images: [],
+        uploadProgress: {},
+        currentImageIndex: 0,
+        scatterData: [],
+        originalScatterData: [],
+        imageSet: {
+          original: "",
+          inverted: "",
+          color_contrasted: "",
+        },
+        currentImageURL: null,
+        imageFilename: null,
+        imageWidth: 0,
+        imageHeight: 0,
+        dataFetched: false,
+        lizardCount: 0,
+        currentBoundingBoxes: [],
+        extractedId: null,
+        extractedIdConfidence: null,
+        selectedPoint: null,
+        measurements: [],
+        downloadData: [],
+        selectedImageVersion: "original",
+        dataError: null,
+      });
+
+      // Start fresh session
+      try {
+        await SessionService.initializeSession();
+      } catch {
+        // Non-blocking
+      }
+    } catch (error) {
+      console.error("Clear history error:", error);
+    } finally {
+      this.setState({ loading: false });
     }
   };
 
@@ -949,11 +992,15 @@ export class MainView extends Component<MainProps, MainState> {
     try {
       const files = await ApiService.fetchUploadedFiles();
 
-      // Create history entries for files
-      const currentFileNames = new Set(
-        this.state.uploadHistory.map((item) => item.name)
+      const validFileNames = new Set(files.map((fileObj) => fileObj.filename));
+      const filteredHistory = this.state.uploadHistory.filter((item) =>
+        validFileNames.has(item.name)
       );
-      const newHistory = [...this.state.uploadHistory];
+
+      const currentFileNames = new Set(
+        filteredHistory.map((item) => item.name)
+      );
+      const newHistory = [...filteredHistory];
 
       files.forEach((fileObj) => {
         if (!currentFileNames.has(fileObj.filename)) {
@@ -966,9 +1013,7 @@ export class MainView extends Component<MainProps, MainState> {
         }
       });
 
-      if (newHistory.length !== this.state.uploadHistory.length) {
-        this.setState({ uploadHistory: newHistory });
-      }
+      this.setState({ uploadHistory: newHistory });
 
       // Update lizard count
       this.setState({ lizardCount: files.length });
@@ -1009,7 +1054,8 @@ export class MainView extends Component<MainProps, MainState> {
       const result = await ApiService.processExistingImage(
         filename, 
         this.props.selectedViewType,
-        this.props.selectedViewType === "toepads" ? this.state.toepadPredictorType : undefined
+        this.props.selectedViewType === "toepads" ? this.state.toepadPredictorType : undefined,
+        this.props.modelId
       );
       const imageSets = await ApiService.fetchImageSet(filename);
       const coords = result.coords.map((coord: Point, index: number) => ({
@@ -1058,11 +1104,13 @@ export class MainView extends Component<MainProps, MainState> {
       });
     } catch (error) {
       console.error("Error loading image from uploads:", error);
-      this.setState({
+      this.setState((prev) => ({
+        uploadHistory: prev.uploadHistory.filter((item) => item.name !== filename),
+        lizardCount: Math.max(0, prev.lizardCount - 1),
         dataError: error instanceof Error ? error : new Error("Unknown error"),
-      });
+      }));
     } finally {
-      this.setState({ loading: false });
+      this.setState({ loading: false, dataLoading: false });
     }
   };
 
@@ -1109,15 +1157,6 @@ export class MainView extends Component<MainProps, MainState> {
     this.setState({ toepadPredictorType: type });
   };
 
-  // Automatically called on clearBtn click from header
-  private readonly clearHistory = async (): Promise<void> => {
-    try {
-      await ApiService.clearHistory();
-    } catch (error) {
-      console.error("Failed to clear history:", error);
-    }
-  };
-
   render() {
     const { resolved: theme, preference: themePreference, setPreference: setThemePref } = this.context;
     const mainStyles = getMainViewStyles(theme);
@@ -1130,6 +1169,7 @@ export class MainView extends Component<MainProps, MainState> {
           dataFetched={this.state.dataFetched}
           dataError={this.state.dataError}
           selectedViewType={this.props.selectedViewType}
+          modelName={this.state.selectedModelName}
           onUpload={this.handleUpload}
           onExportAll={this.handleScatterData}
           onClearHistory={this.handleClearHistory}
@@ -1396,6 +1436,168 @@ export class MainView extends Component<MainProps, MainState> {
             viewType={this.props.selectedViewType}
             theme={theme}
           />
+        )}
+        {this.state.isClearHistoryModalOpen && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.6)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1000,
+              backdropFilter: "blur(4px)",
+            }}
+            onClick={this.handleCloseClearHistoryModal}
+          >
+            <div
+              style={{
+                backgroundColor: theme === "dark" ? "#1e293b" : "#ffffff",
+                color: theme === "dark" ? "#f8fafc" : "#0f172a",
+                padding: "28px 32px",
+                borderRadius: "16px",
+                maxWidth: "440px",
+                width: "90%",
+                boxShadow: "0 20px 50px rgba(0, 0, 0, 0.3)",
+                border: `1px solid ${theme === "dark" ? "#334155" : "#e2e8f0"}`,
+                textAlign: "center",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ fontSize: "2.5rem", marginBottom: "12px" }}>🗑️</div>
+              <h3 style={{ fontSize: "1.4rem", fontWeight: "bold", marginBottom: "8px" }}>
+                Clear All History?
+              </h3>
+              <p
+                style={{
+                  fontSize: "0.95rem",
+                  color: theme === "dark" ? "#94a3b8" : "#64748b",
+                  marginBottom: "20px",
+                  lineHeight: 1.5,
+                }}
+              >
+                This will delete all uploaded images, processed files, and session data. This action cannot be undone.
+              </p>
+              <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+                <button
+                  onClick={this.handleCloseClearHistoryModal}
+                  disabled={this.state.loading}
+                  style={{
+                    backgroundColor: "transparent",
+                    color: theme === "dark" ? "#cbd5e1" : "#475569",
+                    border: `1px solid ${theme === "dark" ? "#475569" : "#cbd5e1"}`,
+                    padding: "10px 20px",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={this.executeClearHistory}
+                  disabled={this.state.loading}
+                  style={{
+                    backgroundColor: "#ef4444",
+                    color: "#ffffff",
+                    border: "none",
+                    padding: "10px 20px",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                    boxShadow: "0 4px 12px rgba(239, 68, 68, 0.3)",
+                  }}
+                >
+                  {this.state.loading ? "Clearing..." : "Clear History"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {this.state.isDeletePredictorModalOpen && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.6)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1000,
+              backdropFilter: "blur(4px)",
+            }}
+            onClick={this.handleCloseDeletePredictorModal}
+          >
+            <div
+              style={{
+                backgroundColor: theme === "dark" ? "#1e293b" : "#ffffff",
+                color: theme === "dark" ? "#f8fafc" : "#0f172a",
+                padding: "28px 32px",
+                borderRadius: "16px",
+                maxWidth: "440px",
+                width: "90%",
+                boxShadow: "0 20px 50px rgba(0, 0, 0, 0.3)",
+                border: `1px solid ${theme === "dark" ? "#334155" : "#e2e8f0"}`,
+                textAlign: "center",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ fontSize: "2.5rem", marginBottom: "12px" }}>🗑️</div>
+              <h3 style={{ fontSize: "1.4rem", fontWeight: "bold", marginBottom: "8px" }}>
+                Delete Predictor?
+              </h3>
+              <p
+                style={{
+                  fontSize: "0.95rem",
+                  color: theme === "dark" ? "#94a3b8" : "#64748b",
+                  marginBottom: "20px",
+                  lineHeight: 1.5,
+                }}
+              >
+                Delete the selected predictor? This action cannot be undone.
+              </p>
+              <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+                <button
+                  onClick={this.handleCloseDeletePredictorModal}
+                  disabled={this.state.predictorsLoading}
+                  style={{
+                    backgroundColor: "transparent",
+                    color: theme === "dark" ? "#cbd5e1" : "#475569",
+                    border: `1px solid ${theme === "dark" ? "#475569" : "#cbd5e1"}`,
+                    padding: "10px 20px",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={this.executeDeleteSelectedFreePredictor}
+                  disabled={this.state.predictorsLoading}
+                  style={{
+                    backgroundColor: "#ef4444",
+                    color: "#ffffff",
+                    border: "none",
+                    padding: "10px 20px",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                    boxShadow: "0 4px 12px rgba(239, 68, 68, 0.3)",
+                  }}
+                >
+                  {this.state.predictorsLoading ? "Deleting..." : "Delete Predictor"}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     );

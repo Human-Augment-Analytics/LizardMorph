@@ -2,7 +2,16 @@
 import type { AnnotationsData } from "../models/AnnotationsData";
 import type { ImageSet } from "../models/ImageSet";
 import { SessionService } from "./SessionService";
-import { getApiUrl } from "./config";
+import { fetchWithBackendRetry, getApiUrl } from "./config";
+
+function buildEndpointUrl(base: string, endpoint: string): string {
+  const cleanBase = base.replace(/\/+$/, "");
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  if (cleanBase.endsWith("/api") && cleanEndpoint.startsWith("/api/")) {
+    return `${cleanBase}${cleanEndpoint.slice(4)}`;
+  }
+  return `${cleanBase}${cleanEndpoint}`;
+}
 
 export class ApiService {
   /**
@@ -15,7 +24,8 @@ export class ApiService {
   static async uploadMultipleImages(
     files: File[], 
     viewType: string, 
-    toepadPredictorType?: string
+    toepadPredictorType?: string,
+    modelId?: string
   ): Promise<AnnotationsData[]> {
     const clientAnnotations: AnnotationsData[] = [];
 
@@ -30,6 +40,10 @@ export class ApiService {
     // Add toepad predictor type if specified
     if (viewType === "toepads" && toepadPredictorType) {
       formData.append("toepad_predictor_type", toepadPredictorType);
+    }
+    // Add custom model ID if specified (for generic pipeline engine prediction)
+    if (modelId) {
+      formData.append("model_id", modelId);
     }
     if (clientAnnotations.length > 0) {
       formData.append("client_annotations", JSON.stringify(clientAnnotations));
@@ -94,13 +108,17 @@ export class ApiService {
   static async processExistingImage(
     filename: string,
     viewType: string,
-    toepadPredictorType?: string
+    toepadPredictorType?: string,
+    modelId?: string
   ): Promise<AnnotationsData> {
     const base = await getApiUrl();
     const viewTypeParam = viewType === "toepads" ? "toepad" : viewType;
     let url = `${base}/process_existing?filename=${encodeURIComponent(filename)}&view_type=${encodeURIComponent(viewTypeParam)}`;
     if (viewType === "toepads" && toepadPredictorType) {
       url += `&toepad_predictor_type=${encodeURIComponent(toepadPredictorType)}`;
+    }
+    if (modelId) {
+      url += `&model_id=${encodeURIComponent(modelId)}`;
     }
     const res = await fetch(url, {
       method: "POST",
@@ -158,7 +176,8 @@ export class ApiService {
 
   static async clearHistory(): Promise<{ success: boolean }> {
     const base = await getApiUrl();
-    const res = await fetch(`${base}/clear_history`, {
+    const url = buildEndpointUrl(base, "/clear_history");
+    const res = await fetchWithBackendRetry(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -218,7 +237,8 @@ export class ApiService {
 
   static async listPredictors(): Promise<PredictorMeta[]> {
     const base = await getApiUrl();
-    const res = await fetch(`${base}/predictors`, {
+    const url = buildEndpointUrl(base, "/api/predictors");
+    const res = await fetch(url, {
       method: "GET",
       headers: {
         ...SessionService.getSessionHeaders(),
@@ -238,7 +258,8 @@ export class ApiService {
     const formData = new FormData();
     formData.append("predictor", file);
     const base = await getApiUrl();
-    const res = await fetch(`${base}/predictors`, {
+    const url = buildEndpointUrl(base, "/api/predictors");
+    const res = await fetch(url, {
       method: "POST",
       headers: {
         ...SessionService.getSessionHeaders(),
@@ -258,7 +279,8 @@ export class ApiService {
 
   static async deletePredictor(id: string): Promise<void> {
     const base = await getApiUrl();
-    const res = await fetch(`${base}/predictors/${encodeURIComponent(id)}`, {
+    const url = buildEndpointUrl(base, `/api/predictors/${encodeURIComponent(id)}`);
+    const res = await fetch(url, {
       method: "DELETE",
       headers: {
         ...SessionService.getSessionHeaders(),
@@ -275,7 +297,7 @@ export class ApiService {
     predictorId: string
   ): Promise<AnnotationsData> {
     const base = await getApiUrl();
-    const url = `${base}/free_autoplace?filename=${encodeURIComponent(filename)}`;
+    const url = buildEndpointUrl(base, `/api/free_autoplace?filename=${encodeURIComponent(filename)}`);
     const res = await fetch(url, {
       method: "POST",
       headers: {
@@ -352,6 +374,208 @@ export class ApiService {
     }
     return response.json();
   }
+
+  static async getModels(): Promise<ModelVersionItem[]> {
+    const base = await getApiUrl();
+    const url = buildEndpointUrl(base, "/api/models");
+    const response = await fetchWithBackendRetry(url, {
+      headers: {
+        ...SessionService.getSessionHeaders(),
+      },
+    });
+    if (!response.ok) {
+      throw new Error("Failed to fetch models");
+    }
+    const data = await response.json();
+    return data.models || [];
+  }
+
+  static async deleteModel(modelId: string): Promise<void> {
+    const base = await getApiUrl();
+    const url = buildEndpointUrl(base, `/api/models/${encodeURIComponent(modelId)}`);
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        ...SessionService.getSessionHeaders(),
+      },
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: "Failed to delete model" }));
+      throw new Error(err.error || "Failed to delete model");
+    }
+  }
+
+  static async createProject(name: string, organism: string): Promise<ProjectItem> {
+    const base = await getApiUrl();
+    const url = buildEndpointUrl(base, "/api/projects");
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...SessionService.getSessionHeaders(),
+      },
+      body: JSON.stringify({ name, organism }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: "Failed to create project" }));
+      throw new Error(err.error || "Failed to create project");
+    }
+    const data = await response.json();
+    return data.project;
+  }
+
+  static async listProjects(): Promise<ProjectItem[]> {
+    const base = await getApiUrl();
+    const url = buildEndpointUrl(base, "/api/projects");
+    const response = await fetch(url, {
+      headers: {
+        ...SessionService.getSessionHeaders(),
+      },
+    });
+    if (!response.ok) {
+      throw new Error("Failed to fetch projects");
+    }
+    const data = await response.json();
+    return data.projects || [];
+  }
+
+  static async submitTrain(
+    projectId: string,
+    datasetFiles: File[],
+    config: Record<string, string | number | boolean>,
+  ): Promise<{ job_id: string }> {
+    const base = await getApiUrl();
+    const url = buildEndpointUrl(base, "/api/train");
+    const formData = new FormData();
+    formData.append("project_id", projectId);
+    formData.append("config", JSON.stringify(config));
+    datasetFiles.forEach((file) => formData.append("dataset_files", file, file.name));
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        ...SessionService.getSessionHeaders(),
+      },
+      body: formData,
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: "Failed to submit training" }));
+      throw new Error(err.error || "Failed to submit training");
+    }
+    return response.json();
+  }
+
+  static async getTrainJobStatus(jobId: string): Promise<TrainJobStatusResult> {
+    const base = await getApiUrl();
+    const url = buildEndpointUrl(base, `/api/train/${encodeURIComponent(jobId)}`);
+    const response = await fetch(url, {
+      headers: {
+        ...SessionService.getSessionHeaders(),
+      },
+    });
+    if (!response.ok) {
+      throw new Error("Failed to fetch train job status");
+    }
+    return response.json();
+  }
+
+  static async deriveBoxes(datasetFiles: File[], padding: number): Promise<DeriveBoxesResult> {
+    const base = await getApiUrl();
+    const url = buildEndpointUrl(base, "/api/dataset/derive-boxes");
+    const formData = new FormData();
+    formData.append("padding", String(padding));
+    datasetFiles.forEach((file) => formData.append("dataset_files", file, file.name));
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        ...SessionService.getSessionHeaders(),
+      },
+      body: formData,
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: "Failed to derive boxes" }));
+      throw new Error(err.error || "Failed to derive boxes");
+    }
+    return response.json();
+  }
+
+  static async cancelTrainJob(jobId: string): Promise<{ success: boolean; message: string }> {
+    const base = await getApiUrl();
+    const url = buildEndpointUrl(base, `/api/train/${encodeURIComponent(jobId)}/cancel`);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        ...SessionService.getSessionHeaders(),
+        "Content-Type": "application/json",
+      },
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: "Failed to cancel training job" }));
+      throw new Error(err.error || "Failed to cancel training job");
+    }
+    return response.json();
+  }
+}
+
+export interface ModelVersionItem {
+  id: string;
+  project_id: string;
+  name: string;
+  created_at: string;
+  manifest: {
+    schema_version: number;
+    id: string;
+    name: string;
+    description: string;
+    detector: { artifact: string; geometry: string; confidence: number; iou: number };
+    classes: Array<{ id: number; name: string; landmark_schema?: string; predictor?: string; crop_padding?: number }>;
+    landmark_schemas: Record<string, { points: string[] }>;
+    evaluation?: Record<string, unknown>;
+  };
+}
+
+export interface ProjectItem {
+  id: string;
+  name: string;
+  organism: string;
+  created_at: string;
+}
+
+export interface TrainJobStatusResult {
+  success: boolean;
+  job_id: string;
+  status: string;
+  stage: string;
+  progress: number;
+  metrics: {
+    mAP50?: number | null;
+    "mAP50-95"?: number | null;
+    test_error?: number | null;
+    mock?: boolean;
+    [key: string]: unknown;
+  };
+  error?: string | null;
+}
+
+export interface DeriveBoxesResult {
+  success: boolean;
+  training_ready: boolean;
+  validation_errors: string[];
+  padding: number;
+  images: Array<{
+    image_id: string;
+    file_path: string;
+    width: number;
+    height: number;
+    objects: Array<{
+      object_id: string;
+      class_name: string;
+      obb: number[];
+      landmarks: Array<{ name: string; x: number; y: number }>;
+      specimen_id?: string;
+    }>;
+  }>;
+  total_images: number;
+  total_objects: number;
 }
 
 interface ExtractIdResult {

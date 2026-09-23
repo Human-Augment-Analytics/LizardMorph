@@ -324,7 +324,8 @@ self.onmessage = async (e: MessageEvent) => {
 
       self.postMessage({ type: "RESULT", payload: annotations, id });
     }
-  } catch (error: any) {
-    self.postMessage({ type: "ERROR", error: error.message || error.toString(), id });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    self.postMessage({ type: "ERROR", error: message, id });
   }
 };

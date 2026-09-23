@@ -1,4 +1,4 @@
-import type { ResolvedTheme } from "./ThemeContext";
+import type { ResolvedTheme } from "./theme";
 
 export interface ThemeTokens {
   // Surfaces
