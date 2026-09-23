@@ -58,6 +58,8 @@ interface MainState {
     originalScatterData: Point[]
   ) => void;
   isMeasurementsAndScaleModalOpen: boolean;
+  isClearHistoryModalOpen: boolean;
+  isDeletePredictorModalOpen: boolean;
   toepadPredictorType: string;
   currentBoundingBoxes: BoundingBox[];
   extractedId: string | null;
@@ -119,6 +121,8 @@ export class MainView extends Component<MainProps, MainState> {
     onPointSelect: () => {},
     onScatterDataUpdate: () => {},
     isMeasurementsAndScaleModalOpen: false,
+    isClearHistoryModalOpen: false,
+    isDeletePredictorModalOpen: false,
     toepadPredictorType: "toe",
     currentBoundingBoxes: [],
     extractedId: null,
@@ -264,13 +268,21 @@ export class MainView extends Component<MainProps, MainState> {
     }
   };
 
-  private readonly handleDeleteSelectedFreePredictor = async (): Promise<void> => {
+  private readonly handleDeleteSelectedFreePredictor = (): void => {
     const id = this.state.freePredictorId;
     if (!id) return;
-    const ok = window.confirm("Delete the selected predictor? This cannot be undone.");
-    if (!ok) return;
+    this.setState({ isDeletePredictorModalOpen: true });
+  };
+
+  private readonly handleCloseDeletePredictorModal = (): void => {
+    this.setState({ isDeletePredictorModalOpen: false });
+  };
+
+  private readonly executeDeleteSelectedFreePredictor = async (): Promise<void> => {
+    const id = this.state.freePredictorId;
+    if (!id) return;
+    this.setState({ isDeletePredictorModalOpen: false, predictorsLoading: true, predictorsError: null });
     try {
-      this.setState({ predictorsLoading: true, predictorsError: null });
       await ApiService.deletePredictor(id);
       const predictors = await ApiService.listPredictors();
       this.setState({ availablePredictors: predictors, freePredictorId: null });
@@ -794,23 +806,18 @@ export class MainView extends Component<MainProps, MainState> {
     }
   };
 
-  private readonly handleClearHistory = async (): Promise<void> => {
-    let confirmed = true;
-    try {
-      if (typeof window !== "undefined" && window.confirm) {
-        confirmed = window.confirm(
-          "Are you sure you want to clear all history? This will delete all uploaded images, processed files, and session data. This action cannot be undone."
-        );
-      }
-    } catch {
-      confirmed = true;
-    }
+  private readonly handleClearHistory = (): void => {
+    this.setState({ isClearHistoryModalOpen: true });
+  };
 
-    if (!confirmed) return;
+  private readonly handleCloseClearHistoryModal = (): void => {
+    this.setState({ isClearHistoryModalOpen: false });
+  };
+
+  private readonly executeClearHistory = async (): Promise<void> => {
+    this.setState({ isClearHistoryModalOpen: false, loading: true });
 
     try {
-      this.setState({ loading: true });
-      
       // Clear backend session (best-effort, don't block frontend reset)
       try {
         await ApiService.clearHistory();
@@ -1429,6 +1436,168 @@ export class MainView extends Component<MainProps, MainState> {
             viewType={this.props.selectedViewType}
             theme={theme}
           />
+        )}
+        {this.state.isClearHistoryModalOpen && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.6)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1000,
+              backdropFilter: "blur(4px)",
+            }}
+            onClick={this.handleCloseClearHistoryModal}
+          >
+            <div
+              style={{
+                backgroundColor: theme === "dark" ? "#1e293b" : "#ffffff",
+                color: theme === "dark" ? "#f8fafc" : "#0f172a",
+                padding: "28px 32px",
+                borderRadius: "16px",
+                maxWidth: "440px",
+                width: "90%",
+                boxShadow: "0 20px 50px rgba(0, 0, 0, 0.3)",
+                border: `1px solid ${theme === "dark" ? "#334155" : "#e2e8f0"}`,
+                textAlign: "center",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ fontSize: "2.5rem", marginBottom: "12px" }}>🗑️</div>
+              <h3 style={{ fontSize: "1.4rem", fontWeight: "bold", marginBottom: "8px" }}>
+                Clear All History?
+              </h3>
+              <p
+                style={{
+                  fontSize: "0.95rem",
+                  color: theme === "dark" ? "#94a3b8" : "#64748b",
+                  marginBottom: "20px",
+                  lineHeight: 1.5,
+                }}
+              >
+                This will delete all uploaded images, processed files, and session data. This action cannot be undone.
+              </p>
+              <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+                <button
+                  onClick={this.handleCloseClearHistoryModal}
+                  disabled={this.state.loading}
+                  style={{
+                    backgroundColor: "transparent",
+                    color: theme === "dark" ? "#cbd5e1" : "#475569",
+                    border: `1px solid ${theme === "dark" ? "#475569" : "#cbd5e1"}`,
+                    padding: "10px 20px",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={this.executeClearHistory}
+                  disabled={this.state.loading}
+                  style={{
+                    backgroundColor: "#ef4444",
+                    color: "#ffffff",
+                    border: "none",
+                    padding: "10px 20px",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                    boxShadow: "0 4px 12px rgba(239, 68, 68, 0.3)",
+                  }}
+                >
+                  {this.state.loading ? "Clearing..." : "Clear History"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {this.state.isDeletePredictorModalOpen && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.6)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1000,
+              backdropFilter: "blur(4px)",
+            }}
+            onClick={this.handleCloseDeletePredictorModal}
+          >
+            <div
+              style={{
+                backgroundColor: theme === "dark" ? "#1e293b" : "#ffffff",
+                color: theme === "dark" ? "#f8fafc" : "#0f172a",
+                padding: "28px 32px",
+                borderRadius: "16px",
+                maxWidth: "440px",
+                width: "90%",
+                boxShadow: "0 20px 50px rgba(0, 0, 0, 0.3)",
+                border: `1px solid ${theme === "dark" ? "#334155" : "#e2e8f0"}`,
+                textAlign: "center",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ fontSize: "2.5rem", marginBottom: "12px" }}>🗑️</div>
+              <h3 style={{ fontSize: "1.4rem", fontWeight: "bold", marginBottom: "8px" }}>
+                Delete Predictor?
+              </h3>
+              <p
+                style={{
+                  fontSize: "0.95rem",
+                  color: theme === "dark" ? "#94a3b8" : "#64748b",
+                  marginBottom: "20px",
+                  lineHeight: 1.5,
+                }}
+              >
+                Delete the selected predictor? This action cannot be undone.
+              </p>
+              <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+                <button
+                  onClick={this.handleCloseDeletePredictorModal}
+                  disabled={this.state.predictorsLoading}
+                  style={{
+                    backgroundColor: "transparent",
+                    color: theme === "dark" ? "#cbd5e1" : "#475569",
+                    border: `1px solid ${theme === "dark" ? "#475569" : "#cbd5e1"}`,
+                    padding: "10px 20px",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={this.executeDeleteSelectedFreePredictor}
+                  disabled={this.state.predictorsLoading}
+                  style={{
+                    backgroundColor: "#ef4444",
+                    color: "#ffffff",
+                    border: "none",
+                    padding: "10px 20px",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                    boxShadow: "0 4px 12px rgba(239, 68, 68, 0.3)",
+                  }}
+                >
+                  {this.state.predictorsLoading ? "Deleting..." : "Delete Predictor"}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     );

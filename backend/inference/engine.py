@@ -266,29 +266,53 @@ class GenericPipelineEngine:
                     )
                 sp = self._get_shape_predictor(pred_path)
                 try:
-                    if len(crop.shape) == 3 and crop.shape[2] == 3:
-                        crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-                    else:
-                        crop_rgb = crop
-                    rect = dlib.rectangle(
-                        0, 0, max(0, crop.shape[1] - 1), max(0, crop.shape[0] - 1)
-                    )
-                    shape = sp(crop_rgb, rect)
                     schema = manifest.landmark_schemas.get(cls_cfg.landmark_schema or "")
                     expected_names = schema.points if schema else []
-                    if expected_names and shape.num_parts != len(expected_names):
-                        raise ValueError(
-                            f"Predictor for class '{class_name}' returned {shape.num_parts} landmarks; "
-                            f"the manifest declares {len(expected_names)}."
+                    if (manifest.id == "lizard-toepad-v1"
+                            and os.path.basename(pred_path) == "ml_morph_best.dat"):
+                        try:
+                            from backend.utils import _predict_toepad_crop
+                        except ImportError:
+                            from utils import _predict_toepad_crop
+                        corners = target.get("corners")
+                        if corners is None:
+                            cx, cy, w, h, angle = target["obb"]
+                            corners = cv2.boxPoints(((cx, cy), (w, h), angle))
+                        corners = np.asarray(corners, dtype=np.float32).copy()
+                        source = image
+                        if class_name.startswith("up_"):
+                            source = cv2.flip(image, 0)
+                            corners[:, 1] = h_img - 1 - corners[:, 1]
+                        pts_orig = _predict_toepad_crop(sp, source, corners, pred_path)
+                        if class_name.startswith("up_"):
+                            pts_orig[:, 1] = h_img - 1 - pts_orig[:, 1]
+                        if expected_names and len(pts_orig) != len(expected_names):
+                            raise ValueError(
+                                f"Predictor for class '{class_name}' returned {len(pts_orig)} landmarks; "
+                                f"the manifest declares {len(expected_names)}."
+                            )
+                    else:
+                        if len(crop.shape) == 3 and crop.shape[2] == 3:
+                            crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+                        else:
+                            crop_rgb = crop
+                        rect = dlib.rectangle(
+                            0, 0, max(0, crop.shape[1] - 1), max(0, crop.shape[0] - 1)
                         )
-                    pts_crop = _shape_points_in_schema_order(shape, expected_names)
-
-                    if len(pts_crop) > 0:
+                        shape = sp(crop_rgb, rect)
+                        if expected_names and shape.num_parts != len(expected_names):
+                            raise ValueError(
+                                f"Predictor for class '{class_name}' returned {shape.num_parts} landmarks; "
+                                f"the manifest declares {len(expected_names)}."
+                            )
+                        pts_crop = _shape_points_in_schema_order(shape, expected_names)
                         M_rev = cv2.invertAffineTransform(M)
                         pts_h = np.hstack(
                             [pts_crop, np.ones((len(pts_crop), 1), dtype=np.float32)]
                         )
                         pts_orig = (M_rev @ pts_h.T).T
+
+                    if len(pts_orig) > 0:
                         landmarks = [
                             {
                                 "name": expected_names[index] if index < len(expected_names) else str(index),

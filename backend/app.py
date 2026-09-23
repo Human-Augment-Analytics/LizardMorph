@@ -808,6 +808,8 @@ app = Flask(__name__)
 # Configure Flask session
 app.secret_key = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 app.config["SESSION_TYPE"] = "filesystem"
+if os.getenv("TESTING", "").lower() in ("1", "true", "yes"):
+    app.config["TESTING"] = True
 
 
 CORS_ORIGINS = get_cors_origins()
@@ -3153,7 +3155,12 @@ def api_train():
             config = json.loads(request.form["config"])
         if not isinstance(config, dict):
             return jsonify({"success": False, "error": "Training config must be an object"}), 400
-        if config.get("mock") and not app.config.get("TESTING"):
+        if (
+            app.config.get("TESTING")
+            and os.getenv("MOCK_TRAINING", "").lower() in ("1", "true", "yes")
+        ):
+            config["mock"] = True
+        elif config.get("mock") and not app.config.get("TESTING"):
             return jsonify({"success": False, "error": "Mock training is test-only"}), 400
 
         numeric_limits = {

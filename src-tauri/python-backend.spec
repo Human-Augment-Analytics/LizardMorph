@@ -8,7 +8,7 @@ project_dir = os.environ["AUTOMORPH_PROJECT_DIR"]
 backend_dir = os.path.join(project_dir, "backend")
 sidecar_name = os.environ["AUTOMORPH_SIDECAR_NAME"]
 
-hiddenimports = ["native_ocr", "onnxruntime", "pytesseract"]
+hiddenimports = ["native_ocr", "onnxruntime", "pytesseract", "torch", "ultralytics"]
 if sys.platform == "darwin":
     hiddenimports += [
         module_name
@@ -44,8 +44,7 @@ a = Analysis(
     excludes=[
         "IPython", "boto3", "botocore", "easyocr", "jax", "jaxlib",
         "jupyter", "librosa", "nbformat", "openpyxl", "openvino", "pytest",
-        "sklearn", "sqlalchemy", "tensorflow", "tkinter", "torch",
-        "torchaudio", "transformers", "ultralytics",
+        "sklearn", "sqlalchemy", "tensorflow", "tkinter",
     ],
     noarchive=False,
 )

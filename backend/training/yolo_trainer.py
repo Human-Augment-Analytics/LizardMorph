@@ -265,7 +265,20 @@ names:
                 "recovered_from_checkpoint": True,
             }
 
-        model = YOLO(kwargs.pop("base_model", "yolov8n-obb.pt"))
+        base_model_arg = kwargs.pop("base_model", None)
+        if not base_model_arg:
+            candidates = [
+                os.path.join(getattr(sys, "_MEIPASS", ""), "models", "lizard-toe-pad", "yolov8n-obb.pt"),
+                os.path.join(os.path.dirname(__file__), "..", "..", "models", "lizard-toe-pad", "yolov8n-obb.pt"),
+                os.path.abspath("yolov8n-obb.pt"),
+            ]
+            for cand in candidates:
+                if cand and os.path.isfile(cand):
+                    base_model_arg = cand
+                    break
+            if not base_model_arg:
+                base_model_arg = "yolov8n-obb.pt"
+        model = YOLO(base_model_arg)
 
         def on_epoch_end(trainer):
             try:

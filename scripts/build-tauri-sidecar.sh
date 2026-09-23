@@ -149,7 +149,7 @@ if [[ "${TARGET_ARCH}" != "${BACKEND_PYTHON_ARCH}" ]]; then
   exit 1
 fi
 
-PREFLIGHT_MODULES='cv2, dlib, flask, numpy, onnxruntime, PIL, psutil'
+PREFLIGHT_MODULES='cv2, dlib, flask, numpy, onnxruntime, PIL, psutil, torch, ultralytics'
 if [[ "${TARGET_TRIPLE}" == *darwin* ]]; then
   PREFLIGHT_MODULES="${PREFLIGHT_MODULES}, Vision, Quartz, objc"
 fi

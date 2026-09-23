@@ -142,8 +142,21 @@ class DlibXMLImporter:
 
             objects = []
             for box_idx, box_elem in enumerate(img_elem.findall("box")):
-                class_name = box_elem.get("label", "object")
-                specimen_id = box_elem.get("specimen_id")
+                label_child = box_elem.find("label")
+                label_text = (
+                    label_child.text.strip()
+                    if label_child is not None and label_child.text
+                    else None
+                )
+                class_name = (box_elem.get("label") or label_text or "object").strip()
+
+                spec_child = box_elem.find("specimen_id")
+                spec_text = (
+                    spec_child.text.strip()
+                    if spec_child is not None and spec_child.text
+                    else None
+                )
+                specimen_id = box_elem.get("specimen_id") or spec_text
                 
                 parts = []
                 for part_idx, part_elem in enumerate(box_elem.findall("part")):

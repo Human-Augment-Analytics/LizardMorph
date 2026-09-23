@@ -14,10 +14,11 @@ backend/test/
 backend/landmark_visualizations/
 /models/
 test.xml
-images/
+/images/
 *svm
 
 # Node.js
+node_modules/
 frontend/node_modules
 frontend/build
 frontend/dist/
