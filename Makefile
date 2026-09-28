@@ -13,16 +13,18 @@ download-models:
 	@echo "Downloading models..."
 	bash backend/scripts/download_models.sh
 
+PYTHON_VERSION ?= 3.10
+
 setup-backend:
 	@echo "Setting up backend with uv..."
-	cd backend && uv venv --clear && \
-	uv pip install --python .venv/bin/python 'cmake>=3.28,<4' && \
+	cd backend && uv venv --python $(PYTHON_VERSION) --clear && \
+	uv pip install --python .venv/bin/python 'cmake>=3.28,<4' setuptools wheel && \
 	uv pip install --python .venv/bin/python -r <(grep -vE '^[[:space:]]*dlib' requirements.txt) && \
 	uv pip install --python .venv/bin/python --no-build-isolation $$(grep -E '^[[:space:]]*dlib' requirements.txt | tr -d '[:space:]')
 
 setup-frontend:
 	@echo "Setting up frontend with npm..."
-	cd frontend && npm install
+	cd frontend && npm ci
 
 dev:
 	@echo "Starting backend and frontend concurrently..."
@@ -86,3 +88,17 @@ clean:
 	@echo "Cleaning up environments..."
 	rm -rf backend/.venv
 	rm -rf frontend/node_modules
+
+.PHONY: test test-backend test-frontend lint
+PYTHON ?= backend/.venv/bin/python
+
+test: test-backend test-frontend
+
+test-backend:
+	$(PYTHON) -m pytest
+
+test-frontend:
+	npm --prefix frontend test
+
+lint:
+	npm --prefix frontend run lint

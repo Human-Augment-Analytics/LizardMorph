@@ -1,4 +1,4 @@
-# React + Flask AutoMorph App
+# AutoMorph (LizardMorph)
 
 **Live Tryout:** [https://haag-1.cc.gatech.edu/](https://haag-1.cc.gatech.edu/)
 
@@ -6,6 +6,13 @@ This app is built on the machine learning toolbox ml-morph. This app has a pre-t
 
 To learn more about the ml-morph toolbox: 
 Porto, A. and Voje, K.L., 2020. ML‐morph: A fast, accurate and general approach for automated detection and landmarking of biological structures in images. Methods in Ecology and Evolution, 11(4), pp.500-512.
+
+## Researcher handoff
+
+Start with the [research handoff guide](docs/RESEARCH_HANDOFF.md) for validation
+limits, provenance, and the publication checklist. The [training tutorial](tutorial.md)
+describes the current seven-step wizard. Passing software tests does not establish
+accuracy on a new species, imaging protocol, or specimen population.
 
 ## Structure
 
@@ -15,15 +22,15 @@ Porto, A. and Voje, K.L., 2020. ML‐morph: A fast, accurate and general approac
 ## Prerequisites
 
 - **macOS or Linux**
-- **uv** (for fast Python environment and package management)
-- **Node.js ≥ 18** + npm (for the frontend)
+- **uv** (for Python environment and package management); setup selects Python 3.10 for the pinned backend dependencies
+- **Node.js 22.15.0** (see `.nvmrc`) + npm (for the frontend)
 - The `models/` directory populated (see below for download script)
 - **Reference Repo:** [Lizard_Toepads](https://github.com/Human-Augment-Analytics/Lizard_Toepads)
 
 ## 1. Clone the Repo
 
 ```bash
-git clone <repo-url> AutoMorph
+git clone https://github.com/Human-Augment-Analytics/LizardMorph.git AutoMorph
 cd AutoMorph
 ```
 
@@ -61,7 +68,7 @@ make download-models
 
 Verify everything imported correctly for the backend:
 ```bash
-cd backend && uv run python scripts/check_env.py
+PYTHONPATH=backend backend/.venv/bin/python backend/scripts/check_env.py
 ```
 
 ## 3. Configure Environment Variables
@@ -69,19 +76,19 @@ cd backend && uv run python scripts/check_env.py
 Copy the example and fill in any missing paths:
 
 ```bash
-cp .env.example .env   # if it exists, otherwise create .env at the repo root
+cp .env.example .env
 ```
 
 The `.env` file must live at the **repo root** (`AutoMorph/.env`), not inside `backend/`.
 
-### Required variables
+### Model configuration
 
-| Variable | Default | Description |
+| Variable | Example value | Description |
 |----------|---------|-------------|
 | `API_PORT` | `3005` | Port the Flask backend listens on |
 | `TOEPAD_YOLO_MODEL` | `../models/lizard-toe-pad/yolo_obb_6class_h7.onnx` | YOLO OBB detector |
-| `TOEPAD_TOE_PREDICTOR` | `../models/lizard-toe-pad/toe_predictor_obb.dat` | 9-point toe dlib predictor |
-| `TOEPAD_FINGER_PREDICTOR` | `../models/lizard-toe-pad/finger_predictor_obb.dat` | 9-point finger dlib predictor ⚠️ |
+| `TOEPAD_TOE_PREDICTOR` | `../models/lizard-toe-pad/ml_morph_best.dat` | 9-point toe dlib predictor |
+| `TOEPAD_FINGER_PREDICTOR` | `../models/lizard-toe-pad/ml_morph_best.dat` | 9-point finger dlib predictor ⚠️ |
 | `TOEPAD_SCALE_PREDICTOR` | `../models/lizard-toe-pad/lizard_scale.dat` | 2-point ruler predictor |
 | `ID_EXTRACTOR_MODEL` | `../models/lizard-toe-pad/yolo_bounding_box.pt` | Legacy YOLO for ID detection |
 | `DORSAL_PREDICTOR_FILE` | `../models/lizard-x-ray/dorsal_predictor_clahe_best.dat` | Dorsal landmark predictor |
@@ -106,8 +113,8 @@ API_PORT=3005
 VITE_API_URL=/api
 
 TOEPAD_YOLO_MODEL=../models/lizard-toe-pad/yolo_obb_6class_h7.onnx
-TOEPAD_TOE_PREDICTOR=../models/lizard-toe-pad/toe_predictor_obb.dat
-TOEPAD_FINGER_PREDICTOR=../models/lizard-toe-pad/finger_predictor_obb.dat
+TOEPAD_TOE_PREDICTOR=../models/lizard-toe-pad/ml_morph_best.dat
+TOEPAD_FINGER_PREDICTOR=../models/lizard-toe-pad/ml_morph_best.dat
 TOEPAD_SCALE_PREDICTOR=../models/lizard-toe-pad/lizard_scale.dat
 ID_EXTRACTOR_MODEL=../models/lizard-toe-pad/yolo_bounding_box.pt
 
@@ -122,16 +129,22 @@ All models go in `models/lizard-toe-pad/` and `models/lizard-x-ray/` (relative t
 ```
 models/
 ├── lizard-toe-pad/
-│   ├── yolo_obb_6class_h7.pt        ← Backend YOLO (PyTorch)
-│   ├── yolo_obb_6class_h7.onnx      ← Frontend YOLO (ONNX, IR=8)
-│   ├── finger_predictor_obb.dat     ← 9-point finger predictor
-│   ├── toe_predictor_obb.dat        ← 9-point toe predictor
+│   ├── yolo_obb_6class_h7.pt        ← Optional native PyTorch detector
+│   ├── yolo_obb_6class_h7.onnx      ← Backend ONNX detector
+│   ├── ml_morph_best.dat            ← Shared 9-point digit predictor
 │   ├── lizard_scale.dat             ← 2-point ruler predictor
 │   └── yolo_bounding_box.pt         ← ID text detection model
 └── lizard-x-ray/
     ├── dorsal_predictor_clahe_best.dat ← Dorsal landmark predictor
+    ├── scale_predictor_clahe.dat        ← X-ray scale predictor
     └── lateral_predictor_auto.dat       ← Lateral landmark predictor
 ```
+
+Defaults use `ml_morph_best.dat` for both digit predictors and prefer
+`yolo_obb_6class_h7_int8.onnx` when present, otherwise the float ONNX model.
+Set explicit paths to record which model your experiment uses. The examples here
+select the float ONNX detector. Desktop builds also require the INT8 model; see
+[src-tauri/desktop-models.txt](src-tauri/desktop-models.txt) for the complete list.
 
 (If the predictor is too big for your platform, ensure it is downloaded and placed as per the paths in your `.env` file.)
 
@@ -145,7 +158,7 @@ make dev
 
 The API will be available at `http://localhost:3005` (or your configured `API_PORT`), and the UI will be at `http://localhost:5173`.
 
-> **Note (ports / restarts):** `make dev` will stop any existing backend listener on `API_PORT` (including a Gunicorn process) and stop any existing Vite dev server on port 5173, then restart both. Cancel with `Ctrl+C` to stop the dev processes.
+> **Note (ports / restarts):** `make dev` attempts to stop recognized Python app and Vite processes on the configured ports. It refuses to stop an unrecognized listener; stop that process yourself before restarting. Cancel with `Ctrl+C` to stop the dev processes.
 
 ### Setting up ngrok for External Access
 If you want to make your local development server accessible from the internet:
@@ -262,11 +275,24 @@ tail -n 200 /var/log/automorph/deploy.log
 1. Open a terminal and run `make dev`.
 2. Navigate to http://localhost:5173 (or your specific port)
 3. Hit upload on the webpage and select the picture from the folder `sample_image` in the project directory.
-4. Notice output.xml, output.tps, output.csv appear in project directory.
+4. Use the export controls to download annotations. Keep the raw predictions and manually corrected exports separately; outputs are associated with the active session.
 5. Image should appear in the web browser. Landmarks on image can be moved to fix predictions.
 6. Image can be viewed in three ways: original upload, color contrasted or inverted color.
 7. Image can be downloaded for records.
 8. For toes, after upload, each finger box should have **9 landmarks**, each toe box **9 landmarks**, and the ruler box **2 landmarks**.
+
+## Validation
+
+```bash
+uv pip install --python backend/.venv/bin/python -r backend/requirements-dev.txt
+make test
+make lint
+npm --prefix frontend run build
+```
+
+`pytest.ini` configures imports so backend tests run from the repository root.
+The tests include synthetic data and stubbed inference; these are software
+regression checks, not a held-out biological accuracy benchmark.
 
 ## Backend Utility Scripts
 
@@ -299,7 +325,7 @@ uv run python scripts/<script>.py --help
 | **Missing predictor file error** | The machine learning model file (`dorsal_predictor_clahe_best.dat`) is required but not included in the repository due to its size. Download the predictor file and place it in the `models/lizard-x-ray/` directory. Update `.env`. |
 | **Finger boxes have 2 landmarks** | `TOEPAD_FINGER_PREDICTOR` points to `lizard_scale.dat`. Fix `.env`, restart Flask. |
 | **`No module named dlib`** | Wrong Python env. Verify the virtual environment with `uv` by running `make setup`. Make sure you use `uv run`. |
-| **Frontend shows no boxes** | ONNX model IR version too high. Reconvert to IR 8: `uv run python scripts/do_export.py`. |
+| **No boxes appear** | Inspect the API response and backend logs; verify model paths, detector class mapping, and confidence settings before changing the model. |
 | **"No ID found" error** | Wrong model in `ID_EXTRACTOR_MODEL`. Check the path points to `yolo_bounding_box.pt`. |
 | **Frontend not loading** | Check browser console for CORS errors; ensure the backend API URL is correctly set in `.env` or Vite config. |
 | **Image processing errors** | Verify the uploaded image format is supported (JPG, PNG, TIF, BMP). |

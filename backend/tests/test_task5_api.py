@@ -1,6 +1,6 @@
 import json
 import pytest
-from backend.app import app, model_registry_repo, register_built_in_legacy_models
+from app import app, model_registry_repo, register_built_in_legacy_models
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ def test_api_projects_endpoints(client):
 
 
 def test_api_train_and_status_endpoints(client, monkeypatch):
-    import backend.app as app_mod
+    import app as app_mod
 
     dataset = {
         "images": [
@@ -127,7 +127,7 @@ ID=Anolis_001
 
 
 def test_api_cancel_training_endpoint(client, monkeypatch):
-    import backend.app as app_mod
+    import app as app_mod
 
     job_id = "job_cancel123"
     monkeypatch.setattr(app_mod.training_orchestrator, "cancel_job", lambda requested: requested == job_id)

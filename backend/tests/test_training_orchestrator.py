@@ -139,6 +139,7 @@ def test_yolo_recovers_completed_checkpoint_before_export(temp_workspace, monkey
     monkeypatch.setattr(ultralytics, "YOLO", FakeYOLO)
     metrics = YoloOBBTrainer(job_dir).train("unused.yaml", epochs=2)
 
+    assert metrics["detector_weights_pt"] == best_weights
     assert metrics["recovered_from_checkpoint"] is True
     assert metrics["mAP50"] == 0.9
     assert metrics["mAP50-95"] == 0.7

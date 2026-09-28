@@ -1,7 +1,29 @@
 import importlib
 import os
+import tempfile
+from unittest.mock import patch
 
 import pytest
+
+
+def pytest_configure(config):
+    # Configure writable stores before test collection imports the Flask app.
+    # Never register test models or recover jobs in a researcher's real stores.
+    config._research_test_dir = tempfile.TemporaryDirectory(prefix="automorph-tests-")
+    root = config._research_test_dir.name
+    config._research_test_env = patch.dict(os.environ, {
+        "DB_PATH": os.path.join(root, "test.db"),
+        "RUNS_DIR": os.path.join(root, "runs"),
+        "PREDICTOR_LIBRARY_DIR": os.path.join(root, "predictors"),
+        "SESSION_DIR": os.path.join(root, "sessions"),
+    })
+    config._research_test_env.start()
+
+
+def pytest_unconfigure(config):
+    if hasattr(config, "_research_test_env"):
+        config._research_test_env.stop()
+        config._research_test_dir.cleanup()
 
 
 @pytest.fixture()

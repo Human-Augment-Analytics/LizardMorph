@@ -1,4 +1,5 @@
 import os
+import sys
 import math
 import shutil
 import csv
@@ -262,6 +263,7 @@ names:
                     if key.startswith("metrics/")
                 },
                 "epochs": epochs,
+                "detector_weights_pt": best_weights,
                 "recovered_from_checkpoint": True,
             }
 
