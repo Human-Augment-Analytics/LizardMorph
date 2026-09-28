@@ -131,7 +131,7 @@ models/
 ├── lizard-toe-pad/
 │   ├── yolo_obb_6class_h7.pt        ← Optional native PyTorch detector
 │   ├── yolo_obb_6class_h7.onnx      ← Backend ONNX detector
-│   ├── ml_morph_best.dat          ← Shared 9-point digit predictor
+│   ├── ml_morph_best.dat            ← Shared 9-point digit predictor
 │   ├── lizard_scale.dat             ← 2-point ruler predictor
 │   └── yolo_bounding_box.pt         ← ID text detection model
 └── lizard-x-ray/
