@@ -1,3 +1,7 @@
+> Historical engineering notes; pending-work statements below describe an earlier
+> worktree, not the current release. Use [RESEARCH_HANDOFF.md](RESEARCH_HANDOFF.md)
+> and the current tests for the researcher handoff. Local file links below are archival.
+
 # AutoMorph / LizardMorph Handoff Document for Codex
 
 **Date:** 2026-09-23  

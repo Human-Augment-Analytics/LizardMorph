@@ -1,41 +1,35 @@
+"""Import-time configuration is checked in fresh processes, never by reloading Flask."""
+import json
 import os
-import importlib
+from pathlib import Path
+import subprocess
+import sys
+
 import pytest
 
 
-def test_env_hosted_and_repo_defaults(monkeypatch):
-    import app
-    import utils
-
-    # Test 1: AUTOMORPH_HOSTED=true
-    monkeypatch.setenv("AUTOMORPH_HOSTED", "true")
-    monkeypatch.delenv("LIZARDMORPH_HOSTED", raising=False)
-    monkeypatch.delenv("REPO_NAME", raising=False)
-    
-    importlib.reload(app)
-    importlib.reload(utils)
-    assert app.IS_HOSTED is True
-    assert utils.is_hosted() is True
-    assert app.REPO_NAME == "AutoMorph"
-
-    # Test 2: Fallback to LIZARDMORPH_HOSTED=true when AUTOMORPH_HOSTED is unset
-    monkeypatch.delenv("AUTOMORPH_HOSTED", raising=False)
-    monkeypatch.setenv("LIZARDMORPH_HOSTED", "true")
-    importlib.reload(app)
-    importlib.reload(utils)
-    assert app.IS_HOSTED is True
-    assert utils.is_hosted() is True
-
-    # Test 3: Unset both AUTOMORPH_HOSTED and LIZARDMORPH_HOSTED -> False
-    monkeypatch.delenv("AUTOMORPH_HOSTED", raising=False)
-    monkeypatch.delenv("LIZARDMORPH_HOSTED", raising=False)
-    importlib.reload(app)
-    importlib.reload(utils)
-    assert app.IS_HOSTED is False
-    assert utils.is_hosted() is False
-
-    # Test 4: REPO_NAME custom override
-    monkeypatch.setenv("REPO_NAME", "CustomRepo")
-    importlib.reload(app)
-    assert app.REPO_NAME == "CustomRepo"
-
+@pytest.mark.parametrize("overrides,hosted,repo", [
+    ({"AUTOMORPH_HOSTED": "true"}, True, "AutoMorph"),
+    ({"LIZARDMORPH_HOSTED": "true"}, True, "AutoMorph"),
+    ({}, False, "AutoMorph"),
+    ({"REPO_NAME": "CustomRepo"}, False, "CustomRepo"),
+])
+def test_env_hosted_and_repo_defaults(tmp_path, overrides, hosted, repo):
+    env = os.environ.copy()
+    for name in ("AUTOMORPH_HOSTED", "LIZARDMORPH_HOSTED", "REPO_NAME"):
+        env.pop(name, None)
+    env.update(overrides)
+    env.update({
+        "AUTOMORPH_DATA_DIR": str(tmp_path),
+        "DB_PATH": str(tmp_path / "test.db"),
+        "RUNS_DIR": str(tmp_path / "runs"),
+        "PREDICTOR_LIBRARY_DIR": str(tmp_path / "predictors"),
+        "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+    })
+    result = subprocess.run([
+        sys.executable, "-c",
+        "import dotenv; dotenv.load_dotenv = lambda *a, **k: False; "
+        "import app, utils, json; "
+        "print(json.dumps([app.IS_HOSTED, utils.is_hosted(), app.REPO_NAME]))",
+    ], env=env, cwd=tmp_path, capture_output=True, text=True, check=True)
+    assert json.loads(result.stdout.splitlines()[-1]) == [hosted, hosted, repo]

@@ -93,6 +93,7 @@ Thumbs.db
 
 # env files
 .env*
+!.env.example
 
 # key & cert files
 *.key

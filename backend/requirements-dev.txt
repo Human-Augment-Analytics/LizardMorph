@@ -1,0 +1,2 @@
+# Install after backend/requirements.txt.
+pytest==8.3.5

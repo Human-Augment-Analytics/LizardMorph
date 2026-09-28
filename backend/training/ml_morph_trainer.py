@@ -1,4 +1,5 @@
 import os
+import json
 import random
 import re
 import cv2
@@ -76,6 +77,7 @@ class MLMorphTrainer:
         comment_elem.text = "Auto-generated landmark crops with box jitter"
 
         images_elem = ET.SubElement(dataset_elem, "images")
+        source_groups = {}
 
         random_generator = np.random.default_rng(42)
         for image_index, cimg in enumerate(canonical_dataset.images):
@@ -170,6 +172,7 @@ class MLMorphTrainer:
 
                 # Relative path for dlib XML
                 rel_crop_path = os.path.join("crops", crop_filename)
+                source_groups[rel_crop_path] = os.path.realpath(actual_img_path)
 
                 img_node = ET.SubElement(
                     images_elem,
@@ -213,6 +216,9 @@ class MLMorphTrainer:
         if not images_elem.findall("image"):
             raise ValueError(f"No landmark annotations found for class '{class_name or 'default'}'.")
 
+        with open(xml_path + ".groups.json", "w", encoding="utf-8") as handle:
+            json.dump(source_groups, handle, indent=2)
+
         return xml_path
 
     @staticmethod
@@ -223,20 +229,30 @@ class MLMorphTrainer:
         if images_node is None:
             raise ValueError("Generated dlib dataset is missing its images element.")
         images = list(images_node.findall("image"))
-        if len(images) < 2 or test_split <= 0:
+        # Generated crops from one source image are correlated observations.
+        # Split source groups, never individual crops. Legacy XML without a
+        # sidecar is grouped by image file (including repeated references).
+        groups_path = xml_path + ".groups.json"
+        if os.path.exists(groups_path):
+            with open(groups_path, encoding="utf-8") as handle:
+                source_groups = json.load(handle)
+            group_keys = [source_groups[image.get("file")] for image in images]
+        else:
+            group_keys = [image.get("file") for image in images]
+        groups = list(dict.fromkeys(group_keys))
+        if len(groups) < 2 or test_split <= 0:
             return xml_path, None
 
-        indices = list(range(len(images)))
-        random.Random(seed).shuffle(indices)
-        test_count = min(len(images) - 1, max(1, int(round(len(images) * test_split))))
-        test_indices = set(indices[:test_count])
+        random.Random(seed).shuffle(groups)
+        test_count = min(len(groups) - 1, max(1, int(round(len(groups) * test_split))))
+        test_groups = set(groups[:test_count])
 
         def write_subset(path: str, include_test: bool):
             subset_root = ET.Element("dataset")
             ET.SubElement(subset_root, "name").text = "ML-Morph Dataset"
             subset_images = ET.SubElement(subset_root, "images")
             for index, image in enumerate(images):
-                if (index in test_indices) == include_test:
+                if (group_keys[index] in test_groups) == include_test:
                     subset_images.append(ET.fromstring(ET.tostring(image)))
             ET.ElementTree(subset_root).write(path, encoding="utf-8", xml_declaration=True)
 
