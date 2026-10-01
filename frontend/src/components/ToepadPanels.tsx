@@ -32,7 +32,6 @@ interface DragState {
 }
 
 interface ToepadPanelsState {
-  isOpen: boolean;
   drag: DragState | null;
 }
 
@@ -40,7 +39,6 @@ const CLICK_THRESHOLD = 3;
 
 export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState> {
   state: ToepadPanelsState = {
-    isOpen: true,
     drag: null,
   };
 
@@ -216,16 +214,12 @@ export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState
   }
 
   render() {
-    const { imageURL, imageWidth, imageHeight, points, boundingBoxes, isEditMode, onToggleEditMode, theme } =
-      this.props;
+    const { imageURL, imageWidth, imageHeight, points, boundingBoxes, isEditMode, theme } = this.props;
     if (!imageURL || !imageWidth || !imageHeight) return null;
 
     const regions = getToepadRegions(points, boundingBoxes);
     const detected = regions.filter((r) => r.crop).length;
-    if (detected === 0) return null;
-
     const styles = getToepadPanelsStyles(theme);
-    const { isOpen } = this.state;
 
     return (
       <div style={styles.container}>
@@ -234,31 +228,13 @@ export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState
             <span>Toepads</span>
             <span style={styles.headerSubtitle}>
               {detected} of {regions.length} detected
-              {isEditMode && isOpen ? " · drag a landmark to move it" : ""}
             </span>
           </span>
-          <span style={styles.headerActions}>
-            {isOpen && (
-              <button
-                onClick={onToggleEditMode}
-                style={{
-                  ...styles.editButton,
-                  backgroundColor: isEditMode ? "#ffc107" : "#4F7942",
-                }}
-              >
-                {isEditMode ? "Save Points" : "Edit Points"}
-              </button>
-            )}
-            <button
-              onClick={() => this.setState((prev) => ({ isOpen: !prev.isOpen }))}
-              style={styles.toggleButton}
-              title="Toggle toepad close-ups"
-            >
-              {isOpen ? "Hide" : "Show"}
-            </button>
+          <span style={styles.headerSubtitle}>
+            {isEditMode ? "Drag a landmark to move it" : "Click Edit Points to adjust landmarks"}
           </span>
         </div>
-        {isOpen && <div style={styles.grid}>{regions.map((r) => this.renderRegion(r))}</div>}
+        <div style={styles.grid}>{regions.map((r) => this.renderRegion(r))}</div>
       </div>
     );
   }

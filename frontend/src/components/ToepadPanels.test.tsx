@@ -61,12 +61,19 @@ describe("ToepadPanels", () => {
     expect(markup).toContain('fill="yellow"');
   });
 
-  it("shows the save action while editing", () => {
-    expect(render()).toContain("Edit Points");
-    expect(render({ isEditMode: true })).toContain("Save Points");
+  it("tells the user how to edit, and how to drag once editing", () => {
+    expect(render()).toContain("Click Edit Points to adjust landmarks");
+    expect(render({ isEditMode: true })).toContain("Drag a landmark to move it");
   });
 
-  it("renders nothing when no toepads were detected", () => {
-    expect(render({ boundingBoxes: [boxes[0]] })).toBe("");
+  it("still shows the grid when no toepads were detected", () => {
+    const markup = render({ boundingBoxes: [boxes[0]] });
+
+    expect(markup).toContain("0 of 4 detected");
+    expect(markup.match(/Not detected/g)).toHaveLength(4);
+  });
+
+  it("renders nothing until the image has loaded", () => {
+    expect(render({ imageWidth: 0, imageHeight: 0 })).toBe("");
   });
 });

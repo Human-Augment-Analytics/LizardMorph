@@ -16,6 +16,12 @@ describe("MainView free predictor panel", () => {
     expect(view.state.isFreePredictorPanelOpen).toBe(false);
   });
 
+  it("starts the toepad view with the toepad grid off", () => {
+    const view = new MainView({ selectedViewType: "toepads" });
+
+    expect(view.state.isToepadGridOn).toBe(false);
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });

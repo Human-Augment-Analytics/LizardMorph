@@ -71,6 +71,7 @@ interface MainState {
   predictorsError: string | null;
   isFreePredictorPanelOpen: boolean;
   selectedModelName: string | null;
+  isToepadGridOn: boolean;
 }
 
 interface MainProps {
@@ -134,6 +135,7 @@ export class MainView extends Component<MainProps, MainState> {
     predictorsError: null,
     isFreePredictorPanelOpen: this.props.selectedViewType === "free",
     selectedModelName: null,
+    isToepadGridOn: false,
   };
   componentDidMount(): void {
     this.initializeApp();
@@ -1143,6 +1145,10 @@ export class MainView extends Component<MainProps, MainState> {
     this.setState({ measurements });
   };
 
+  private readonly handleToggleToepadGrid = (): void => {
+    this.setState((prevState) => ({ isToepadGridOn: !prevState.isToepadGridOn }));
+  };
+
   private readonly handleToggleEditMode = (): void => {
     this.setState((prevState) => ({ isEditMode: !prevState.isEditMode }));
   };
@@ -1166,6 +1172,9 @@ export class MainView extends Component<MainProps, MainState> {
   render() {
     const { resolved: theme, preference: themePreference, setPreference: setThemePref } = this.context;
     const mainStyles = getMainViewStyles(theme);
+    const isToepadView = this.props.selectedViewType === "toepads";
+    const showToepadGrid =
+      isToepadView && this.state.isToepadGridOn && this.state.dataFetched && Boolean(this.state.currentImageURL);
     return (
       <div style={mainStyles.container}>
         {this.state.sessionReady && <SessionInfo onNavigateHome={this.props.onNavigateHome} theme={theme} themePreference={themePreference} onThemeChange={setThemePref} />}
@@ -1258,6 +1267,8 @@ export class MainView extends Component<MainProps, MainState> {
               isEditMode={this.state.isEditMode}
               onToggleEditMode={this.handleToggleEditMode}
               onResetZoom={this.handleResetZoom}
+              isToepadGridOn={this.state.isToepadGridOn}
+              onToggleToepadGrid={isToepadView ? this.handleToggleToepadGrid : undefined}
               theme={theme}
             />
             {this.props.selectedViewType === "free" && (
@@ -1394,7 +1405,7 @@ export class MainView extends Component<MainProps, MainState> {
                 </div>
               );
             })()}
-            {this.props.selectedViewType === "toepads" && this.state.dataFetched && (
+            {showToepadGrid && (
               <ToepadPanels
                 imageURL={this.state.currentImageURL}
                 imageWidth={this.state.imageWidth}
@@ -1409,9 +1420,11 @@ export class MainView extends Component<MainProps, MainState> {
                 theme={theme}
               />
             )}
+            {/* Hidden rather than unmounted in grid mode so undo history and position sync keep working */}
             <div style={{
               overflow: "auto",
               height: "100%",
+              display: showToepadGrid ? "none" : undefined,
             }}>
               <SVGViewer
                 selectedViewType={this.props.selectedViewType}
