@@ -81,6 +81,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     scaleYDisplay: d3.ScaleLinear<number, number> | null;
     svgWidth: number;
     svgHeight: number;
+    imageWidth: number;
+    imageHeight: number;
   } = {
     scaleXToImg: null,
     scaleYToImg: null,
@@ -88,6 +90,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     scaleYDisplay: null,
     svgWidth: 0,
     svgHeight: 0,
+    imageWidth: 0,
+    imageHeight: 0,
   };
 
   componentDidMount() {
@@ -151,6 +155,26 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       ) {
         const svg = d3.select(this.svgRef.current);
         svg.call(this.zoomRef.current.transform, this.props.zoomTransform);
+      }
+    }
+
+    // Landmarks moved outside this viewer (e.g. the toepad close-ups): record undo and sync positions
+    if (
+      prevProps.originalScatterData !== this.props.originalScatterData &&
+      this.props.originalScatterData !== this.lastEmittedOriginal &&
+      prevProps.originalScatterData.length === this.props.originalScatterData.length &&
+      prevProps.originalScatterData.length > 0 &&
+      !this.props.needsScaling &&
+      !prevProps.needsScaling &&
+      !this.isDragging
+    ) {
+      this.pushHistory({
+        scatterData: prevProps.scatterData,
+        originalScatterData: prevProps.originalScatterData,
+      });
+      const display = this.syncPositionsFromOriginal();
+      if (display) {
+        this.emitScatterDataUpdate(display, this.props.originalScatterData);
       }
     }
 
@@ -303,7 +327,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         }
 
         // Update parent component with scaled data
-        this.props.onScatterDataUpdate(
+        this.emitScatterDataUpdate(
           scaledData,
           this.props.originalScatterData
         );
@@ -613,7 +637,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           const updatedDisplay = [...this.props.scatterData, newDisplayPoint];
 
           // Propagate to parent — componentDidUpdate detects length change and re-renders
-          this.props.onScatterDataUpdate(updatedDisplay, updatedOriginal);
+          this.emitScatterDataUpdate(updatedDisplay, updatedOriginal);
         });
       }
     }
@@ -805,7 +829,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           );
 
           // Update the display and image-space coordinates in parent
-          this.props.onScatterDataUpdate(updatedScatterData, updatedoriginalScatterData);
+          this.emitScatterDataUpdate(updatedScatterData, updatedoriginalScatterData);
         }
       }, 16); // ~60fps throttling
     }
@@ -876,19 +900,29 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   private currentImageId: string | null = null;
   private readonly MAX_HISTORY_SIZE = 10;
 
-  // Save current position state to history
-  private saveToHistory = (): void => {
-    const currentState: PositionHistory = {
-      scatterData: [...this.props.scatterData],
-      originalScatterData: [...this.props.originalScatterData]
-    };
-    
-    this.positionHistory.push(currentState);
-    
+  // Last originalScatterData this viewer sent to the parent, so its own edits aren't mistaken for external ones
+  private lastEmittedOriginal: Point[] | null = null;
+
+  private emitScatterDataUpdate = (scatterData: Point[], originalScatterData: Point[]): void => {
+    this.lastEmittedOriginal = originalScatterData;
+    this.props.onScatterDataUpdate(scatterData, originalScatterData);
+  };
+
+  private pushHistory = (state: PositionHistory): void => {
+    this.positionHistory.push(state);
+
     // Limit history size
     if (this.positionHistory.length > this.MAX_HISTORY_SIZE) {
       this.positionHistory.shift();
     }
+  };
+
+  // Save current position state to history
+  private saveToHistory = (): void => {
+    this.pushHistory({
+      scatterData: [...this.props.scatterData],
+      originalScatterData: [...this.props.originalScatterData]
+    });
   };
 
   // Undo last position change
@@ -901,7 +935,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     const lastState = this.positionHistory.pop();
     if (lastState) {
       const pointCountChanged = lastState.originalScatterData.length !== this.props.originalScatterData.length;
-      this.props.onScatterDataUpdate(lastState.scatterData, lastState.originalScatterData);
+      this.emitScatterDataUpdate(lastState.scatterData, lastState.originalScatterData);
       if (pointCountChanged) {
         // Point was added or removed — componentDidUpdate will trigger full re-render
         // via the length check
@@ -931,6 +965,36 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       .data(scatterData, (d: Point) => d.id)
       .attr("x", (d: Point) => d.x + 5)
       .attr("y", (d: Point) => d.y - 5);
+  };
+
+  // Move rendered landmarks to match originalScatterData; returns the display-space points
+  private syncPositionsFromOriginal = (): Point[] | null => {
+    if (!this.svgRef.current) return null;
+    const svg = d3.select(this.svgRef.current);
+    if (!+svg.attr("width") || !+svg.attr("height")) return null;
+
+    this.updateCachedScales();
+    const { scaleXDisplay, scaleYDisplay } = this.cachedScales;
+    if (!scaleXDisplay || !scaleYDisplay) return null;
+
+    const display = this.props.originalScatterData.map((p: Point) => ({
+      ...p,
+      x: scaleXDisplay(p.x),
+      y: scaleYDisplay(p.y),
+    }));
+    const textOffset = this.state.landmarkSize + 1;
+
+    svg
+      .select<SVGGElement>(".scatter-points")
+      .selectAll<SVGGElement, Point>("g.landmark-group")
+      .data(display, (d: Point) => d.id)
+      .each((d, i, nodes) => {
+        const g = d3.select(nodes[i]);
+        g.select("circle").attr("cx", d.x).attr("cy", d.y);
+        g.select("text").attr("x", d.x + textOffset).attr("y", d.y - textOffset);
+      });
+
+    return display;
   };
 
   // Update landmark sizes
@@ -993,7 +1057,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
 
     // Clear selection and update data — componentDidUpdate detects length change and re-renders
     this.props.onPointSelect(null);
-    this.props.onScatterDataUpdate(updatedDisplay, updatedOriginal);
+    this.emitScatterDataUpdate(updatedDisplay, updatedOriginal);
   };
 
   // Toggle label visibility
@@ -1125,15 +1189,19 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     const width = +svg.attr("width");
     const height = +svg.attr("height");
     
-    // Only update if dimensions changed
+    // Only update if SVG or image dimensions changed
     if (!this.cachedScales.scaleXToImg || !this.cachedScales.scaleYToImg || 
-        this.cachedScales.svgWidth !== width || this.cachedScales.svgHeight !== height) {
+        this.cachedScales.svgWidth !== width || this.cachedScales.svgHeight !== height ||
+        this.cachedScales.imageWidth !== this.props.imageWidth ||
+        this.cachedScales.imageHeight !== this.props.imageHeight) {
       this.cachedScales.scaleXToImg = d3.scaleLinear().domain([0, width]).range([0, this.props.imageWidth]);
       this.cachedScales.scaleYToImg = d3.scaleLinear().domain([0, height]).range([0, this.props.imageHeight]);
       this.cachedScales.scaleXDisplay = d3.scaleLinear().domain([0, this.props.imageWidth]).range([0, width]);
       this.cachedScales.scaleYDisplay = d3.scaleLinear().domain([0, this.props.imageHeight]).range([0, height]);
       this.cachedScales.svgWidth = width;
       this.cachedScales.svgHeight = height;
+      this.cachedScales.imageWidth = this.props.imageWidth;
+      this.cachedScales.imageHeight = this.props.imageHeight;
     }
   };
 

@@ -24,6 +24,7 @@ import { SessionService } from "../services/SessionService";
 import { extractIdFromImageUrl } from "../services/IdOcrService";
 import { ExportService } from "../services/ExportService";
 import { FreePredictorPanel } from "../components/FreePredictorPanel";
+import { ToepadPanels } from "../components/ToepadPanels";
 import type { PredictorMeta } from "../services/ApiService";
 
 interface MainState {
@@ -1121,6 +1122,11 @@ export class MainView extends Component<MainProps, MainState> {
     this.setState({ scatterData, originalScatterData });
   };
 
+  // Edits from the toepad close-ups arrive in image space; SVGViewer re-derives display coords.
+  private readonly handleToepadPointsChange = (originalScatterData: Point[]): void => {
+    this.setState({ originalScatterData });
+  };
+
   private readonly handleScalingComplete = (): void => {
     this.setState({ needsScaling: false });
   };
@@ -1388,6 +1394,21 @@ export class MainView extends Component<MainProps, MainState> {
                 </div>
               );
             })()}
+            {this.props.selectedViewType === "toepads" && this.state.dataFetched && (
+              <ToepadPanels
+                imageURL={this.state.currentImageURL}
+                imageWidth={this.state.imageWidth}
+                imageHeight={this.state.imageHeight}
+                points={this.state.originalScatterData}
+                boundingBoxes={this.state.currentBoundingBoxes}
+                selectedPoint={this.state.selectedPoint}
+                isEditMode={this.state.isEditMode}
+                onToggleEditMode={this.handleToggleEditMode}
+                onPointSelect={this.handlePointSelect}
+                onPointsChange={this.handleToepadPointsChange}
+                theme={theme}
+              />
+            )}
             <div style={{
               overflow: "auto",
               height: "100%",
