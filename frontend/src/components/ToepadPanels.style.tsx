@@ -6,8 +6,11 @@ export function getToepadPanelsStyles(theme: ResolvedTheme) {
   const t = getTokens(theme);
   const isDark = theme === "dark";
   return {
+    // Sized so the 2x2 grid of square close-ups fits below the toolbar on typical screens
     container: {
-      marginTop: 12,
+      width: "100%",
+      maxWidth: "max(480px, calc(100vh - 340px))",
+      margin: "12px auto 0",
       border: `1px solid ${isDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.10)"}`,
       borderRadius: 12,
       overflow: "hidden",
@@ -37,33 +40,9 @@ export function getToepadPanelsStyles(theme: ResolvedTheme) {
       color: isDark ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.55)",
     } as CSSProperties,
 
-    headerActions: {
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-    } as CSSProperties,
-
-    editButton: {
-      padding: "6px 12px",
-      color: "white",
-      border: "none",
-      borderRadius: "4px",
-      cursor: "pointer",
-      fontSize: "13px",
-      fontWeight: "bold",
-    } as CSSProperties,
-
-    toggleButton: {
-      background: "none",
-      border: "none",
-      cursor: "pointer",
-      fontSize: 12,
-      color: isDark ? "rgba(255,255,255,0.65)" : "rgba(0,0,0,0.65)",
-    } as CSSProperties,
-
     grid: {
       display: "grid",
-      gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
       gap: 10,
       padding: "0 12px 12px 12px",
     } as CSSProperties,
