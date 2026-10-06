@@ -137,5 +137,128 @@ export function getToepadPanelsStyles(theme: ResolvedTheme) {
       color: t.textMuted,
       backgroundColor: t.bgTertiary,
     } as CSSProperties,
+
+    legendContainer: {
+      borderTop: `1px solid ${isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.10)"}`,
+      background: isDark ? "rgba(0,0,0,0.22)" : "rgba(0,0,0,0.02)",
+      padding: "10px 12px 14px 12px",
+    } as CSSProperties,
+
+    legendHeaderButton: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      width: "100%",
+      background: "none",
+      border: "none",
+      padding: 0,
+      cursor: "pointer",
+      color: isDark ? "#e0e0e0" : "#111",
+      textAlign: "left",
+    } as CSSProperties,
+
+    legendTitle: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      fontSize: 12,
+      fontWeight: 800,
+      color: isDark ? "#e0e0e0" : "#111",
+    } as CSSProperties,
+
+    legendSubtitle: {
+      fontSize: 11,
+      fontWeight: 700,
+      color: isDark ? "rgba(255,255,255,0.6)" : "rgba(0,0,0,0.55)",
+    } as CSSProperties,
+
+    legendSection: {
+      marginTop: 10,
+    } as CSSProperties,
+
+    legendSectionTitle: {
+      fontSize: 11,
+      fontWeight: 800,
+      textTransform: "uppercase",
+      letterSpacing: "0.5px",
+      color: isDark ? "rgba(255,255,255,0.75)" : "rgba(0,0,0,0.75)",
+      marginBottom: 6,
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+    } as CSSProperties,
+
+    legendTable: {
+      width: "100%",
+      borderCollapse: "collapse",
+      fontSize: 11,
+    } as CSSProperties,
+
+    legendTh: {
+      textAlign: "left",
+      padding: "3px 6px",
+      fontSize: 10,
+      fontWeight: 700,
+      color: t.textMuted,
+      borderBottom: `1px solid ${t.borderLight}`,
+      background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)",
+    } as CSSProperties,
+
+    legendTd: {
+      padding: "4px 6px",
+      borderBottom: `1px solid ${isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)"}`,
+      verticalAlign: "middle",
+      color: t.text,
+      fontSize: 11,
+    } as CSSProperties,
+
+    kbd: {
+      display: "inline-block",
+      padding: "1px 5px",
+      fontSize: 10,
+      fontWeight: 700,
+      fontFamily: "monospace",
+      borderRadius: 3,
+      background: isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)",
+      border: `1px solid ${isDark ? "rgba(255,255,255,0.22)" : "rgba(0,0,0,0.15)"}`,
+      color: isDark ? "#fff" : "#111",
+      whiteSpace: "nowrap",
+    } as CSSProperties,
+
+    modeBadgeView: {
+      display: "inline-block",
+      fontSize: 9,
+      fontWeight: 700,
+      padding: "1px 5px",
+      borderRadius: 3,
+      textTransform: "uppercase",
+      letterSpacing: "0.3px",
+      background: isDark ? "rgba(33,150,243,0.2)" : "#e3f2fd",
+      color: isDark ? "#64b5f6" : "#1976d2",
+    } as CSSProperties,
+
+    modeBadgeEdit: {
+      display: "inline-block",
+      fontSize: 9,
+      fontWeight: 700,
+      padding: "1px 5px",
+      borderRadius: 3,
+      textTransform: "uppercase",
+      letterSpacing: "0.3px",
+      background: isDark ? "rgba(255,193,7,0.2)" : "#fff8e1",
+      color: isDark ? "#ffd54f" : "#f57f17",
+    } as CSSProperties,
+
+    modeBadgeAny: {
+      display: "inline-block",
+      fontSize: 9,
+      fontWeight: 700,
+      padding: "1px 5px",
+      borderRadius: 3,
+      textTransform: "uppercase",
+      letterSpacing: "0.3px",
+      background: isDark ? "rgba(255,255,255,0.1)" : "#f0f0f0",
+      color: isDark ? "#bbb" : "#666",
+    } as CSSProperties,
   };
 }

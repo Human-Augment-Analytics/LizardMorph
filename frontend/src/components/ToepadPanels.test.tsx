@@ -61,6 +61,15 @@ describe("ToepadPanels", () => {
     expect(markup).toContain('fill="yellow"');
   });
 
+  it("displays landmark numbers matching the big picture IDs (p.id + 1)", () => {
+    const markup = render();
+
+    // points have IDs 200, 201, 400 -> displayed as 201, 202, 401
+    expect(markup).toContain(">201<");
+    expect(markup).toContain(">202<");
+    expect(markup).toContain(">401<");
+  });
+
   it("tells the user how to edit, and how to drag once editing", () => {
     expect(render()).toContain("Click Edit Points to adjust landmarks");
     expect(render({ isEditMode: true })).toContain("Drag a landmark to move it");
@@ -75,5 +84,23 @@ describe("ToepadPanels", () => {
 
   it("renders nothing until the image has loaded", () => {
     expect(render({ imageWidth: 0, imageHeight: 0 })).toBe("");
+  });
+
+  it("defaults the controls and shortcuts key to closed view", () => {
+    const markup = render();
+    expect(markup).toContain("Controls &amp; Shortcuts Key");
+    expect(markup).toContain("Show ▼");
+    expect(markup).not.toContain("Mouse &amp; Touch Controls");
+  });
+
+  it("renders the controls and shortcuts key tables when opened", () => {
+    const markup = render({ defaultLegendOpen: true });
+    expect(markup).toContain("Controls &amp; Shortcuts Key");
+    expect(markup).toContain("Hide ▲");
+    expect(markup).toContain("Mouse &amp; Touch Controls");
+    expect(markup).toContain("Keyboard Shortcuts");
+    expect(markup).toContain("Ctrl+Z");
+    expect(markup).toContain("Right-Click");
+    expect(markup).toContain("Toggle bounding boxes");
   });
 });

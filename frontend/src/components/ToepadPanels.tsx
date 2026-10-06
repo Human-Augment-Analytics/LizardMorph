@@ -21,6 +21,7 @@ interface ToepadPanelsProps {
   onPointsChange: (points: Point[]) => void;
   theme: ResolvedTheme;
   style?: React.CSSProperties;
+  defaultLegendOpen?: boolean;
 }
 
 interface DragState {
@@ -34,14 +35,19 @@ interface DragState {
 
 interface ToepadPanelsState {
   drag: DragState | null;
+  isLegendOpen: boolean;
 }
 
 const CLICK_THRESHOLD = 3;
 
 export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState> {
-  state: ToepadPanelsState = {
-    drag: null,
-  };
+  constructor(props: ToepadPanelsProps) {
+    super(props);
+    this.state = {
+      drag: null,
+      isLegendOpen: Boolean(props.defaultLegendOpen),
+    };
+  }
 
   private readonly toImagePoint = (
     svg: SVGSVGElement,
@@ -201,7 +207,7 @@ export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState
                         filter={`url(#toepad-label-shadow-${slot.label})`}
                         style={{ pointerEvents: "none", userSelect: "none" }}
                       >
-                        {i + 1}
+                        {p.id !== undefined ? p.id + 1 : i + 1}
                       </text>
                     </g>
                   );
@@ -210,6 +216,126 @@ export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState
             </>
           )}
         </div>
+      </div>
+    );
+  }
+
+  private readonly toggleLegend = (): void => {
+    this.setState((prev) => ({ isLegendOpen: !prev.isLegendOpen }));
+  };
+
+  private renderControlsLegend(styles: ReturnType<typeof getToepadPanelsStyles>) {
+    const { isLegendOpen } = this.state;
+    return (
+      <div style={styles.legendContainer}>
+        <button
+          onClick={this.toggleLegend}
+          style={styles.legendHeaderButton}
+          title="Toggle controls & shortcuts legend"
+          aria-expanded={isLegendOpen}
+        >
+          <span style={styles.legendTitle}>
+            <span>⌨️ Controls & Shortcuts Key</span>
+          </span>
+          <span style={styles.legendSubtitle}>
+            {isLegendOpen ? "Hide ▲" : "Show ▼"}
+          </span>
+        </button>
+
+        {isLegendOpen && (
+          <div>
+            {/* Table 2: Mouse & Touch Controls */}
+            <div style={styles.legendSection}>
+              <div style={styles.legendSectionTitle}>
+                <span>🖱️ Mouse & Touch Controls</span>
+              </div>
+              <table style={styles.legendTable}>
+                <thead>
+                  <tr>
+                    <th style={styles.legendTh}>Action</th>
+                    <th style={styles.legendTh}>Mode</th>
+                    <th style={styles.legendTh}>Effect</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style={styles.legendTd}>Left-Click + Drag (bg)</td>
+                    <td style={styles.legendTd}><span style={styles.modeBadgeView}>View</span></td>
+                    <td style={styles.legendTd}>Pan around image</td>
+                  </tr>
+                  <tr>
+                    <td style={styles.legendTd}>Scroll Wheel</td>
+                    <td style={styles.legendTd}><span style={styles.modeBadgeView}>View</span></td>
+                    <td style={styles.legendTd}>Zoom in / out</td>
+                  </tr>
+                  <tr>
+                    <td style={styles.legendTd}>Left-Click (landmark)</td>
+                    <td style={styles.legendTd}><span style={styles.modeBadgeAny}>Any</span></td>
+                    <td style={styles.legendTd}>Select landmark (yellow)</td>
+                  </tr>
+                  <tr>
+                    <td style={styles.legendTd}>Left-Click + Drag (pt)</td>
+                    <td style={styles.legendTd}><span style={styles.modeBadgeEdit}>Edit</span></td>
+                    <td style={styles.legendTd}>Reposition landmark (synced)</td>
+                  </tr>
+                  <tr>
+                    <td style={styles.legendTd}>Right-Click</td>
+                    <td style={styles.legendTd}><span style={styles.modeBadgeAny}>Any</span></td>
+                    <td style={styles.legendTd}>Toggle Edit Mode</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Table 3: Keyboard Shortcuts */}
+            <div style={styles.legendSection}>
+              <div style={styles.legendSectionTitle}>
+                <span>⌨️ Keyboard Shortcuts</span>
+              </div>
+              <table style={styles.legendTable}>
+                <thead>
+                  <tr>
+                    <th style={styles.legendTh}>Key</th>
+                    <th style={styles.legendTh}>Shortcut</th>
+                    <th style={styles.legendTh}>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style={styles.legendTd}><kbd style={styles.kbd}>Ctrl+Z</kbd></td>
+                    <td style={styles.legendTd}>Undo</td>
+                    <td style={styles.legendTd}>Revert last landmark move</td>
+                  </tr>
+                  <tr>
+                    <td style={styles.legendTd}><kbd style={styles.kbd}>Right-Click</kbd></td>
+                    <td style={styles.legendTd}>Edit Mode</td>
+                    <td style={styles.legendTd}>Toggle edit / view mode</td>
+                  </tr>
+                  <tr>
+                    <td style={styles.legendTd}><kbd style={styles.kbd}>B</kbd></td>
+                    <td style={styles.legendTd}>Boxes</td>
+                    <td style={styles.legendTd}>Toggle bounding boxes</td>
+                  </tr>
+                  <tr>
+                    <td style={styles.legendTd}><kbd style={styles.kbd}>N</kbd></td>
+                    <td style={styles.legendTd}>Labels</td>
+                    <td style={styles.legendTd}>Toggle landmark labels (1–8)</td>
+                  </tr>
+                  <tr>
+                    <td style={styles.legendTd}><kbd style={styles.kbd}>O</kbd></td>
+                    <td style={styles.legendTd}>Outline</td>
+                    <td style={styles.legendTd}>Toggle solid / hollow circles</td>
+                  </tr>
+                  <tr>
+                    <td style={styles.legendTd}><kbd style={styles.kbd}>T</kbd></td>
+                    <td style={styles.legendTd}>Transparency</td>
+                    <td style={styles.legendTd}>Cycle overlay transparency</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -236,6 +362,7 @@ export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState
           </span>
         </div>
         <div style={styles.grid}>{regions.map((r) => this.renderRegion(r))}</div>
+        {this.renderControlsLegend(styles)}
       </div>
     );
   }
