@@ -20,6 +20,7 @@ interface ToepadPanelsProps {
   onPointSelect: (point: Point | null) => void;
   onPointsChange: (points: Point[]) => void;
   theme: ResolvedTheme;
+  style?: React.CSSProperties;
 }
 
 interface DragState {
@@ -222,7 +223,7 @@ export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState
     const styles = getToepadPanelsStyles(theme);
 
     return (
-      <div style={styles.container}>
+      <div style={{ ...styles.container, ...this.props.style }}>
         <div style={styles.header}>
           <span style={styles.headerTitle}>
             <span>Toepads</span>

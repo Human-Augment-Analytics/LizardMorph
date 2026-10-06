@@ -23,6 +23,9 @@ export function getMainViewStyles(theme: ResolvedTheme) {
       flex: 1,
       overflow: "visible",
       position: "relative",
+      display: "flex",
+      flexDirection: "column",
+      minHeight: 0,
     } as CSSProperties,
 
     measurementsPanel: {

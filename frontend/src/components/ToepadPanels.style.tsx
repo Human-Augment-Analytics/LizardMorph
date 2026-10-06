@@ -9,8 +9,8 @@ export function getToepadPanelsStyles(theme: ResolvedTheme) {
     // Sized so the 2x2 grid of square close-ups fits below the toolbar on typical screens
     container: {
       width: "100%",
-      maxWidth: "max(480px, calc(100vh - 340px))",
-      margin: "12px auto 0",
+      maxWidth: "100%",
+      margin: "0 auto",
       border: `1px solid ${isDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.10)"}`,
       borderRadius: 12,
       overflow: "hidden",

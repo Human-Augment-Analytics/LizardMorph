@@ -1405,56 +1405,86 @@ export class MainView extends Component<MainProps, MainState> {
                 </div>
               );
             })()}
-            {showToepadGrid && (
-              <ToepadPanels
-                imageURL={this.state.currentImageURL}
-                imageWidth={this.state.imageWidth}
-                imageHeight={this.state.imageHeight}
-                points={this.state.originalScatterData}
-                boundingBoxes={this.state.currentBoundingBoxes}
-                selectedPoint={this.state.selectedPoint}
-                isEditMode={this.state.isEditMode}
-                onToggleEditMode={this.handleToggleEditMode}
-                onPointSelect={this.handlePointSelect}
-                onPointsChange={this.handleToepadPointsChange}
-                theme={theme}
-              />
-            )}
-            {/* Hidden rather than unmounted in grid mode so undo history and position sync keep working */}
-            <div style={{
-              overflow: "auto",
-              height: "100%",
-              display: showToepadGrid ? "none" : undefined,
-            }}>
-              <SVGViewer
-                selectedViewType={this.props.selectedViewType}
-                dataFetched={this.state.dataFetched}
-                loading={this.state.loading}
-                dataLoading={this.state.dataLoading}
-                dataError={this.state.dataError}
-                uploadHistory={this.state.uploadHistory.filter(
-                  item => item.viewType === this.props.selectedViewType || !item.viewType
-                )}
-                scatterData={this.state.scatterData}
-                originalScatterData={this.state.originalScatterData}
-                selectedPoint={this.state.selectedPoint}
-                needsScaling={this.state.needsScaling}
-                currentImageURL={this.state.currentImageURL}
-                imageWidth={this.state.imageWidth}
-                imageHeight={this.state.imageHeight}
-                zoomTransform={this.state.zoomTransform}
-                onPointSelect={this.handlePointSelect}
-                onScatterDataUpdate={this.handleScatterDataUpdate}
-                onScalingComplete={this.handleScalingComplete}
-                onZoomChange={this.handleZoomChange}
-                isEditMode={this.state.isEditMode}
-                onToggleEditMode={this.handleToggleEditMode}
-                onResetZoom={this.handleResetZoom}
-                isModalOpen={this.state.isMeasurementsAndScaleModalOpen}
-                boundingBoxes={this.state.currentBoundingBoxes}
-                fitToContainerWidth={this.props.selectedViewType === "toepads"}
-                theme={theme}
-              />
+            {/* Viewer area: Displays SVGViewer, and when toepad grid is active, shows ToepadPanels side-by-side on the right */}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "row",
+                alignItems: "flex-start",
+                gap: showToepadGrid ? 16 : 0,
+                marginTop: showToepadGrid ? 10 : 0,
+                flex: 1,
+                minHeight: 0,
+                overflow: "hidden",
+              }}
+            >
+              {/* Left: Whole lizard image viewer */}
+              <div
+                style={{
+                  flex: showToepadGrid ? "1 1 auto" : "1 1 100%",
+                  minWidth: 0,
+                  height: "100%",
+                  overflow: "auto",
+                }}
+              >
+                <SVGViewer
+                  selectedViewType={this.props.selectedViewType}
+                  dataFetched={this.state.dataFetched}
+                  loading={this.state.loading}
+                  dataLoading={this.state.dataLoading}
+                  dataError={this.state.dataError}
+                  uploadHistory={this.state.uploadHistory.filter(
+                    item => item.viewType === this.props.selectedViewType || !item.viewType
+                  )}
+                  scatterData={this.state.scatterData}
+                  originalScatterData={this.state.originalScatterData}
+                  selectedPoint={this.state.selectedPoint}
+                  needsScaling={this.state.needsScaling}
+                  currentImageURL={this.state.currentImageURL}
+                  imageWidth={this.state.imageWidth}
+                  imageHeight={this.state.imageHeight}
+                  zoomTransform={this.state.zoomTransform}
+                  onPointSelect={this.handlePointSelect}
+                  onScatterDataUpdate={this.handleScatterDataUpdate}
+                  onScalingComplete={this.handleScalingComplete}
+                  onZoomChange={this.handleZoomChange}
+                  isEditMode={this.state.isEditMode}
+                  onToggleEditMode={this.handleToggleEditMode}
+                  onResetZoom={this.handleResetZoom}
+                  isModalOpen={this.state.isMeasurementsAndScaleModalOpen}
+                  boundingBoxes={this.state.currentBoundingBoxes}
+                  fitToContainerWidth={this.props.selectedViewType === "toepads"}
+                  maxWidth={showToepadGrid ? Math.round(window.innerWidth * 0.45) : undefined}
+                  theme={theme}
+                />
+              </div>
+
+              {/* Right: Side-by-side 2x2 toepad close-up grid */}
+              {showToepadGrid && (
+                <div
+                  style={{
+                    flex: "0 0 auto",
+                    width: "clamp(360px, 38vw, 540px)",
+                    maxHeight: "100%",
+                    overflowY: "auto",
+                    paddingRight: 4,
+                  }}
+                >
+                  <ToepadPanels
+                    imageURL={this.state.currentImageURL}
+                    imageWidth={this.state.imageWidth}
+                    imageHeight={this.state.imageHeight}
+                    points={this.state.originalScatterData}
+                    boundingBoxes={this.state.currentBoundingBoxes}
+                    selectedPoint={this.state.selectedPoint}
+                    isEditMode={this.state.isEditMode}
+                    onToggleEditMode={this.handleToggleEditMode}
+                    onPointSelect={this.handlePointSelect}
+                    onPointsChange={this.handleToepadPointsChange}
+                    theme={theme}
+                  />
+                </div>
+              )}
             </div>
           </div>
         </div>

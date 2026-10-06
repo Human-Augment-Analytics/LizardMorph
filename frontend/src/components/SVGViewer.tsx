@@ -258,7 +258,10 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
 
       if (this.props.fitToContainerWidth) {
         // Scale based on container width (use available window width minus sidebar)
-        const containerWidth = window.innerWidth * 0.65; // Approximate available width
+        let containerWidth = window.innerWidth * 0.65; // Approximate available width
+        if (this.props.maxWidth && containerWidth > this.props.maxWidth) {
+          containerWidth = this.props.maxWidth;
+        }
         width = containerWidth;
         height = width * (this.props.imageHeight / this.props.imageWidth);
 
