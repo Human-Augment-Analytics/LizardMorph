@@ -57,8 +57,33 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   readonly svgRef = createRef<SVGSVGElement>();
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
 
-  /** Set in render() so the d3 zoom filter matches edit mode even when renderSVG does not re-run */
-  private blockZoomWhileEditing = false;
+  /** Dismiss the edit mode zoom hint badge */
+  public readonly dismissHint = (): void => {
+    this.setState({ hintDismissed: true });
+  };
+
+  /**
+   * D3 zoom filter: controls whether wheel (zoom) and mousedown (pan) events are handled.
+   * - In View Mode: standard pan & zoom (primary button, non-dblclick)
+   * - In Edit Mode: allow zooming (wheel) and panning (drag) when Ctrl or Meta is pressed
+   */
+  public readonly zoomFilter = (event: Event): boolean => {
+    const mouseEvent = event as MouseEvent;
+    if (event.type === "dblclick") {
+      event.preventDefault();
+      return false;
+    }
+    // Reject non-primary mouse buttons (e.g. right-click context menu)
+    if (mouseEvent.button) {
+      return false;
+    }
+    if (this.props.isEditMode) {
+      // In Edit Mode, allow zooming (wheel) and panning (drag) only when Ctrl or Meta is pressed
+      return Boolean(mouseEvent.ctrlKey || mouseEvent.metaKey);
+    }
+    // In View Mode, zoom/pan works normally as before without requiring Ctrl
+    return true;
+  };
 
   constructor(props: SVGViewerProps) {
     super(props);
@@ -146,15 +171,17 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         this.resetHistory();
       }
 
-      // Re-sync d3 zoom internal transform when leaving edit mode (zoom may have been
-      // skipped on first paint in edit mode, or filter must match props before pan/zoom)
-      if (
-        !this.props.isEditMode &&
-        this.svgRef.current &&
-        this.zoomRef.current
-      ) {
-        const svg = d3.select(this.svgRef.current);
-        svg.call(this.zoomRef.current.transform, this.props.zoomTransform);
+      // Re-sync d3 zoom internal transform when switching edit/view modes to prevent transform jumping
+      if (this.svgRef.current && this.zoomRef.current) {
+        const currentTransform = d3.zoomTransform(this.svgRef.current);
+        if (
+          currentTransform.k !== this.props.zoomTransform.k ||
+          currentTransform.x !== this.props.zoomTransform.x ||
+          currentTransform.y !== this.props.zoomTransform.y
+        ) {
+          const svg = d3.select(this.svgRef.current);
+          svg.call(this.zoomRef.current.transform, this.props.zoomTransform);
+        }
       }
     }
 
@@ -182,15 +209,21 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       this.updatePointSelection();
     }
 
-    // Apply zoom transform if it changed and not in edit mode
+    // Apply zoom transform if it changed in either mode
     if (
       prevProps.zoomTransform !== this.props.zoomTransform &&
-      !this.props.isEditMode &&
       this.svgRef.current &&
       this.zoomRef.current
     ) {
-      const svg = d3.select(this.svgRef.current);
-      svg.call(this.zoomRef.current.transform, this.props.zoomTransform);
+      const currentTransform = d3.zoomTransform(this.svgRef.current);
+      if (
+        currentTransform.k !== this.props.zoomTransform.k ||
+        currentTransform.x !== this.props.zoomTransform.x ||
+        currentTransform.y !== this.props.zoomTransform.y
+      ) {
+        const svg = d3.select(this.svgRef.current);
+        svg.call(this.zoomRef.current.transform, this.props.zoomTransform);
+      }
     }
   }
 
@@ -214,12 +247,16 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       imageElement.attr("xlink:href", this.props.currentImageURL);
     }
     
-    // Apply the stored zoom transform to preserve zoom state in edit mode
+    // Apply the stored zoom transform to preserve zoom state in both modes
     if (this.props.zoomTransform && this.props.zoomTransform !== d3.zoomIdentity) {
-      const zoomContainer = svg.select(".zoom-container");
-      if (!zoomContainer.empty()) {
-        const transformString = this.props.zoomTransform.toString();
-        zoomContainer.attr("transform", transformString);
+      if (this.zoomRef.current) {
+        svg.call(this.zoomRef.current.transform, this.props.zoomTransform);
+      } else {
+        const zoomContainer = svg.select(".zoom-container");
+        if (!zoomContainer.empty()) {
+          const transformString = this.props.zoomTransform.toString();
+          zoomContainer.attr("transform", transformString);
+        }
       }
     }
   };
@@ -545,6 +582,13 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         pointGroups.call(
           d3
             .drag<SVGGElement, Point>()
+            .filter((event: Event) => {
+              const mouseEvent = event as MouseEvent;
+              if (mouseEvent.ctrlKey || mouseEvent.metaKey) {
+                return false;
+              }
+              return !mouseEvent.button;
+            })
             .on("start", this.dragstarted)
             .on("drag", this.dragged)
             .on("end", this.dragended)
@@ -559,43 +603,28 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           zoomContainer.attr("transform", event.transform.toString());
           this.props.onZoomChange(event.transform);
         })
-        .filter((event: Event) => {
-          const mouseEvent = event as MouseEvent;
-          if (event.type === "dblclick") {
-            event.preventDefault();
-            return false;
-          }
-          // Disable zoom/pan while editing (read live flag from render(), not props at renderSVG time)
-          if (this.blockZoomWhileEditing) {
-            return false;
-          }
-          return !mouseEvent.button && event.type !== "dblclick";
-        });
+        .filter(this.zoomFilter);
 
       // Store the zoom reference for external control
       this.zoomRef.current = zoom;
 
-      // Always attach zoom; filter + blockZoomWhileEditing block interaction in edit mode
+      // Always attach zoom
       svg.call(zoom);
 
-      // Always apply the stored transform to preserve zoom state
+      // Always apply the stored transform to preserve zoom state in both modes
       if (
         this.props.zoomTransform &&
         this.props.zoomTransform !== d3.zoomIdentity
       ) {
-        if (!this.props.isEditMode) {
-          // In view mode, use the zoom behavior to apply transform
-          svg.call(zoom.transform, this.props.zoomTransform);
-        } else {
-          // In edit mode, directly apply transform to zoom container
-          zoomContainer.attr("transform", this.props.zoomTransform.toString());
-        }
+        svg.call(zoom.transform, this.props.zoomTransform);
       }
 
       // Click-to-place: in free mode + edit mode, clicking the background adds a new landmark
       if (this.props.selectedViewType === "free") {
         svg.on("click.place", (event: MouseEvent) => {
           if (!this.props.isEditMode) return;
+          // Do not place landmarks if Ctrl or Meta is held (used for zoom/pan)
+          if (event.ctrlKey || event.metaKey) return;
           // Ignore clicks on existing landmarks (circles/text)
           const target = event.target as Element;
           if (target.tagName === "circle" || target.tagName === "text") return;
@@ -677,10 +706,15 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     }
   };
 
-  private readonly dragstarted = (
+  public readonly dragstarted = (
     event: d3.D3DragEvent<SVGGElement, Point, Point>,
     d: Point
   ): void => {
+    // When Ctrl or Meta is pressed, do NOT initiate landmark dragging so the event passes through to panning the canvas
+    if (event.sourceEvent?.ctrlKey || event.sourceEvent?.metaKey) {
+      return;
+    }
+
     event.sourceEvent.stopPropagation();
     
     // Only allow drag if this landmark is already selected (yellow) or if no landmark is currently selected
@@ -838,9 +872,12 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     }
   };
 
-  private readonly dragended = (
+  public readonly dragended = (
     event: d3.D3DragEvent<SVGGElement, Point, Point>
   ): void => {
+    if (!this.isDragging) {
+      return;
+    }
     event.sourceEvent.stopPropagation();
     // Clear any inherited stroke on the group (legacy drags used stroke here and outlined labels)
     d3.select(event.sourceEvent.target.parentNode as Element).attr("stroke", "none");
@@ -868,6 +905,13 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       pointGroups.call(
         d3
           .drag<SVGGElement, Point>()
+          .filter((event: Event) => {
+            const mouseEvent = event as MouseEvent;
+            if (mouseEvent.ctrlKey || mouseEvent.metaKey) {
+              return false;
+            }
+            return !mouseEvent.button;
+          })
           .on("start", this.dragstarted)
           .on("drag", this.dragged)
           .on("end", this.dragended)
@@ -1222,9 +1266,24 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   };
 
   render() {
-    this.blockZoomWhileEditing = this.props.isEditMode;
     const { dataFetched, loading, dataLoading, dataError } = this.props;
     const viewerStyles = getSVGViewerStyles(this.props.theme);
+
+    const isDark = this.props.theme === "dark";
+    const kbdStyle: React.CSSProperties = {
+      background: isDark ? "rgba(255, 255, 255, 0.14)" : "#e2e8f0",
+      color: isDark ? "#f8fafc" : "#0f172a",
+      border: isDark ? "1px solid rgba(255, 255, 255, 0.22)" : "1px solid #cbd5e1",
+      padding: "1px 5px",
+      borderRadius: "4px",
+      marginRight: "6px",
+      fontSize: "10px",
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+      fontWeight: 600,
+      boxShadow: isDark ? "0 1px 2px rgba(0, 0, 0, 0.3)" : "0 1px 2px rgba(0, 0, 0, 0.05)",
+      display: "inline-block",
+      lineHeight: 1.3,
+    };
 
     return (
       <div style={viewerStyles.svgContainer}>
@@ -1253,18 +1312,25 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
                   width: '36px',
                   height: '36px',
                   borderRadius: '50%',
-                  background: this.state.showControls ? 'rgba(33, 150, 243, 0.9)' : 'rgba(0,0,0,0.7)',
-                  color: 'white',
-                  border: 'none',
+                  background: this.state.showControls
+                    ? '#2563eb'
+                    : isDark
+                      ? 'rgba(30, 41, 59, 0.85)'
+                      : 'rgba(255, 255, 255, 0.90)',
+                  color: this.state.showControls ? 'white' : (isDark ? '#e2e8f0' : '#1e293b'),
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid rgba(0, 0, 0, 0.12)',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
                   cursor: 'pointer',
                   fontSize: '18px',
                   fontWeight: 'bold',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  transition: 'background 0.2s',
+                  transition: 'all 0.2s ease',
+                  backdropFilter: 'blur(6px)',
                 }}
                 title="Show/hide controls (keyboard shortcuts info)"
+                aria-label="Show controls and keyboard shortcuts"
               >
                 ℹ
               </button>
@@ -1274,13 +1340,15 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
             {this.state.showControls && (
               <div style={{
                 marginTop: '8px',
-                background: 'rgba(0,0,0,0.85)',
-                color: 'white',
+                background: isDark ? 'rgba(15, 23, 42, 0.92)' : 'rgba(255, 255, 255, 0.95)',
+                color: isDark ? '#e2e8f0' : '#0f172a',
                 padding: '12px',
                 borderRadius: '8px',
                 fontSize: '12px',
                 minWidth: '220px',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                boxShadow: isDark ? '0 8px 24px rgba(0, 0, 0, 0.45)' : '0 8px 24px rgba(0, 0, 0, 0.12)',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(0, 0, 0, 0.12)',
+                backdropFilter: 'blur(8px)',
               }}>
                 {/* Landmark Size slider */}
                 <div style={{ marginBottom: '12px' }}>
@@ -1356,7 +1424,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
                   alignItems: 'center', 
                   justifyContent: 'space-between'
                 }}>
-                  <span style={{ fontSize: '11px' }}>Bounding Boxes</span>
+                  <span style={{ fontSize: '11px', fontWeight: 'bold', opacity: 0.9 }}>Bounding Boxes</span>
                   <button
                     onClick={this.toggleBoundingBoxes}
                     style={{
@@ -1375,25 +1443,77 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
 
                 {/* Keyboard shortcuts */}
                 <div style={{
-                  borderTop: '1px solid rgba(255,255,255,0.2)',
+                  borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid rgba(0, 0, 0, 0.12)',
                   paddingTop: '10px',
                   fontSize: '10px',
-                  opacity: 0.8,
+                  opacity: 0.85,
                   lineHeight: 1.6
                 }}>
-                  <div style={{ fontWeight: 'bold', marginBottom: '4px', fontSize: '11px' }}>Keyboard Shortcuts</div>
-                  <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>B</kbd> Toggle bounding boxes</div>
-                  <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>T</kbd> Toggle transparency</div>
-                  <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>N</kbd> Toggle labels</div>
-                  <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>O</kbd> Toggle outline mode</div>
-                  <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>Right-click</kbd> Edit/view mode</div>
+                  <div style={{ fontWeight: 'bold', marginBottom: '6px', fontSize: '11px' }}>Keyboard Shortcuts</div>
+                  <div><kbd style={kbdStyle}>Ctrl + Scroll / Drag</kbd> Zoom / Pan in Edit Mode</div>
+                  <div><kbd style={kbdStyle}>B</kbd> Toggle bounding boxes</div>
+                  <div><kbd style={kbdStyle}>T</kbd> Toggle transparency</div>
+                  <div><kbd style={kbdStyle}>N</kbd> Toggle labels</div>
+                  <div><kbd style={kbdStyle}>O</kbd> Toggle outline mode</div>
+                  <div><kbd style={kbdStyle}>Right-click</kbd> Toggle Edit/View mode</div>
                   {this.props.selectedViewType === "free" && (
-                    <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>Delete</kbd> Remove selected point</div>
+                    <div><kbd style={kbdStyle}>Delete</kbd> Remove selected point</div>
                   )}
-                  <div><kbd style={{ background: '#444', padding: '1px 4px', borderRadius: '2px', marginRight: '6px' }}>Ctrl+Z</kbd> Undo</div>
+                  <div><kbd style={kbdStyle}>Ctrl+Z</kbd> Undo</div>
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Subtle sleek hint overlay for Edit Mode zoom/pan */}
+        {dataFetched && !loading && !dataLoading && !dataError && this.props.currentImageURL && this.props.isEditMode && !this.state.hintDismissed && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '16px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              backgroundColor: isDark ? 'rgba(20, 24, 33, 0.90)' : 'rgba(255, 255, 255, 0.94)',
+              color: isDark ? '#e2e8f0' : '#0f172a',
+              padding: '7px 16px',
+              borderRadius: '20px',
+              fontSize: '12px',
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              boxShadow: isDark ? '0 4px 16px rgba(0, 0, 0, 0.40)' : '0 4px 16px rgba(0, 0, 0, 0.12)',
+              backdropFilter: 'blur(8px)',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.14)' : '1px solid rgba(0, 0, 0, 0.12)',
+              zIndex: 50,
+              pointerEvents: 'auto',
+              userSelect: 'none',
+              letterSpacing: '0.2px',
+            }}
+            data-testid="edit-mode-zoom-hint"
+          >
+            <span>💡 Hold Ctrl + Scroll to zoom, Ctrl + Drag to pan in Edit Mode</span>
+            <button
+              onClick={this.dismissHint}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: isDark ? '#94a3b8' : '#64748b',
+                cursor: 'pointer',
+                fontSize: '16px',
+                lineHeight: 1,
+                padding: '0 2px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'color 0.15s ease',
+              }}
+              title="Dismiss hint"
+              aria-label="Dismiss hint"
+            >
+              ×
+            </button>
           </div>
         )}
 
@@ -1404,6 +1524,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           style={{
             ...viewerStyles.svg,
             ...(dataFetched ? viewerStyles.svgWithData : {}),
+            cursor: this.props.isEditMode ? "crosshair" : "grab",
           }}
           onContextMenu={this.handleContextMenu}
         />
