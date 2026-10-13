@@ -72,6 +72,7 @@ interface MainState {
   isFreePredictorPanelOpen: boolean;
   selectedModelName: string | null;
   isToepadGridOn: boolean;
+  isHistoryCollapsed: boolean;
 }
 
 interface MainProps {
@@ -136,6 +137,7 @@ export class MainView extends Component<MainProps, MainState> {
     isFreePredictorPanelOpen: this.props.selectedViewType === "free",
     selectedModelName: null,
     isToepadGridOn: false,
+    isHistoryCollapsed: false,
   };
   componentDidMount(): void {
     this.initializeApp();
@@ -1149,6 +1151,10 @@ export class MainView extends Component<MainProps, MainState> {
     this.setState((prevState) => ({ isToepadGridOn: !prevState.isToepadGridOn }));
   };
 
+  private readonly handleToggleHistoryCollapse = (): void => {
+    this.setState((prev) => ({ isHistoryCollapsed: !prev.isHistoryCollapsed }));
+  };
+
   private readonly handleToggleEditMode = (): void => {
     this.setState((prevState) => ({ isEditMode: !prevState.isEditMode }));
   };
@@ -1210,6 +1216,8 @@ export class MainView extends Component<MainProps, MainState> {
             uploadProgress={this.state.uploadProgress}
             onSelectImage={this.changeCurrentImage}
             onLoadFromUploads={this.loadImageFromUploads}
+            isCollapsed={this.state.isHistoryCollapsed}
+            onToggleCollapse={this.handleToggleHistoryCollapse}
             theme={theme}
           />
           <div style={mainStyles.svgContainer}>
@@ -1454,7 +1462,14 @@ export class MainView extends Component<MainProps, MainState> {
                   isModalOpen={this.state.isMeasurementsAndScaleModalOpen}
                   boundingBoxes={this.state.currentBoundingBoxes}
                   fitToContainerWidth={this.props.selectedViewType === "toepads"}
-                  maxWidth={showToepadGrid ? Math.round(window.innerWidth * 0.45) : undefined}
+                  maxWidth={
+                    showToepadGrid
+                      ? Math.round(
+                          window.innerWidth *
+                            (this.state.isHistoryCollapsed ? 0.6 : 0.45)
+                        )
+                      : undefined
+                  }
                   theme={theme}
                 />
               </div>
@@ -1464,7 +1479,9 @@ export class MainView extends Component<MainProps, MainState> {
                 <div
                   style={{
                     flex: "0 0 auto",
-                    width: "clamp(360px, 38vw, 540px)",
+                    width: this.state.isHistoryCollapsed
+                      ? "clamp(420px, 42vw, 660px)"
+                      : "clamp(360px, 38vw, 540px)",
                     maxHeight: "100%",
                     overflowY: "auto",
                     paddingRight: 4,

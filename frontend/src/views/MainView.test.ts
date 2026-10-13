@@ -60,3 +60,30 @@ describe("MainView free predictor panel", () => {
     expect(view.state.availablePredictors[0]?.id).toBe("predictor-1");
   });
 });
+
+describe("MainView history panel collapse", () => {
+  it("defaults isHistoryCollapsed to false", () => {
+    const view = new MainView({ selectedViewType: "toepads" });
+    expect(view.state.isHistoryCollapsed).toBe(false);
+  });
+
+  it("toggles isHistoryCollapsed when handleToggleHistoryCollapse is invoked", () => {
+    const view = new MainView({ selectedViewType: "toepads" });
+    view.setState = ((update: unknown) => {
+      const nextState =
+        typeof update === "function"
+          ? update(view.state, view.props)
+          : update;
+      view.state = {
+        ...view.state,
+        ...(nextState as Partial<typeof view.state>),
+      };
+    }) as typeof view.setState;
+
+    (view as unknown as { handleToggleHistoryCollapse: () => void }).handleToggleHistoryCollapse();
+    expect(view.state.isHistoryCollapsed).toBe(true);
+
+    (view as unknown as { handleToggleHistoryCollapse: () => void }).handleToggleHistoryCollapse();
+    expect(view.state.isHistoryCollapsed).toBe(false);
+  });
+});
