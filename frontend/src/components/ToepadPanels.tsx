@@ -6,6 +6,7 @@ import type { ResolvedTheme } from "../contexts/theme";
 import { getToepadRegions } from "../services/ToepadRegions";
 import type { ToepadRegion } from "../services/ToepadRegions";
 import { getToepadPanelsStyles } from "./ToepadPanels.style";
+import { ToepadModal } from "./ToepadModal";
 
 interface ToepadPanelsProps {
   imageURL: string | null;
@@ -22,6 +23,7 @@ interface ToepadPanelsProps {
   theme: ResolvedTheme;
   style?: React.CSSProperties;
   defaultLegendOpen?: boolean;
+  defaultActiveModalSlotLabel?: string | null;
 }
 
 interface DragState {
@@ -36,18 +38,30 @@ interface DragState {
 interface ToepadPanelsState {
   drag: DragState | null;
   isLegendOpen: boolean;
+  activeModalSlotLabel: string | null;
 }
 
 const CLICK_THRESHOLD = 3;
 
 export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState> {
+  private wasDragging = false;
+
   constructor(props: ToepadPanelsProps) {
     super(props);
     this.state = {
       drag: null,
       isLegendOpen: Boolean(props.defaultLegendOpen),
+      activeModalSlotLabel: props.defaultActiveModalSlotLabel ?? null,
     };
   }
+
+  public readonly openModal = (slotLabel: string): void => {
+    this.setState({ activeModalSlotLabel: slotLabel });
+  };
+
+  public readonly closeModal = (): void => {
+    this.setState({ activeModalSlotLabel: null });
+  };
 
   private readonly toImagePoint = (
     svg: SVGSVGElement,
@@ -107,6 +121,10 @@ export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState
     }
     this.setState({ drag: null });
     if (drag.moved) {
+      this.wasDragging = true;
+      setTimeout(() => {
+        this.wasDragging = false;
+      }, 100);
       this.props.onPointsChange(
         this.props.points.map((p) => (p.id === drag.id ? { ...p, x: drag.x, y: drag.y } : p))
       );
@@ -129,18 +147,49 @@ export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState
     const { slot, crop, points } = region;
 
     return (
-      <div key={slot.label} style={styles.card}>
+      <div
+        key={slot.label}
+        style={styles.card}
+        onClick={() => {
+          if (crop && !this.wasDragging) {
+            this.openModal(slot.label);
+          }
+        }}
+      >
         <div style={styles.cardHeader}>
           <span style={styles.cardTitle} title={slot.label}>
             <span style={{ ...styles.swatch, backgroundColor: slot.color }} />
             {slot.title}
           </span>
-          {crop && <span style={styles.countChip}>{points.length} pts</span>}
+          <div style={styles.cardHeaderActions}>
+            {crop && <span style={styles.countChip}>{points.length} pts</span>}
+            {crop && (
+              <button
+                type="button"
+                style={styles.zoomButton}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  this.openModal(slot.label);
+                }}
+                title={`Zoom & Edit ${slot.title}`}
+                aria-label={`Zoom & Edit ${slot.title}`}
+              >
+                ⤢ Zoom &amp; Edit
+              </button>
+            )}
+          </div>
         </div>
         <div
           style={{
             ...styles.viewport,
             ...(isEditMode && crop ? styles.viewportEditing : {}),
+            cursor: crop ? (isEditMode ? "crosshair" : "pointer") : "default",
+          }}
+          onClick={(e) => {
+            if (crop && !this.wasDragging) {
+              e.stopPropagation();
+              this.openModal(slot.label);
+            }
           }}
         >
           {!crop || !imageURL ? (
@@ -195,6 +244,12 @@ export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState
                     <g
                       key={p.id}
                       onPointerDown={(e) => this.handlePointPointerDown(e, p)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (this.props.selectedPoint?.id !== p.id) {
+                          this.props.onPointSelect(p);
+                        }
+                      }}
                       style={{ cursor: isEditMode ? (isDragged ? "grabbing" : "grab") : "default" }}
                     >
                       {isEditMode && <circle cx={x} cy={y} r={r * 3} fill="transparent" />}
@@ -204,8 +259,11 @@ export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState
                         y={y - r * 1.5}
                         fontSize={crop.size * 0.036}
                         fill="#ffffff"
+                        stroke="rgba(0,0,0,0.85)"
+                        strokeWidth={crop.size * 0.005}
+                        paintOrder="stroke fill"
                         filter={`url(#toepad-label-shadow-${slot.label})`}
-                        style={{ pointerEvents: "none", userSelect: "none" }}
+                        style={{ pointerEvents: "none", userSelect: "none", fontWeight: 700 }}
                       >
                         {p.id !== undefined ? p.id + 1 : i + 1}
                       </text>
@@ -341,12 +399,27 @@ export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState
   }
 
   render() {
-    const { imageURL, imageWidth, imageHeight, points, boundingBoxes, isEditMode, theme } = this.props;
+    const {
+      imageURL,
+      imageWidth,
+      imageHeight,
+      points,
+      boundingBoxes,
+      selectedPoint,
+      isEditMode,
+      theme,
+    } = this.props;
     if (!imageURL || !imageWidth || !imageHeight) return null;
 
     const regions = getToepadRegions(points, boundingBoxes);
     const detected = regions.filter((r) => r.crop).length;
     const styles = getToepadPanelsStyles(theme);
+
+    const activeRegion = this.state.activeModalSlotLabel
+      ? regions.find(
+          (r) => r.slot.label === this.state.activeModalSlotLabel && r.crop !== null
+        )
+      : null;
 
     return (
       <div style={{ ...styles.container, ...this.props.style }}>
@@ -363,6 +436,22 @@ export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState
         </div>
         <div style={styles.grid}>{regions.map((r) => this.renderRegion(r))}</div>
         {this.renderControlsLegend(styles)}
+        {activeRegion && (
+          <ToepadModal
+            region={activeRegion}
+            allPoints={points}
+            imageURL={imageURL}
+            imageWidth={imageWidth}
+            imageHeight={imageHeight}
+            selectedPoint={selectedPoint}
+            isEditMode={isEditMode}
+            onToggleEditMode={this.props.onToggleEditMode}
+            onPointSelect={this.props.onPointSelect}
+            onPointsChange={this.props.onPointsChange}
+            onClose={this.closeModal}
+            theme={theme}
+          />
+        )}
       </div>
     );
   }

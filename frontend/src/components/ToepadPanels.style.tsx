@@ -95,6 +95,27 @@ export function getToepadPanelsStyles(theme: ResolvedTheme) {
       color: t.textMuted,
     } as CSSProperties,
 
+    cardHeaderActions: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+    } as CSSProperties,
+
+    zoomButton: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 4,
+      padding: "2px 8px",
+      fontSize: 11,
+      fontWeight: 700,
+      borderRadius: 4,
+      border: `1px solid ${isDark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.18)"}`,
+      background: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)",
+      color: t.text,
+      cursor: "pointer",
+      transition: "background 0.15s, border-color 0.15s",
+    } as CSSProperties,
+
     viewport: {
       position: "relative",
       width: "100%",

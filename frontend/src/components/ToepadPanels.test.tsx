@@ -103,4 +103,56 @@ describe("ToepadPanels", () => {
     expect(markup).toContain("Right-Click");
     expect(markup).toContain("Toggle bounding boxes");
   });
+
+  it("renders a '⤢ Zoom & Edit' button on detected toepad cards", () => {
+    const markup = render();
+    expect(markup).toContain("Zoom &amp; Edit");
+    expect(markup).toContain('title="Zoom &amp; Edit Upper Finger"');
+    expect(markup).toContain('title="Zoom &amp; Edit Lower Toe"');
+  });
+
+  it("renders ToepadModal popup when activeModalSlotLabel is set", () => {
+    const markup = render({ defaultActiveModalSlotLabel: "up_finger" });
+    expect(markup).toContain('role="dialog"');
+    expect(markup).toContain('aria-modal="true"');
+    expect(markup).toContain("Upper Finger Close-up");
+    expect(markup).toContain("✕ Close");
+  });
+
+  it("opens modal via openModal and closes via closeModal", () => {
+    const panels = new ToepadPanels({
+      imageURL: "/image.jpg",
+      imageWidth: 1440,
+      imageHeight: 900,
+      points,
+      boundingBoxes: boxes,
+      selectedPoint: null,
+      isEditMode: false,
+      onToggleEditMode: () => {},
+      onPointSelect: () => {},
+      onPointsChange: () => {},
+      theme: "light",
+    });
+
+    expect(panels.state.activeModalSlotLabel).toBeNull();
+    panels.setState = (updater) => {
+      const next = typeof updater === "function" ? updater(panels.state, panels.props) : updater;
+      Object.assign(panels.state, next);
+    };
+
+    // Open modal
+    panels.openModal("up_finger");
+    expect(panels.state.activeModalSlotLabel).toBe("up_finger");
+
+    const openMarkup = renderToStaticMarkup(panels.render());
+    expect(openMarkup).toContain('role="dialog"');
+    expect(openMarkup).toContain("Upper Finger Close-up");
+
+    // Close modal
+    panels.closeModal();
+    expect(panels.state.activeModalSlotLabel).toBeNull();
+
+    const closedMarkup = renderToStaticMarkup(panels.render());
+    expect(closedMarkup).not.toContain('role="dialog"');
+  });
 });
