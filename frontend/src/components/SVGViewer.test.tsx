@@ -41,7 +41,7 @@ describe("SVGViewer edit mode zoom/pan hint", () => {
     );
 
     expect(markup).not.toContain(
-      "💡 Hold Ctrl + Scroll to zoom, Ctrl + Drag to pan in Edit Mode"
+      "💡 Hold Shift (or Alt) + Scroll to zoom, Shift + Drag to pan in Edit Mode"
     );
   });
 
@@ -51,17 +51,17 @@ describe("SVGViewer edit mode zoom/pan hint", () => {
     );
 
     expect(markup).toContain(
-      "💡 Hold Ctrl + Scroll to zoom, Ctrl + Drag to pan in Edit Mode"
+      "💡 Hold Shift (or Alt) + Scroll to zoom, Shift + Drag to pan in Edit Mode"
     );
     expect(markup).toContain('data-testid="edit-mode-zoom-hint"');
   });
 
-  it("includes Ctrl + Scroll / Drag shortcut in the controls panel markup", () => {
+  it("includes Shift / Alt + Scroll / Drag shortcut in the controls panel markup", () => {
     const viewer = new SVGViewer(createDefaultProps({ isEditMode: true }));
     Object.assign(viewer.state, { showControls: true });
     const markup = renderToStaticMarkup(viewer.render());
 
-    expect(markup).toContain("Ctrl + Scroll / Drag");
+    expect(markup).toContain("Shift / Alt + Scroll / Drag");
   });
 
   it("dismisses hint when dismissHint is called", () => {
@@ -128,25 +128,28 @@ describe("SVGViewer edit mode zoom/pan hint", () => {
 
 describe("SVGViewer d3 zoom filter", () => {
   describe("in View Mode (isEditMode: false)", () => {
-    it("allows standard wheel zoom without Ctrl", () => {
+    it("allows standard wheel zoom without Shift/Alt and prevents default", () => {
       const viewer = new SVGViewer(createDefaultProps({ isEditMode: false }));
+      const preventDefault = vi.fn();
       const wheelEvent = {
         type: "wheel",
         button: 0,
-        ctrlKey: false,
-        metaKey: false,
+        shiftKey: false,
+        altKey: false,
+        preventDefault,
       } as unknown as Event;
 
       expect(viewer.zoomFilter(wheelEvent)).toBe(true);
+      expect(preventDefault).toHaveBeenCalled();
     });
 
-    it("allows standard mousedown pan without Ctrl", () => {
+    it("allows standard mousedown pan without Shift/Alt", () => {
       const viewer = new SVGViewer(createDefaultProps({ isEditMode: false }));
       const mouseEvent = {
         type: "mousedown",
         button: 0,
-        ctrlKey: false,
-        metaKey: false,
+        shiftKey: false,
+        altKey: false,
       } as unknown as Event;
 
       expect(viewer.zoomFilter(mouseEvent)).toBe(true);
@@ -170,7 +173,7 @@ describe("SVGViewer d3 zoom filter", () => {
       const rightClickEvent = {
         type: "mousedown",
         button: 2,
-        ctrlKey: false,
+        shiftKey: false,
       } as unknown as Event;
 
       expect(viewer.zoomFilter(rightClickEvent)).toBe(false);
@@ -178,85 +181,94 @@ describe("SVGViewer d3 zoom filter", () => {
   });
 
   describe("in Edit Mode (isEditMode: true)", () => {
-    it("blocks wheel zoom when Ctrl and Meta are NOT pressed", () => {
+    it("blocks wheel zoom when Shift and Alt are NOT pressed but prevents default", () => {
       const viewer = new SVGViewer(createDefaultProps({ isEditMode: true }));
+      const preventDefault = vi.fn();
       const wheelEvent = {
         type: "wheel",
         button: 0,
-        ctrlKey: false,
-        metaKey: false,
+        shiftKey: false,
+        altKey: false,
+        preventDefault,
       } as unknown as Event;
 
       expect(viewer.zoomFilter(wheelEvent)).toBe(false);
+      expect(preventDefault).toHaveBeenCalled();
     });
 
-    it("blocks canvas drag/pan when Ctrl and Meta are NOT pressed", () => {
+    it("blocks canvas drag/pan when Shift and Alt are NOT pressed", () => {
       const viewer = new SVGViewer(createDefaultProps({ isEditMode: true }));
       const mouseEvent = {
         type: "mousedown",
         button: 0,
-        ctrlKey: false,
-        metaKey: false,
+        shiftKey: false,
+        altKey: false,
       } as unknown as Event;
 
       expect(viewer.zoomFilter(mouseEvent)).toBe(false);
     });
 
-    it("allows wheel zoom when Ctrl is pressed", () => {
+    it("allows wheel zoom when Shift is pressed and prevents default", () => {
       const viewer = new SVGViewer(createDefaultProps({ isEditMode: true }));
+      const preventDefault = vi.fn();
       const wheelEvent = {
         type: "wheel",
         button: 0,
-        ctrlKey: true,
-        metaKey: false,
+        shiftKey: true,
+        altKey: false,
+        preventDefault,
       } as unknown as Event;
 
       expect(viewer.zoomFilter(wheelEvent)).toBe(true);
+      expect(preventDefault).toHaveBeenCalled();
     });
 
-    it("allows canvas pan when Ctrl is pressed", () => {
+    it("allows canvas pan when Shift is pressed", () => {
       const viewer = new SVGViewer(createDefaultProps({ isEditMode: true }));
       const mouseEvent = {
         type: "mousedown",
         button: 0,
-        ctrlKey: true,
-        metaKey: false,
+        shiftKey: true,
+        altKey: false,
       } as unknown as Event;
 
       expect(viewer.zoomFilter(mouseEvent)).toBe(true);
     });
 
-    it("allows wheel zoom when Meta (Mac Cmd) is pressed", () => {
+    it("allows wheel zoom when Alt is pressed and prevents default", () => {
       const viewer = new SVGViewer(createDefaultProps({ isEditMode: true }));
+      const preventDefault = vi.fn();
       const wheelEvent = {
         type: "wheel",
         button: 0,
-        ctrlKey: false,
-        metaKey: true,
+        shiftKey: false,
+        altKey: true,
+        preventDefault,
       } as unknown as Event;
 
       expect(viewer.zoomFilter(wheelEvent)).toBe(true);
+      expect(preventDefault).toHaveBeenCalled();
     });
 
-    it("allows canvas pan when Meta (Mac Cmd) is pressed", () => {
+    it("allows canvas pan when Alt is pressed", () => {
       const viewer = new SVGViewer(createDefaultProps({ isEditMode: true }));
       const mouseEvent = {
         type: "mousedown",
         button: 0,
-        ctrlKey: false,
-        metaKey: true,
+        shiftKey: false,
+        altKey: true,
       } as unknown as Event;
 
       expect(viewer.zoomFilter(mouseEvent)).toBe(true);
     });
 
-    it("blocks double click even when Ctrl is pressed", () => {
+    it("blocks double click even when Shift is pressed", () => {
       const viewer = new SVGViewer(createDefaultProps({ isEditMode: true }));
       const preventDefault = vi.fn();
       const dblClickEvent = {
         type: "dblclick",
         button: 0,
-        ctrlKey: true,
+        shiftKey: true,
         preventDefault,
       } as unknown as Event;
 
@@ -264,12 +276,12 @@ describe("SVGViewer d3 zoom filter", () => {
       expect(preventDefault).toHaveBeenCalled();
     });
 
-    it("blocks right click even when Ctrl is pressed", () => {
+    it("blocks right click even when Shift is pressed", () => {
       const viewer = new SVGViewer(createDefaultProps({ isEditMode: true }));
       const rightClickEvent = {
         type: "mousedown",
         button: 2,
-        ctrlKey: true,
+        shiftKey: true,
       } as unknown as Event;
 
       expect(viewer.zoomFilter(rightClickEvent)).toBe(false);
@@ -278,12 +290,12 @@ describe("SVGViewer d3 zoom filter", () => {
 });
 
 describe("SVGViewer landmark drag interaction (dragstarted)", () => {
-  it("does not initiate landmark drag when Ctrl is pressed so event passes to canvas panning", () => {
+  it("does not initiate landmark drag when Shift is pressed so event passes to canvas panning", () => {
     const viewer = new SVGViewer(createDefaultProps({ isEditMode: true }));
     const stopPropagation = vi.fn();
     const sourceEvent = {
-      ctrlKey: true,
-      metaKey: false,
+      shiftKey: true,
+      altKey: false,
       stopPropagation,
     } as unknown as MouseEvent;
 
@@ -302,12 +314,12 @@ describe("SVGViewer landmark drag interaction (dragstarted)", () => {
     expect(viewer["draggedLandmarkId"]).toBeNull();
   });
 
-  it("does not initiate landmark drag when Meta is pressed so event passes to canvas panning", () => {
+  it("does not initiate landmark drag when Alt is pressed so event passes to canvas panning", () => {
     const viewer = new SVGViewer(createDefaultProps({ isEditMode: true }));
     const stopPropagation = vi.fn();
     const sourceEvent = {
-      ctrlKey: false,
-      metaKey: true,
+      shiftKey: false,
+      altKey: true,
       stopPropagation,
     } as unknown as MouseEvent;
 
@@ -323,7 +335,7 @@ describe("SVGViewer landmark drag interaction (dragstarted)", () => {
     expect(viewer["isDragging"]).toBe(false);
   });
 
-  it("initiates landmark dragging when neither Ctrl nor Meta is pressed", () => {
+  it("initiates landmark dragging when neither Shift nor Alt is pressed", () => {
     const onPointSelect = vi.fn();
     const viewer = new SVGViewer(
       createDefaultProps({
@@ -345,8 +357,8 @@ describe("SVGViewer landmark drag interaction (dragstarted)", () => {
     };
 
     const sourceEvent = {
-      ctrlKey: false,
-      metaKey: false,
+      shiftKey: false,
+      altKey: false,
       stopPropagation,
       target: mockTarget,
     } as unknown as MouseEvent;

@@ -172,6 +172,10 @@ export class ToepadModal extends Component<ToepadModalProps, ToepadModalState> {
     point: Point
   ): void => {
     if (!this.props.isEditMode || event.button !== 0) return;
+    if (event.shiftKey || event.altKey) {
+      // When Shift or Alt is pressed, do not capture so event bubbles to canvas panning
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.ownerSVGElement?.setPointerCapture?.(event.pointerId);
@@ -197,7 +201,7 @@ export class ToepadModal extends Component<ToepadModalProps, ToepadModalState> {
     event: React.PointerEvent<SVGSVGElement>
   ): void => {
     if (event.button !== 0) return;
-    const canPan = !this.props.isEditMode || event.ctrlKey || event.metaKey;
+    const canPan = !this.props.isEditMode || event.shiftKey || event.altKey;
     if (canPan) {
       event.preventDefault();
       event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -290,7 +294,8 @@ export class ToepadModal extends Component<ToepadModalProps, ToepadModalState> {
   private readonly handleNativeWheel = (event: WheelEvent): void => {
     event.preventDefault();
     event.stopPropagation();
-    const factor = event.deltaY < 0 ? 1.15 : 0.87;
+    if (event.deltaY === 0) return;
+    const factor = event.deltaY < 0 ? 1.08 : 0.92;
     this.setState((prev) => ({
       zoom: Math.min(Math.max(Math.round(prev.zoom * factor * 100) / 100, 0.5), 10),
     }));
@@ -299,7 +304,8 @@ export class ToepadModal extends Component<ToepadModalProps, ToepadModalState> {
   public readonly handleWheel = (event: React.WheelEvent<HTMLDivElement>): void => {
     event.preventDefault();
     event.stopPropagation();
-    const factor = event.deltaY < 0 ? 1.15 : 0.87;
+    if (event.deltaY === 0) return;
+    const factor = event.deltaY < 0 ? 1.08 : 0.92;
     this.setState((prev) => ({
       zoom: Math.min(Math.max(Math.round(prev.zoom * factor * 100) / 100, 0.5), 10),
     }));
@@ -572,7 +578,7 @@ export class ToepadModal extends Component<ToepadModalProps, ToepadModalState> {
           <div style={styles.footer}>
             <span>
               {isEditMode
-                ? "✏️ Drag landmarks to reposition. Hold Ctrl + Drag to pan."
+                ? "✏️ Drag landmarks to reposition. Shift / Alt + Drag to Pan in Edit Mode."
                 : "🖱️ Drag to pan • Scroll to zoom. Click 'Edit Points' to adjust."}
             </span>
             <span>

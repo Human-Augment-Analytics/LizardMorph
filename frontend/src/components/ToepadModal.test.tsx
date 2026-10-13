@@ -73,6 +73,7 @@ describe("ToepadModal", () => {
 
     expect(markup).toContain("✏️ Edit Points: On");
     expect(markup).toContain("cursor:crosshair");
+    expect(markup).toContain("Shift / Alt + Drag to Pan in Edit Mode");
   });
 
   it("renders landmark labels matching specimen IDs (p.id + 1) and highlights selected landmark", () => {
@@ -203,9 +204,18 @@ describe("ToepadModal", () => {
     } as unknown as React.WheelEvent<HTMLDivElement>);
 
     expect(modal.state.zoom).toBeGreaterThan(0.8);
+
+    // deltaY = 0 -> zoom remains unchanged
+    const currentZoom = modal.state.zoom;
+    modal.handleWheel({
+      deltaY: 0,
+      preventDefault,
+      stopPropagation,
+    } as unknown as React.WheelEvent<HTMLDivElement>);
+    expect(modal.state.zoom).toBe(currentZoom);
   });
 
-  it("pans canvas in view mode and with Ctrl in edit mode", () => {
+  it("pans canvas in view mode and with Shift / Alt in edit mode", () => {
     // In view mode
     const viewModal = new ToepadModal(createDefaultProps({ isEditMode: false }));
     viewModal.setState = vi.fn().mockImplementation((updater) => {
@@ -241,7 +251,7 @@ describe("ToepadModal", () => {
 
     expect(viewModal.state.isPanning).toBe(false);
 
-    // In edit mode without Ctrl: panning does NOT start
+    // In edit mode without Shift/Alt: panning does NOT start
     const editModal = new ToepadModal(createDefaultProps({ isEditMode: true }));
     editModal.setState = vi.fn().mockImplementation((updater) => {
       const next = typeof updater === "function" ? updater(editModal.state, editModal.props) : updater;
@@ -252,20 +262,42 @@ describe("ToepadModal", () => {
       button: 0,
       clientX: 50,
       clientY: 50,
-      ctrlKey: false,
-      metaKey: false,
+      shiftKey: false,
+      altKey: false,
       preventDefault: vi.fn(),
     } as unknown as React.PointerEvent<SVGSVGElement>);
 
     expect(editModal.state.isPanning).toBe(false);
 
-    // In edit mode with Ctrl: panning DOES start
+    // In edit mode with Shift: panning DOES start
     editModal.handleSvgPointerDown({
       button: 0,
       clientX: 50,
       clientY: 50,
-      ctrlKey: true,
-      metaKey: false,
+      shiftKey: true,
+      altKey: false,
+      preventDefault: vi.fn(),
+      currentTarget: { setPointerCapture } as unknown as SVGSVGElement,
+    } as unknown as React.PointerEvent<SVGSVGElement>);
+
+    expect(editModal.state.isPanning).toBe(true);
+
+    // Reset panning
+    editModal.handlePointerUp({
+      currentTarget: {
+        hasPointerCapture: () => true,
+        releasePointerCapture,
+      } as unknown as SVGSVGElement,
+    } as unknown as React.PointerEvent<SVGSVGElement>);
+    expect(editModal.state.isPanning).toBe(false);
+
+    // In edit mode with Alt: panning DOES start
+    editModal.handleSvgPointerDown({
+      button: 0,
+      clientX: 50,
+      clientY: 50,
+      shiftKey: false,
+      altKey: true,
       preventDefault: vi.fn(),
       currentTarget: { setPointerCapture } as unknown as SVGSVGElement,
     } as unknown as React.PointerEvent<SVGSVGElement>);
@@ -344,6 +376,56 @@ describe("ToepadModal", () => {
     expect(updated.find((p) => p.id === 100)?.x).toBe(50);
     expect(updated.find((p) => p.id === 300)?.x).toBe(500);
     expect(modal.state.drag).toBeNull();
+  });
+
+  it("does not initiate landmark drag when Shift or Alt is pressed so event passes to canvas panning", () => {
+    const onPointSelect = vi.fn();
+    const modal = new ToepadModal(
+      createDefaultProps({
+        isEditMode: true,
+        onPointSelect,
+      })
+    );
+
+    const targetPoint = sampleRegion.points[0];
+    const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
+
+    // With Shift
+    modal.handlePointPointerDown(
+      {
+        button: 0,
+        clientX: 100,
+        clientY: 100,
+        shiftKey: true,
+        altKey: false,
+        preventDefault,
+        stopPropagation,
+      } as unknown as React.PointerEvent<SVGGElement>,
+      targetPoint
+    );
+
+    expect(modal.state.drag).toBeNull();
+    expect(onPointSelect).not.toHaveBeenCalled();
+    expect(stopPropagation).not.toHaveBeenCalled();
+
+    // With Alt
+    modal.handlePointPointerDown(
+      {
+        button: 0,
+        clientX: 100,
+        clientY: 100,
+        shiftKey: false,
+        altKey: true,
+        preventDefault,
+        stopPropagation,
+      } as unknown as React.PointerEvent<SVGGElement>,
+      targetPoint
+    );
+
+    expect(modal.state.drag).toBeNull();
+    expect(onPointSelect).not.toHaveBeenCalled();
+    expect(stopPropagation).not.toHaveBeenCalled();
   });
 
   it("supports Ctrl+Z undo inside modal to revert landmark moves", () => {

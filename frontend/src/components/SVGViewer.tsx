@@ -65,7 +65,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   /**
    * D3 zoom filter: controls whether wheel (zoom) and mousedown (pan) events are handled.
    * - In View Mode: standard pan & zoom (primary button, non-dblclick)
-   * - In Edit Mode: allow zooming (wheel) and panning (drag) when Ctrl or Meta is pressed
+   * - In Edit Mode: allow zooming (wheel) and panning (drag) when Shift or Alt is pressed
    */
   public readonly zoomFilter = (event: Event): boolean => {
     const mouseEvent = event as MouseEvent;
@@ -73,15 +73,18 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       event.preventDefault();
       return false;
     }
+    if (event.type === "wheel") {
+      event.preventDefault();
+    }
     // Reject non-primary mouse buttons (e.g. right-click context menu)
     if (mouseEvent.button) {
       return false;
     }
     if (this.props.isEditMode) {
-      // In Edit Mode, allow zooming (wheel) and panning (drag) only when Ctrl or Meta is pressed
-      return Boolean(mouseEvent.ctrlKey || mouseEvent.metaKey);
+      // In Edit Mode, allow zooming (wheel) and panning (drag) only when Shift or Alt is pressed
+      return Boolean(mouseEvent.shiftKey || mouseEvent.altKey);
     }
-    // In View Mode, zoom/pan works normally as before without requiring Ctrl
+    // In View Mode, zoom/pan works normally as before without requiring Shift or Alt
     return true;
   };
 
@@ -584,7 +587,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
             .drag<SVGGElement, Point>()
             .filter((event: Event) => {
               const mouseEvent = event as MouseEvent;
-              if (mouseEvent.ctrlKey || mouseEvent.metaKey) {
+              if (mouseEvent.shiftKey || mouseEvent.altKey) {
                 return false;
               }
               return !mouseEvent.button;
@@ -599,6 +602,10 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       const zoom = d3
         .zoom<SVGSVGElement, unknown>()
         .scaleExtent([0.5, 20])
+        .wheelDelta((event) => {
+          // Smooth, controlled zoom step
+          return -event.deltaY * (event.deltaMode === 1 ? 0.015 : event.deltaMode ? 0.25 : 0.00075);
+        })
         .on("zoom", (event) => {
           zoomContainer.attr("transform", event.transform.toString());
           this.props.onZoomChange(event.transform);
@@ -623,8 +630,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       if (this.props.selectedViewType === "free") {
         svg.on("click.place", (event: MouseEvent) => {
           if (!this.props.isEditMode) return;
-          // Do not place landmarks if Ctrl or Meta is held (used for zoom/pan)
-          if (event.ctrlKey || event.metaKey) return;
+          // Do not place landmarks if Shift or Alt is held (used for zoom/pan)
+          if (event.shiftKey || event.altKey) return;
           // Ignore clicks on existing landmarks (circles/text)
           const target = event.target as Element;
           if (target.tagName === "circle" || target.tagName === "text") return;
@@ -710,8 +717,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     event: d3.D3DragEvent<SVGGElement, Point, Point>,
     d: Point
   ): void => {
-    // When Ctrl or Meta is pressed, do NOT initiate landmark dragging so the event passes through to panning the canvas
-    if (event.sourceEvent?.ctrlKey || event.sourceEvent?.metaKey) {
+    // When Shift or Alt is pressed, do NOT initiate landmark dragging so the event passes through to panning the canvas
+    if (event.sourceEvent?.shiftKey || event.sourceEvent?.altKey) {
       return;
     }
 
@@ -907,7 +914,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
           .drag<SVGGElement, Point>()
           .filter((event: Event) => {
             const mouseEvent = event as MouseEvent;
-            if (mouseEvent.ctrlKey || mouseEvent.metaKey) {
+            if (mouseEvent.shiftKey || mouseEvent.altKey) {
               return false;
             }
             return !mouseEvent.button;
@@ -1346,6 +1353,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
                 borderRadius: '8px',
                 fontSize: '12px',
                 minWidth: '220px',
+                maxHeight: 'calc(100vh - 140px)',
+                overflowY: 'auto',
                 boxShadow: isDark ? '0 8px 24px rgba(0, 0, 0, 0.45)' : '0 8px 24px rgba(0, 0, 0, 0.12)',
                 border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(0, 0, 0, 0.12)',
                 backdropFilter: 'blur(8px)',
@@ -1450,7 +1459,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
                   lineHeight: 1.6
                 }}>
                   <div style={{ fontWeight: 'bold', marginBottom: '6px', fontSize: '11px' }}>Keyboard Shortcuts</div>
-                  <div><kbd style={kbdStyle}>Ctrl + Scroll / Drag</kbd> Zoom / Pan in Edit Mode</div>
+                  <div><kbd style={kbdStyle}>Shift / Alt + Scroll / Drag</kbd> Zoom / Pan in Edit Mode</div>
                   <div><kbd style={kbdStyle}>B</kbd> Toggle bounding boxes</div>
                   <div><kbd style={kbdStyle}>T</kbd> Toggle transparency</div>
                   <div><kbd style={kbdStyle}>N</kbd> Toggle labels</div>
@@ -1474,6 +1483,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
               bottom: '16px',
               left: '50%',
               transform: 'translateX(-50%)',
+              maxWidth: 'calc(100% - 32px)',
+              boxSizing: 'border-box',
               backgroundColor: isDark ? 'rgba(20, 24, 33, 0.90)' : 'rgba(255, 255, 255, 0.94)',
               color: isDark ? '#e2e8f0' : '#0f172a',
               padding: '7px 16px',
@@ -1493,7 +1504,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
             }}
             data-testid="edit-mode-zoom-hint"
           >
-            <span>💡 Hold Ctrl + Scroll to zoom, Ctrl + Drag to pan in Edit Mode</span>
+            <span>💡 Hold Shift (or Alt) + Scroll to zoom, Shift + Drag to pan in Edit Mode</span>
             <button
               onClick={this.dismissHint}
               style={{
