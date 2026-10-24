@@ -55,6 +55,12 @@ export function getToepadPanelsStyles(theme: ResolvedTheme) {
       overflow: "hidden",
       border: `1px solid ${t.borderLight}`,
       background: t.surface,
+      transition: "border-color 0.15s ease, box-shadow 0.15s ease",
+    } as CSSProperties,
+
+    cardActive: {
+      borderColor: "#00E5FF",
+      boxShadow: `0 0 0 2px ${isDark ? "rgba(0, 229, 255, 0.45)" : "rgba(0, 229, 255, 0.35)"}`,
     } as CSSProperties,
 
     cardHeader: {
@@ -114,6 +120,12 @@ export function getToepadPanelsStyles(theme: ResolvedTheme) {
       color: t.text,
       cursor: "pointer",
       transition: "background 0.15s, border-color 0.15s",
+    } as CSSProperties,
+
+    zoomButtonActive: {
+      background: isDark ? "rgba(0, 229, 255, 0.22)" : "rgba(0, 229, 255, 0.18)",
+      borderColor: "#00E5FF",
+      color: isDark ? "#00E5FF" : "#007a8c",
     } as CSSProperties,
 
     viewport: {

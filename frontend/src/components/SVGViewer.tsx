@@ -53,9 +53,85 @@ interface PositionHistory {
   originalScatterData: Point[];
 }
 
+export interface ZoomCropTarget {
+  x: number;
+  y: number;
+  size: number;
+}
+
+/**
+ * Calculates the d3.ZoomTransform needed to focus and center on a crop region (in image coordinates).
+ * Scales the crop so it occupies ~75% of the viewport and centers it.
+ */
+export function computeZoomTransformForCrop(
+  crop: ZoomCropTarget,
+  imageWidth: number,
+  imageHeight: number,
+  viewportWidth: number,
+  viewportHeight: number
+): d3.ZoomTransform {
+  if (!imageWidth || !imageHeight || !viewportWidth || !viewportHeight || !crop || !crop.size) {
+    return d3.zoomIdentity;
+  }
+
+  // Base scale ratio from image space to unzoomed SVG display space
+  const scaleRatio = viewportWidth / imageWidth;
+
+  // Size of crop in unzoomed SVG pixels
+  const cropSizeSvg = Math.max(crop.size * scaleRatio, 1);
+
+  // Scale factor so the crop occupies ~75% of the viewport's smaller dimension
+  const targetK = Math.min(
+    Math.max((Math.min(viewportWidth, viewportHeight) * 0.75) / cropSizeSvg, 1.0),
+    18.0
+  );
+
+  // Center of crop in unzoomed SVG pixels
+  const cxSvg = (crop.x + crop.size / 2) * scaleRatio;
+  const cySvg = (crop.y + crop.size / 2) * scaleRatio;
+
+  // Translate to center (cxSvg, cySvg) in the viewport
+  const tx = viewportWidth / 2 - targetK * cxSvg;
+  const ty = viewportHeight / 2 - targetK * cySvg;
+
+  return d3.zoomIdentity.translate(tx, ty).scale(targetK);
+}
+
 export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
   readonly svgRef = createRef<SVGSVGElement>();
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
+  public renderedWidth = 0;
+  public renderedHeight = 0;
+
+  /**
+   * Programmatically zoom and center the SVG viewer onto a crop region in image-pixel space.
+   */
+  public readonly zoomToImageRegion = (
+    crop: ZoomCropTarget
+  ): d3.ZoomTransform | null => {
+    if (!this.svgRef.current || !this.zoomRef.current) return null;
+    if (!this.props.imageWidth || !this.props.imageHeight) return null;
+
+    const widthAttr = this.svgRef.current.getAttribute("width");
+    const heightAttr = this.svgRef.current.getAttribute("height");
+    const width = this.renderedWidth || (widthAttr ? parseFloat(widthAttr) : 0);
+    const height = this.renderedHeight || (heightAttr ? parseFloat(heightAttr) : 0);
+
+    if (!width || !height) return null;
+
+    const transform = computeZoomTransformForCrop(
+      crop,
+      this.props.imageWidth,
+      this.props.imageHeight,
+      width,
+      height
+    );
+
+    const svg = d3.select(this.svgRef.current);
+    svg.call(this.zoomRef.current.transform, transform);
+    this.props.onZoomChange(transform);
+    return transform;
+  };
 
   /** Dismiss the edit mode zoom hint badge */
   public readonly dismissHint = (): void => {
@@ -325,6 +401,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       }
 
       svg.attr("width", width).attr("height", height);
+      this.renderedWidth = width;
+      this.renderedHeight = height;
 
       // Calculate scaling factors
       const xScale = width / this.props.imageWidth;

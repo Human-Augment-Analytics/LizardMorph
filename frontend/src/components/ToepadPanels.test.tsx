@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { getToepadRegions } from "../services/ToepadRegions";
 
 import type { BoundingBox } from "../models/AnnotationsData";
 import type { Point } from "../models/Point";
@@ -104,11 +105,52 @@ describe("ToepadPanels", () => {
     expect(markup).toContain("Toggle bounding boxes");
   });
 
-  it("renders a '⤢ Zoom & Edit' button on detected toepad cards", () => {
+  it("renders a '⤢ Zoom to Toe' button on detected toepad cards", () => {
     const markup = render();
-    expect(markup).toContain("Zoom &amp; Edit");
-    expect(markup).toContain('title="Zoom &amp; Edit Upper Finger"');
-    expect(markup).toContain('title="Zoom &amp; Edit Lower Toe"');
+    expect(markup).toContain("Zoom to Toe");
+    expect(markup).toContain('title="Zoom in on Upper Finger"');
+    expect(markup).toContain('title="Zoom in on Lower Toe"');
+  });
+
+  it("calls onZoomToToe with region when handleToepadClick is called", () => {
+    const onZoomToToe = vi.fn();
+    const panels = new ToepadPanels({
+      imageURL: "/image.jpg",
+      imageWidth: 1440,
+      imageHeight: 900,
+      points,
+      boundingBoxes: boxes,
+      selectedPoint: null,
+      isEditMode: false,
+      onToggleEditMode: () => {},
+      onPointSelect: () => {},
+      onPointsChange: () => {},
+      onZoomToToe,
+      theme: "light",
+    });
+
+    const regions = getToepadRegions(points, boxes);
+    const upFinger = regions.find((r) => r.slot.label === "up_finger")!;
+    panels.handleToepadClick(upFinger);
+
+    expect(onZoomToToe).toHaveBeenCalledWith(upFinger);
+    expect(panels.state.activeModalSlotLabel).toBeNull();
+  });
+
+  it("highlights active toepad card and changes button to '↺ Reset Zoom' when activeSlotLabel matches", () => {
+    const markup = render({ activeSlotLabel: "up_finger" });
+    expect(markup).toContain("Reset Zoom (Upper Finger)");
+    expect(markup).toContain("↺ Reset Zoom");
+    expect(markup).toContain("border-color:#00E5FF");
+  });
+
+  it("does not render ToepadModal popup when onZoomToToe is provided even if activeModalSlotLabel is set", () => {
+    const markup = render({
+      defaultActiveModalSlotLabel: "up_finger",
+      onZoomToToe: () => {},
+    });
+    expect(markup).not.toContain('role="dialog"');
+    expect(markup).not.toContain("Upper Finger Close-up");
   });
 
   it("renders ToepadModal popup when activeModalSlotLabel is set", () => {

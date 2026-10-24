@@ -24,6 +24,10 @@ interface ToepadPanelsProps {
   style?: React.CSSProperties;
   defaultLegendOpen?: boolean;
   defaultActiveModalSlotLabel?: string | null;
+  /** Callback to zoom the big image in onto a specific toepad region */
+  onZoomToToe?: (region: ToepadRegion) => void;
+  /** Active toepad slot label currently zoomed in the big image */
+  activeSlotLabel?: string | null;
 }
 
 interface DragState {
@@ -54,6 +58,15 @@ export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState
       activeModalSlotLabel: props.defaultActiveModalSlotLabel ?? null,
     };
   }
+
+  public readonly handleToepadClick = (region: ToepadRegion): void => {
+    if (!region.crop) return;
+    if (this.props.onZoomToToe) {
+      this.props.onZoomToToe(region);
+    } else {
+      this.openModal(region.slot.label);
+    }
+  };
 
   public readonly openModal = (slotLabel: string): void => {
     this.setState({ activeModalSlotLabel: slotLabel });
@@ -146,13 +159,19 @@ export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState
     const styles = getToepadPanelsStyles(theme);
     const { slot, crop, points } = region;
 
+    const isActive = this.props.activeSlotLabel === slot.label;
+
     return (
       <div
         key={slot.label}
-        style={styles.card}
+        data-testid={`toepad-card-${slot.label}`}
+        style={{
+          ...styles.card,
+          ...(isActive ? styles.cardActive : {}),
+        }}
         onClick={() => {
           if (crop && !this.wasDragging) {
-            this.openModal(slot.label);
+            this.handleToepadClick(region);
           }
         }}
       >
@@ -166,15 +185,19 @@ export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState
             {crop && (
               <button
                 type="button"
-                style={styles.zoomButton}
+                data-testid={`toepad-zoom-button-${slot.label}`}
+                style={{
+                  ...styles.zoomButton,
+                  ...(isActive ? styles.zoomButtonActive : {}),
+                }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  this.openModal(slot.label);
+                  this.handleToepadClick(region);
                 }}
-                title={`Zoom & Edit ${slot.title}`}
-                aria-label={`Zoom & Edit ${slot.title}`}
+                title={isActive ? `Reset Zoom (${slot.title})` : `Zoom in on ${slot.title}`}
+                aria-label={isActive ? `Reset Zoom (${slot.title})` : `Zoom in on ${slot.title}`}
               >
-                ⤢ Zoom &amp; Edit
+                {isActive ? "↺ Reset Zoom" : "⤢ Zoom to Toe"}
               </button>
             )}
           </div>
@@ -188,7 +211,7 @@ export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState
           onClick={(e) => {
             if (crop && !this.wasDragging) {
               e.stopPropagation();
-              this.openModal(slot.label);
+              this.handleToepadClick(region);
             }
           }}
         >
@@ -436,7 +459,7 @@ export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState
         </div>
         <div style={styles.grid}>{regions.map((r) => this.renderRegion(r))}</div>
         {this.renderControlsLegend(styles)}
-        {activeRegion && (
+        {activeRegion && !this.props.onZoomToToe && (
           <ToepadModal
             region={activeRegion}
             allPoints={points}

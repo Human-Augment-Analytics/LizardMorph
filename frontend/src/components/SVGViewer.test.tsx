@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import * as d3 from "d3";
-import { SVGViewer } from "./SVGViewer";
+import { SVGViewer, computeZoomTransformForCrop } from "./SVGViewer";
 import type { Point } from "../models/Point";
 
 const sharedPoints: Point[] = [{ id: 0, x: 50, y: 50 }];
@@ -452,5 +452,61 @@ describe("SVGViewer zoom transform synchronization", () => {
     viewer.componentDidUpdate(prevProps);
 
     expect(zoomTransformSpy).toHaveBeenCalled();
+  });
+});
+
+describe("computeZoomTransformForCrop", () => {
+  it("calculates correct scale and translation to center crop in viewport", () => {
+    const crop = { x: 450, y: 250, size: 100 };
+    const transform = computeZoomTransformForCrop(crop, 2000, 1000, 800, 400);
+
+    // scaleRatio = 800 / 2000 = 0.4
+    // cropSizeSvg = 100 * 0.4 = 40
+    // targetK = (400 * 0.75) / 40 = 7.5
+    expect(transform.k).toBe(7.5);
+
+    // Center in unzoomed SVG: (450 + 50) * 0.4 = 200, (250 + 50) * 0.4 = 120
+    // tx = 800 / 2 - 7.5 * 200 = 400 - 1500 = -1100
+    // ty = 400 / 2 - 7.5 * 120 = 200 - 900 = -700
+    expect(transform.x).toBe(-1100);
+    expect(transform.y).toBe(-700);
+
+    // Transforming the crop center point should result in viewport center (400, 200)
+    const [screenX, screenY] = transform.apply([200, 120]);
+    expect(screenX).toBe(400);
+    expect(screenY).toBe(200);
+  });
+
+  it("returns zoomIdentity if inputs are invalid or zero", () => {
+    expect(computeZoomTransformForCrop({ x: 0, y: 0, size: 0 }, 100, 100, 100, 100)).toEqual(d3.zoomIdentity);
+    expect(computeZoomTransformForCrop({ x: 0, y: 0, size: 10 }, 0, 100, 100, 100)).toEqual(d3.zoomIdentity);
+  });
+});
+
+describe("SVGViewer zoomToImageRegion", () => {
+  it("computes and applies zoom transform to D3 zoom and fires onZoomChange", () => {
+    const onZoomChange = vi.fn();
+    const props = createDefaultProps({
+      imageWidth: 2000,
+      imageHeight: 1000,
+      onZoomChange,
+    });
+    const viewer = new SVGViewer(props);
+    const mockZoom = d3.zoom<SVGSVGElement, unknown>();
+    const zoomTransformSpy = vi.fn();
+    mockZoom.transform = zoomTransformSpy as unknown as typeof mockZoom.transform;
+    (viewer.zoomRef as unknown as { current: d3.ZoomBehavior<SVGSVGElement, unknown> }).current = mockZoom;
+
+    const mockSvg = {
+      getAttribute: vi.fn((attr: string) => (attr === "width" ? "800" : attr === "height" ? "400" : null)),
+      node: () => ({}),
+    } as unknown as SVGSVGElement;
+    (viewer.svgRef as unknown as { current: SVGSVGElement }).current = mockSvg;
+
+    const transform = viewer.zoomToImageRegion({ x: 450, y: 250, size: 100 });
+    expect(transform).not.toBeNull();
+    expect(transform?.k).toBe(7.5);
+    expect(zoomTransformSpy).toHaveBeenCalled();
+    expect(onZoomChange).toHaveBeenCalledWith(transform);
   });
 });

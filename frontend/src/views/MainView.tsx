@@ -18,7 +18,8 @@ import { MeasurementsAndScalePanel } from "../components/MeasurementsAndScalePan
 import { SessionInfo } from "../components/SessionInfo";
 import { getMainViewStyles } from "./MainView.style";
 import { ThemeContext } from "../contexts/theme";
-import { SVGViewer } from "../components/SVGViewer";
+import { SVGViewer, computeZoomTransformForCrop } from "../components/SVGViewer";
+import type { ToepadRegion } from "../services/ToepadRegions";
 import { ApiService } from "../services/ApiService";
 import { SessionService } from "../services/SessionService";
 import { extractIdFromImageUrl } from "../services/IdOcrService";
@@ -48,6 +49,7 @@ interface MainState {
   imageSet: ImageSet;
   lizardCount: number;
   zoomTransform: d3.ZoomTransform;
+  activeToepadSlotLabel: string | null;
   scaleSettings: ScaleSettings;
   measurements: Measurement[];
   isEditMode: boolean;
@@ -86,6 +88,7 @@ export class MainView extends Component<MainProps, MainState> {
   declare context: React.ContextType<typeof ThemeContext>;
   readonly svgRef = createRef<SVGSVGElement>();
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
+  readonly svgViewerRef = createRef<SVGViewer>();
   state: MainState = {
     currentImageIndex: 0,
     images: [],
@@ -111,6 +114,7 @@ export class MainView extends Component<MainProps, MainState> {
     },
     lizardCount: 0,
     zoomTransform: d3.zoomIdentity,
+    activeToepadSlotLabel: null,
     scaleSettings: {
       pointAId: 0,
       pointBId: 1,
@@ -987,6 +991,7 @@ export class MainView extends Component<MainProps, MainState> {
         currentImageURL: newImage.imageSets.original,
         needsScaling: true,
         selectedPoint: null,
+        activeToepadSlotLabel: null,
         scatterData: newImage.coords,
         originalScatterData: newImage.originalCoords || newImage.coords,
         currentBoundingBoxes: newImage.boundingBoxes || [],
@@ -1159,8 +1164,50 @@ export class MainView extends Component<MainProps, MainState> {
     this.setState((prevState) => ({ isEditMode: !prevState.isEditMode }));
   };
 
+  private readonly handleZoomToToe = (region: ToepadRegion): void => {
+    if (!region.crop) return;
+
+    if (this.state.activeToepadSlotLabel === region.slot.label) {
+      // Clicking the already active toepad resets zoom back to default full view
+      this.setState({
+        activeToepadSlotLabel: null,
+        zoomTransform: d3.zoomIdentity,
+      });
+      return;
+    }
+
+    if (this.svgViewerRef.current) {
+      const transform = this.svgViewerRef.current.zoomToImageRegion(region.crop);
+      if (transform) {
+        this.setState({
+          activeToepadSlotLabel: region.slot.label,
+          zoomTransform: transform,
+        });
+        return;
+      }
+    }
+
+    // Fallback if svgViewerRef is not currently available
+    const fallbackWidth = this.state.imageWidth ? 800 : 800;
+    const fallbackHeight =
+      this.state.imageHeight && this.state.imageWidth
+        ? fallbackWidth * (this.state.imageHeight / this.state.imageWidth)
+        : 600;
+    const transform = computeZoomTransformForCrop(
+      region.crop,
+      this.state.imageWidth,
+      this.state.imageHeight,
+      fallbackWidth,
+      fallbackHeight
+    );
+    this.setState({
+      activeToepadSlotLabel: region.slot.label,
+      zoomTransform: transform,
+    });
+  };
+
   private readonly handleResetZoom = (): void => {
-    this.setState({ zoomTransform: d3.zoomIdentity });
+    this.setState({ zoomTransform: d3.zoomIdentity, activeToepadSlotLabel: null });
   };
 
   private readonly handleOpenMeasurementsAndScaleModal = (): void => {
@@ -1436,6 +1483,7 @@ export class MainView extends Component<MainProps, MainState> {
                 }}
               >
                 <SVGViewer
+                  ref={this.svgViewerRef}
                   selectedViewType={this.props.selectedViewType}
                   dataFetched={this.state.dataFetched}
                   loading={this.state.loading}
@@ -1498,6 +1546,8 @@ export class MainView extends Component<MainProps, MainState> {
                     onToggleEditMode={this.handleToggleEditMode}
                     onPointSelect={this.handlePointSelect}
                     onPointsChange={this.handleToepadPointsChange}
+                    onZoomToToe={this.handleZoomToToe}
+                    activeSlotLabel={this.state.activeToepadSlotLabel}
                     theme={theme}
                   />
                 </div>

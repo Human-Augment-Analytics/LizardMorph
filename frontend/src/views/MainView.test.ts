@@ -1,3 +1,4 @@
+import * as d3 from "d3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiService } from "../services/ApiService";
@@ -85,5 +86,86 @@ describe("MainView history panel collapse", () => {
 
     (view as unknown as { handleToggleHistoryCollapse: () => void }).handleToggleHistoryCollapse();
     expect(view.state.isHistoryCollapsed).toBe(false);
+  });
+});
+
+describe("MainView toepad zoom feature", () => {
+  it("zooms into toepad region on handleZoomToToe", () => {
+    const view = new MainView({ selectedViewType: "toepads" });
+    view.state.imageWidth = 1000;
+    view.state.imageHeight = 800;
+    view.setState = ((update: unknown) => {
+      const nextState =
+        typeof update === "function"
+          ? update(view.state, view.props)
+          : update;
+      view.state = {
+        ...view.state,
+        ...(nextState as Partial<typeof view.state>),
+      };
+    }) as typeof view.setState;
+
+    const region = {
+      slot: { label: "up_finger" as const, title: "Upper Finger", color: "#00cc00" },
+      crop: { x: 200, y: 150, size: 80 },
+      points: [],
+    };
+
+    (view as unknown as { handleZoomToToe: (r: typeof region) => void }).handleZoomToToe(region);
+
+    expect(view.state.activeToepadSlotLabel).toBe("up_finger");
+    expect(view.state.zoomTransform).not.toEqual(d3.zoomIdentity);
+    expect(view.state.zoomTransform.k).toBeGreaterThan(1);
+  });
+
+  it("toggles zoom off back to full view when clicking the same toepad twice", () => {
+    const view = new MainView({ selectedViewType: "toepads" });
+    view.state.imageWidth = 1000;
+    view.state.imageHeight = 800;
+    view.setState = ((update: unknown) => {
+      const nextState =
+        typeof update === "function"
+          ? update(view.state, view.props)
+          : update;
+      view.state = {
+        ...view.state,
+        ...(nextState as Partial<typeof view.state>),
+      };
+    }) as typeof view.setState;
+
+    const region = {
+      slot: { label: "up_finger" as const, title: "Upper Finger", color: "#00cc00" },
+      crop: { x: 200, y: 150, size: 80 },
+      points: [],
+    };
+
+    const handler = (view as unknown as { handleZoomToToe: (r: typeof region) => void }).handleZoomToToe;
+    handler(region);
+    expect(view.state.activeToepadSlotLabel).toBe("up_finger");
+
+    // Second click on same toepad resets
+    handler(region);
+    expect(view.state.activeToepadSlotLabel).toBeNull();
+    expect(view.state.zoomTransform).toEqual(d3.zoomIdentity);
+  });
+
+  it("handleResetZoom clears activeToepadSlotLabel and resets zoomTransform", () => {
+    const view = new MainView({ selectedViewType: "toepads" });
+    view.state.activeToepadSlotLabel = "up_finger";
+    view.state.zoomTransform = d3.zoomIdentity.translate(100, 50).scale(3);
+    view.setState = ((update: unknown) => {
+      const nextState =
+        typeof update === "function"
+          ? update(view.state, view.props)
+          : update;
+      view.state = {
+        ...view.state,
+        ...(nextState as Partial<typeof view.state>),
+      };
+    }) as typeof view.setState;
+
+    (view as unknown as { handleResetZoom: () => void }).handleResetZoom();
+    expect(view.state.activeToepadSlotLabel).toBeNull();
+    expect(view.state.zoomTransform).toEqual(d3.zoomIdentity);
   });
 });
