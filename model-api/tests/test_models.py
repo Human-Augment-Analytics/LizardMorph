@@ -198,3 +198,22 @@ def test_promote_model_version_sets_alias_stage_and_tags():
         "H8_obb_botonly", "champion", "3"
     )
     MockClient.return_value.transition_model_version_stage.assert_called_once()
+
+
+def test_public_release_does_not_send_authorization(monkeypatch):
+    import config
+    monkeypatch.setattr(config, "GITHUB_TOKEN", None)
+    with patch("httpx.get", side_effect=mock_httpx_get) as get:
+        response = client.get("/model/by-tag/model/v1.1.0-obb")
+    assert response.status_code == 200
+    for call in get.call_args_list:
+        assert "Authorization" not in call.kwargs["headers"]
+
+
+def test_private_release_keeps_optional_authorization(monkeypatch):
+    import config
+    monkeypatch.setattr(config, "GITHUB_TOKEN", "test-optional-token")
+    with patch("httpx.get", side_effect=mock_httpx_get) as get:
+        response = client.get("/model/by-tag/model/v1.1.0-obb")
+    assert response.status_code == 200
+    assert get.call_args_list[0].kwargs["headers"]["Authorization"] == "Bearer test-optional-token"

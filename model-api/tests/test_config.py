@@ -10,12 +10,12 @@ def test_missing_github_repo_raises(monkeypatch):
         importlib.reload(config)
 
 
-def test_missing_github_token_raises(monkeypatch):
+def test_public_repo_without_github_token(monkeypatch):
     monkeypatch.setenv("GITHUB_REPO", "org/repo")
     monkeypatch.setenv("GITHUB_TOKEN", "")
     import config
-    with pytest.raises(ValueError, match="GITHUB_TOKEN"):
-        importlib.reload(config)
+    importlib.reload(config)
+    assert config.GITHUB_TOKEN is None
 
 
 def test_valid_config(monkeypatch):

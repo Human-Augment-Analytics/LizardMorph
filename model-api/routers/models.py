@@ -19,9 +19,10 @@ def _build_model_response(release_tag: str) -> LatestModelResponse:
     """Fetch a GitHub Release by tag, read its metadata.json, and return the
     full LatestModelResponse (version info + download URLs)."""
     gh_headers = {
-        "Authorization": f"Bearer {config.GITHUB_TOKEN}",
         "Accept": "application/vnd.github+json",
     }
+    if config.GITHUB_TOKEN:
+        gh_headers["Authorization"] = f"Bearer {config.GITHUB_TOKEN}"
     release_url = (
         f"https://api.github.com/repos/{config.GITHUB_REPO}"
         f"/releases/tags/{release_tag}"
@@ -83,7 +84,7 @@ def list_models():
             name=mv.name,
             version=str(mv.version),
             stage=mv.current_stage,
-            aliases=list(getattr(mv, "aliases", []) or []),
+            aliases=_model_aliases(client, mv),
             run_id=getattr(mv, "run_id", None),
             source=getattr(mv, "source", None),
             status=getattr(mv, "status", None),
@@ -181,13 +182,22 @@ def promote_model_version(
     )
 
 
+
+def _model_aliases(client, version):
+    aliases = list(getattr(version, "aliases", []) or [])
+    if not aliases:
+        # MLflow search_model_versions omits aliases; get_model_version includes them.
+        details = client.get_model_version(version.name, version.version)
+        aliases = list(getattr(details, "aliases", []) or [])
+    return aliases
+
+
 def _find_production_version(client, model_name: str | None, alias: str):
     if not model_name:
-        candidates = [
-            version for version in client.search_model_versions()
-            if alias in list(getattr(version, "aliases", []) or [])
-            or version.current_stage == "Production"
-        ]
+        versions = list(client.search_model_versions())
+        candidates = [version for version in versions if alias in _model_aliases(client, version)]
+        if not candidates:
+            candidates = [version for version in versions if version.current_stage == "Production"]
         if candidates:
             candidates.sort(key=_deployment_sort_key, reverse=True)
             return candidates[0]
