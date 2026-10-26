@@ -175,6 +175,8 @@ _cached_id_model = None
 def get_cached_id_model():
     """Get cached ID extractor YOLO model, loading it on first call."""
     global _cached_id_model
+    if ID_EXTRACTOR_MODEL == TOEPAD_YOLO_MODEL:
+        return get_cached_yolo_model()
     if _cached_id_model is None:
         if ID_EXTRACTOR_MODEL and os.path.exists(ID_EXTRACTOR_MODEL):
             from ultralytics import YOLO
@@ -402,49 +404,67 @@ def health_check():
 @app.route("/api/sync-model", methods=["POST"])
 @cross_origin()
 def sync_model_from_registry():
-    """Pull the current Production model from model-api and reload the cache.
-
-    Calls model-api's /model/latest, downloads the fp16 onnx into the path
-    backend currently uses (TOEPAD_YOLO_MODEL), then resets the cache so the
-    next inference call reloads from disk.
-    """
-    global _cached_yolo_model
+    """Validate a promoted ONNX model before atomically replacing the active file."""
+    global _cached_yolo_model, _cached_id_model
     import requests as _requests
+    import tempfile
+    from ort_inference import OrtYoloDetector
 
     model_api_url = os.getenv("MODEL_API_URL", "http://localhost:8000")
     target_path = TOEPAD_YOLO_MODEL
     if not target_path:
         return jsonify({"status": "error", "error": "TOEPAD_YOLO_MODEL not configured"}), 500
 
+    temporary_path = None
     try:
-        latest = _requests.get(f"{model_api_url}/model/latest", timeout=10).json()
+        response = _requests.get(f"{model_api_url}/model/latest", timeout=10)
+        response.raise_for_status()
+        latest = response.json()
+        download_url = latest["assets"].get("fp16") or latest["assets"].get("fp32")
+        if not download_url:
+            return jsonify({"status": "error", "error": "no onnx asset in latest model"}), 404
+
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=os.path.dirname(target_path), suffix=".onnx", delete=False) as output:
+            temporary_path = output.name
+            with _requests.get(download_url, stream=True, timeout=60) as download:
+                download.raise_for_status()
+                for chunk in download.iter_content(chunk_size=1 << 20):
+                    output.write(chunk)
+            output.flush()
+            os.fsync(output.fileno())
+
+        candidate = OrtYoloDetector(temporary_path)
+        dataset = latest["dataset"]
+        if (latest["task"] != "obb"
+                or candidate.num_classes != dataset["nc"]
+                or list(candidate.class_names.values()) != dataset["names"]):
+            raise ValueError("ONNX class schema does not match the promoted release")
+
+        base, ext = os.path.splitext(target_path)
+        stale_int8 = f"{base}_int8{ext}"
+        if os.path.exists(stale_int8):
+            os.remove(stale_int8)
+        os.replace(temporary_path, target_path)
+        temporary_path = None
     except Exception as exc:
-        return jsonify({"status": "error", "error": f"model-api unreachable: {exc}"}), 502
+        return jsonify({"status": "error", "error": f"model sync failed: {exc}"}), 502
+    finally:
+        if temporary_path and os.path.exists(temporary_path):
+            os.remove(temporary_path)
 
-    if "assets" not in latest:
-        return jsonify({"status": "error", "error": f"unexpected model-api response: {latest}"}), 502
-
-    download_url = latest["assets"].get("fp16") or latest["assets"].get("fp32")
-    if not download_url:
-        return jsonify({"status": "error", "error": "no onnx asset in latest model"}), 404
-
-    os.makedirs(os.path.dirname(target_path), exist_ok=True)
-    try:
-        with _requests.get(download_url, stream=True, timeout=60) as r:
-            r.raise_for_status()
-            with open(target_path, "wb") as f:
-                for chunk in r.iter_content(chunk_size=1 << 20):
-                    f.write(chunk)
-    except Exception as exc:
-        return jsonify({"status": "error", "error": f"download failed: {exc}"}), 502
-
-    _cached_yolo_model = None  # force reload on next inference
-    logger.info(f"Model synced: {latest.get('version')} → {target_path}")
-
+    _cached_yolo_model = candidate
+    if ID_EXTRACTOR_MODEL == target_path:
+        _cached_id_model = None
+    logger.info("Model synced: %s → %s sha256=%s schema=%s",
+                latest.get("version"), target_path, candidate.sha256, candidate.schema)
     return jsonify({
         "status": "ok",
         "loaded_model": target_path,
         "version": latest.get("version", "unknown"),
+        "sha256": candidate.sha256,
+        "schema": candidate.schema,
+        "classes": candidate.class_names,
     }), 200
 
 # Prometheus metrics endpoint

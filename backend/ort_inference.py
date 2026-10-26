@@ -13,6 +13,7 @@ the model schema from class names embedded in the ONNX metadata:
 """
 
 import ast
+import hashlib
 import math
 import numpy as np
 import cv2
@@ -90,6 +91,9 @@ class OrtYoloDetector:
         Args:
             model_path: Path to .onnx model file.
         """
+        self.model_path = model_path
+        with open(model_path, "rb") as model_file:
+            self.sha256 = hashlib.sha256(model_file.read()).hexdigest()
         providers = _get_execution_providers()
         self.session = ort.InferenceSession(
             model_path,
@@ -105,7 +109,7 @@ class OrtYoloDetector:
         self.schema = _infer_schema(self.class_names)
         print(
             f"[OrtYoloDetector] Loaded {model_path} "
-            f"(schema={self.schema}, classes={self.num_classes}: {list(self.class_names.values())})"
+            f"(sha256={self.sha256}, schema={self.schema}, classes={self.num_classes}: {list(self.class_names.values())})"
         )
 
     # ------------------------------------------------------------------
