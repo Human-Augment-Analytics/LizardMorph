@@ -194,11 +194,10 @@ def _model_aliases(client, version):
 
 def _find_production_version(client, model_name: str | None, alias: str):
     if not model_name:
-        candidates = [
-            version for version in client.search_model_versions()
-            if alias in _model_aliases(client, version)
-            or version.current_stage == "Production"
-        ]
+        versions = list(client.search_model_versions())
+        candidates = [version for version in versions if alias in _model_aliases(client, version)]
+        if not candidates:
+            candidates = [version for version in versions if version.current_stage == "Production"]
         if candidates:
             candidates.sort(key=_deployment_sort_key, reverse=True)
             return candidates[0]
