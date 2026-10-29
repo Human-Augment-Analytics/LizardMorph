@@ -5,6 +5,11 @@ import type { Measurement } from "../models/Measurement";
 import type { ScaleSettings } from "../models/ScaleSettings";
 import { getApiUrl } from "./config";
 
+function escapeCsvField(value: string | number): string {
+  const text = String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
 export class ExportService {
   static baseName(imageName: string): string {
     const fileName = imageName.replace(/^.*[\\/]/, "");
@@ -48,7 +53,14 @@ export class ExportService {
               (m) => m.pointAId === pointA.id && m.pointBId === pointB.id
             );
             const label = customMeasurement?.label || `Landmark ${pointA.id + 1}-${pointB.id + 1}`;
-            csvContent += `${label},${image.name},${pointA.id + 1},${pointB.id + 1},${distance ? distance.toFixed(3) : "N/A"},${scaleSettings.units}\n`;
+            csvContent += [
+              label,
+              image.name,
+              pointA.id + 1,
+              pointB.id + 1,
+              distance === null || Number.isNaN(distance) ? "N/A" : distance.toFixed(3),
+              scaleSettings.units,
+            ].map(escapeCsvField).join(",") + "\n";
           }
         }
       }
