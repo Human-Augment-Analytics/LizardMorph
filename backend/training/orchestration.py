@@ -8,6 +8,8 @@ import signal
 import threading
 from typing import Dict, Any, Optional
 
+from .status import write_status
+
 
 class TrainingBusyError(RuntimeError):
     pass
@@ -55,10 +57,7 @@ class TrainingOrchestrator:
                         ),
                     }
                 )
-                tmp_path = f"{status_path}.tmp"
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    json.dump(status, f, indent=2)
-                os.replace(tmp_path, status_path)
+                write_status(os.path.dirname(status_path), status)
             except (OSError, ValueError, json.JSONDecodeError) as error:
                 failed_status = {
                     "status": "failed",
@@ -71,10 +70,7 @@ class TrainingOrchestrator:
                     ),
                 }
                 try:
-                    tmp_path = f"{status_path}.tmp"
-                    with open(tmp_path, "w", encoding="utf-8") as f:
-                        json.dump(failed_status, f, indent=2)
-                    os.replace(tmp_path, status_path)
+                    write_status(os.path.dirname(status_path), failed_status)
                 except OSError:
                     continue
 
@@ -192,9 +188,7 @@ class TrainingOrchestrator:
             "metrics": {},
             "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
-        status_path = os.path.join(job_dir, "status.json")
-        with open(status_path, "w", encoding="utf-8") as f:
-            json.dump(initial_status, f, indent=2)
+        write_status(job_dir, initial_status)
 
         # Set PYTHONPATH to include project root so `backend.training.runner` can be loaded
         env = os.environ.copy()
@@ -241,10 +235,7 @@ class TrainingOrchestrator:
                         "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
                     ),
                 }
-                tmp_path = f"{status_path}.tmp"
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    json.dump(failed_status, f, indent=2)
-                os.replace(tmp_path, status_path)
+                write_status(job_dir, failed_status)
                 raise
         finally:
             log_file.close()
@@ -291,10 +282,7 @@ class TrainingOrchestrator:
                 "metrics": {},
                 "error": "The training job status file could not be read.",
             }
-            tmp_path = f"{status_path}.tmp"
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(status_data, f, indent=2)
-            os.replace(tmp_path, status_path)
+            write_status(job_dir, status_data)
 
         # Check process handle status if status claims 'running'
         proc = self._processes.get(job_id)
@@ -304,10 +292,7 @@ class TrainingOrchestrator:
                 status_data["status"] = "failed"
                 status_data["stage"] = f"Process exited unexpectedly with code {ret_code}"
                 status_data["error"] = status_data["stage"]
-                tmp_path = f"{status_path}.tmp"
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    json.dump(status_data, f, indent=2)
-                os.replace(tmp_path, status_path)
+                write_status(job_dir, status_data)
             if ret_code is not None:
                 self._processes.pop(job_id, None)
 
@@ -370,10 +355,7 @@ class TrainingOrchestrator:
                     status_data["updated_at"] = time.strftime(
                         "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
                     )
-                    tmp_path = f"{status_path}.tmp"
-                    with open(tmp_path, "w", encoding="utf-8") as f:
-                        json.dump(status_data, f, indent=2)
-                    os.replace(tmp_path, status_path)
+                    write_status(job_dir, status_data)
                     cancelled = True
             except (OSError, ValueError, json.JSONDecodeError):
                 return cancelled
