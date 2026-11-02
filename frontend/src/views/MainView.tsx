@@ -860,6 +860,8 @@ export class MainView extends Component<MainProps, MainState> {
         extractedId: null,
         extractedIdConfidence: null,
         selectedPoint: null,
+        activeToepadSlotLabel: null,
+        zoomTransform: d3.zoomIdentity,
         measurements: [],
         downloadData: [],
         selectedImageVersion: "original",

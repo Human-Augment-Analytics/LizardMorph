@@ -161,6 +161,71 @@ describe("ToepadPanels", () => {
     expect(markup).toContain("✕ Close");
   });
 
+  it("does not call onZoomToToe when handleToepadClick is called on an undetected region", () => {
+    const onZoomToToe = vi.fn();
+    const panels = new ToepadPanels({
+      imageURL: "/image.jpg",
+      imageWidth: 1440,
+      imageHeight: 900,
+      points,
+      boundingBoxes: boxes,
+      selectedPoint: null,
+      isEditMode: false,
+      onToggleEditMode: () => {},
+      onPointSelect: () => {},
+      onPointsChange: () => {},
+      onZoomToToe,
+      theme: "light",
+    });
+
+    const regions = getToepadRegions(points, boxes);
+    // up_toe has no box in `boxes` (only ruler, up_finger, bot_toe are in boxes)
+    const undetected = regions.find((r) => r.slot.label === "up_toe")!;
+    expect(undetected.crop).toBeNull();
+
+    panels.handleToepadClick(undetected);
+    expect(onZoomToToe).not.toHaveBeenCalled();
+  });
+
+  it("falls back to openModal when onZoomToToe prop is not provided", () => {
+    const panels = new ToepadPanels({
+      imageURL: "/image.jpg",
+      imageWidth: 1440,
+      imageHeight: 900,
+      points,
+      boundingBoxes: boxes,
+      selectedPoint: null,
+      isEditMode: false,
+      onToggleEditMode: () => {},
+      onPointSelect: () => {},
+      onPointsChange: () => {},
+      // onZoomToToe is undefined
+      theme: "light",
+    });
+
+    panels.setState = (updater) => {
+      const next = typeof updater === "function" ? updater(panels.state, panels.props) : updater;
+      Object.assign(panels.state, next);
+    };
+
+    const regions = getToepadRegions(points, boxes);
+    const upFinger = regions.find((r) => r.slot.label === "up_finger")!;
+    panels.handleToepadClick(upFinger);
+
+    expect(panels.state.activeModalSlotLabel).toBe("up_finger");
+  });
+
+  it("renders non-active toe cards with default style while the active card is highlighted", () => {
+    const markup = render({ activeSlotLabel: "bot_toe" });
+    // Lower Toe card is active with cyan border
+    expect(markup).toContain('data-testid="toepad-card-bot_toe"');
+    expect(markup).toContain("Reset Zoom (Lower Toe)");
+
+    // Upper Finger is detected but NOT active -> button says 'Zoom in on Upper Finger'
+    expect(markup).toContain("Zoom in on Upper Finger");
+    expect(markup).toContain("⤢ Zoom to Toe");
+  });
+
   it("opens modal via openModal and closes via closeModal", () => {
     const panels = new ToepadPanels({
       imageURL: "/image.jpg",

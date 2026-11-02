@@ -481,6 +481,30 @@ describe("computeZoomTransformForCrop", () => {
     expect(computeZoomTransformForCrop({ x: 0, y: 0, size: 0 }, 100, 100, 100, 100)).toEqual(d3.zoomIdentity);
     expect(computeZoomTransformForCrop({ x: 0, y: 0, size: 10 }, 0, 100, 100, 100)).toEqual(d3.zoomIdentity);
   });
+
+  it("clamps zoom scale factor k to 18 when crop is very small", () => {
+    // Very tiny crop in a high-res image
+    const crop = { x: 100, y: 100, size: 5 };
+    const transform = computeZoomTransformForCrop(crop, 4000, 3000, 800, 600);
+    expect(transform.k).toBe(18.0);
+  });
+
+  it("clamps zoom scale factor k to minimum 1.0 when crop is very large", () => {
+    // Crop larger than the image/viewport
+    const crop = { x: 0, y: 0, size: 2500 };
+    const transform = computeZoomTransformForCrop(crop, 2000, 1000, 800, 400);
+    expect(transform.k).toBe(1.0);
+  });
+
+  it("handles portrait/tall viewports by scaling to the narrower width dimension", () => {
+    // Viewport with width: 400, height: 800 (smaller dimension is 400)
+    const crop = { x: 200, y: 200, size: 100 };
+    const transform = computeZoomTransformForCrop(crop, 1000, 2000, 400, 800);
+    // scaleRatio = 400 / 1000 = 0.4
+    // cropSizeSvg = 100 * 0.4 = 40
+    // targetK = (min(400, 800) * 0.75) / 40 = (300) / 40 = 7.5
+    expect(transform.k).toBe(7.5);
+  });
 });
 
 describe("SVGViewer zoomToImageRegion", () => {
@@ -508,5 +532,37 @@ describe("SVGViewer zoomToImageRegion", () => {
     expect(transform?.k).toBe(7.5);
     expect(zoomTransformSpy).toHaveBeenCalled();
     expect(onZoomChange).toHaveBeenCalledWith(transform);
+  });
+
+  it("returns null from zoomToImageRegion when svgRef or zoomRef is not attached", () => {
+    const viewer = new SVGViewer(createDefaultProps());
+    expect(viewer.zoomToImageRegion({ x: 10, y: 10, size: 50 })).toBeNull();
+  });
+
+  it("prefers renderedWidth and renderedHeight if set on the viewer instance", () => {
+    const onZoomChange = vi.fn();
+    const props = createDefaultProps({
+      imageWidth: 2000,
+      imageHeight: 1000,
+      onZoomChange,
+    });
+    const viewer = new SVGViewer(props);
+    const mockZoom = d3.zoom<SVGSVGElement, unknown>();
+    mockZoom.transform = vi.fn() as unknown as typeof mockZoom.transform;
+    (viewer.zoomRef as unknown as { current: d3.ZoomBehavior<SVGSVGElement, unknown> }).current = mockZoom;
+
+    const mockSvg = {
+      getAttribute: vi.fn(() => "0"), // getAttribute returns 0
+      node: () => ({}),
+    } as unknown as SVGSVGElement;
+    (viewer.svgRef as unknown as { current: SVGSVGElement }).current = mockSvg;
+
+    // Instance explicitly has rendered dimensions
+    viewer.renderedWidth = 800;
+    viewer.renderedHeight = 400;
+
+    const transform = viewer.zoomToImageRegion({ x: 450, y: 250, size: 100 });
+    expect(transform).not.toBeNull();
+    expect(transform?.k).toBe(7.5);
   });
 });
