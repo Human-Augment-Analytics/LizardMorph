@@ -30,6 +30,8 @@ def main():
         duplicate = http.post(args.base + '/api/registry/import', json={'name': name, 'version': args.version}, timeout=300)
         duplicate.raise_for_status()
         assert duplicate.json()['model']['id'] == imported['id']
+        assert duplicate.json()['model']['registry']['name'] == name
+        assert imported['registry']['name'] == name
         session = http.post(args.base + '/api/session/start', timeout=30)
         session.raise_for_status()
         sid = session.json()['session_id']
@@ -45,6 +47,7 @@ def main():
         assert all(math.isfinite(point[axis]) for point in data['coords'] for axis in ['x','y'])
         assert data['model_provenance']['model_id'] == imported['id']
         assert data['model_provenance']['registry']['version'] == args.version
+        assert data['model_provenance']['registry']['name'] == name
         result[name] = {'import': imported, 'session_id': sid, 'prediction': data}
         print(name, 'version', args.version, 'boxes', len(data['bounding_boxes']), 'landmarks', len(data['coords']), flush=True)
     assert ids[0] != ids[1]

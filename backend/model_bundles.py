@@ -153,8 +153,8 @@ def import_registry_bundle(name, version, *, api_url, models_dir, repository):
         if final.exists():
             if (final / "bundle.json").read_bytes() != (extracted / "bundle.json").read_bytes():
                 raise ValueError("Installed bundle identity conflict")
-            for name, info in bundle["artifacts"].items():
-                installed_path = final / name
+            for artifact_name, info in bundle["artifacts"].items():
+                installed_path = final / artifact_name
                 if (installed_path.resolve() != installed_path.absolute()
                         or not installed_path.is_file()
                         or installed_path.stat().st_size != info["size"]

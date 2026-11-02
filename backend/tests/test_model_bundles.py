@@ -119,3 +119,14 @@ def test_case_colliding_members_are_rejected_before_extraction(tmp_path):
     with pytest.raises(ValueError, match='case-colliding'):
         validate_bundle(archive, dest)
     assert list(dest.iterdir()) == []
+
+
+def test_repeat_import_preserves_registered_name_in_display_and_provenance(registry_import):
+    serve, install, repository = registry_import
+    serve(2)
+    first = install()
+    second = install()
+    assert first['id'] == second['id']
+    assert first['registry']['name'] == second['registry']['name'] == 'toepad-test'
+    assert first['name'] == second['name'] == 'Example — toepad-test v1'
+    assert repository.get_model_version(first['id']).manifest.evaluation['registry']['name'] == 'toepad-test'
