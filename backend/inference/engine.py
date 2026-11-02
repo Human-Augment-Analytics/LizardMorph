@@ -56,6 +56,23 @@ class GenericPipelineEngine:
         self.models_dir = models_dir
         self._predictor_cache: Dict[str, Any] = {}
         self._detector_cache: Dict[str, Any] = {}
+        self._detector_cache_limit = max(0, int(os.getenv("MODEL_DETECTOR_CACHE_LIMIT", "0")))
+        self._predictor_cache_limit = max(0, int(os.getenv("MODEL_PREDICTOR_CACHE_LIMIT", "0")))
+
+    @staticmethod
+    def _reserve_cache_slot(cache, limit):
+        if limit and len(cache) >= limit:
+            # Drop the old session before allocating another. In-flight callers
+            # retain their own reference; immutable artifact paths stay valid.
+            cache.pop(next(iter(cache)))
+
+    def _get_coordinate_predictor(self, path, count):
+        key = (path, count)
+        if key not in self._predictor_cache:
+            from .coordinates import CoordinatePredictor
+            self._reserve_cache_slot(self._predictor_cache, self._predictor_cache_limit)
+            self._predictor_cache[key] = CoordinatePredictor(path, count)
+        return self._predictor_cache[key]
 
     def crop_oriented_bbox(
         self, image: np.ndarray, obb: List[float], padding: float = 0.2
@@ -100,6 +117,8 @@ class GenericPipelineEngine:
         if cache_key in self._detector_cache:
             return self._detector_cache[cache_key]
 
+        self._reserve_cache_slot(self._detector_cache, self._detector_cache_limit)
+
         if artifact_path.endswith(".onnx"):
             if legacy_toepad:
                 if OrtYoloDetector is None:
@@ -123,6 +142,7 @@ class GenericPipelineEngine:
 
         if dlib is None:
             raise RuntimeError("dlib is required for landmark inference but is not installed.")
+        self._reserve_cache_slot(self._predictor_cache, self._predictor_cache_limit)
         try:
             predictor = dlib.shape_predictor(predictor_path)
         except Exception as error:
@@ -272,11 +292,20 @@ class GenericPipelineEngine:
                     raise FileNotFoundError(
                         f"Landmark predictor '{cls_cfg.predictor}' for class '{class_name}' was not found."
                     )
-                sp = self._get_shape_predictor(pred_path)
+                sp = self._get_shape_predictor(pred_path) if cls_cfg.predictor_type == "dlib" else None
                 try:
                     schema = manifest.landmark_schemas.get(cls_cfg.landmark_schema or "")
                     expected_names = schema.points if schema else []
-                    if (cls_cfg.preprocessing == "toepad-rectify-512"
+                    if cls_cfg.predictor_type == "onnx-coordinates":
+                        if class_name not in {"bot_finger", "bot_toe", "crop"}:
+                            raise ValueError("Albert ViT pilot supports bottom digit crops only")
+                        corners = target.get("corners")
+                        if corners is None:
+                            cx, cy, w, h, angle = target["obb"]
+                            corners = cv2.boxPoints(((cx, cy), (w, h), angle))
+                        predictor = self._get_coordinate_predictor(pred_path, len(expected_names))
+                        pts_orig = predictor.predict(image, corners)
+                    elif (cls_cfg.preprocessing == "toepad-rectify-512"
                             or (manifest.id == "lizard-toepad-v1"
                                 and os.path.basename(pred_path) == "ml_morph_best.dat")):
                         try:

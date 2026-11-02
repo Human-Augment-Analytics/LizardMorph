@@ -24,10 +24,13 @@ class ClassConfig:
     predictor: Optional[str] = None
     crop_padding: float = 0.2
     preprocessing: str = "affine"
+    predictor_type: str = "dlib"
 
     def __post_init__(self):
         if self.preprocessing not in {"affine", "toepad-rectify-512"}:
             raise ValueError(f"Unknown landmark preprocessing: {self.preprocessing}")
+        if self.predictor_type not in {"dlib", "onnx-coordinates"}:
+            raise ValueError(f"Unknown landmark runtime: {self.predictor_type}")
 
 
 @dataclass
@@ -141,6 +144,7 @@ class Manifest:
                     "predictor": c.predictor,
                     "crop_padding": c.crop_padding,
                     "preprocessing": c.preprocessing,
+                    "predictor_type": c.predictor_type,
                 }
                 for c in self.classes
             ],

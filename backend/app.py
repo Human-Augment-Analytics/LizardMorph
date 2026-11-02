@@ -331,6 +331,21 @@ training_orchestrator = (
 )
 
 
+def record_model_provenance(session_data, filename, manifest, image_path):
+    with open(image_path, "rb") as source:
+        input_sha256 = hashlib.sha256(source.read()).hexdigest()
+    record = {
+        "model_id": manifest.id,
+        "registry": manifest.evaluation.get("registry"),
+        "manifest": manifest.to_dict(),
+        "input_sha256": input_sha256,
+    }
+    path = os.path.join(session_data["outputs_folder"], f"{filename}.model.json")
+    with open(path, "w", encoding="utf-8") as output:
+        json.dump(record, output, indent=2)
+    return record
+
+
 def resolve_inference_model(model_id):
     """Return a manifest and artifact base directory for a selectable model."""
     model_version = model_registry_repo.get_model_version(model_id)
@@ -1668,7 +1683,9 @@ def upload():
                             )
                             coords, bounding_boxes = generic_predictions_to_annotations(predictions)
 
+                            provenance = record_model_provenance(session_data, unique_name, generic_manifest, image_path)
                             all_data.append({
+                                "model_provenance": provenance,
                                 "name": unique_name,
                                 "coords": coords,
                                 "bounding_boxes": bounding_boxes,
@@ -2221,10 +2238,12 @@ def process_existing():
                 image_data, manifest, bundle_dir=bundle_dir
             )
             coords, bounding_boxes = generic_predictions_to_annotations(predictions)
+            provenance = record_model_provenance(session_data, filename, manifest, image_path)
             return jsonify(
                 {
                     "name": filename,
                     "coords": coords,
+                    "model_provenance": provenance,
                     "bounding_boxes": bounding_boxes,
                     "session_id": session_id,
                     "view_type": view_type,
@@ -2917,6 +2936,27 @@ def extract_id():
 
 
 
+@app.route("/api/registry/import", methods=["POST"])
+@app.route("/registry/import", methods=["POST"])
+def api_import_registry_bundle():
+    try:
+        try:
+            from backend.model_bundles import import_registry_bundle
+        except ImportError:
+            from model_bundles import import_registry_bundle
+        data = request.get_json(silent=True) or {}
+        result = import_registry_bundle(
+            data.get("name"), data.get("version"),
+            api_url=os.getenv("MODEL_API_URL", "http://127.0.0.1:8000"),
+            models_dir=MODELS_DIR, repository=model_registry_repo)
+        return jsonify({"success": True, "model": result}), 200
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:
+        logger.exception("Registry bundle import failed")
+        return jsonify({"success": False, "error": str(exc)}), 502
+
+
 @app.route("/predict", methods=["POST"])
 @app.route("/api/predict", methods=["POST"])
 @cross_origin()
@@ -2963,6 +3003,7 @@ def api_predict():
         return jsonify({
             "success": True,
             "model_version_id": model_version_id,
+            "model_provenance": manifest.evaluation.get("registry"),
             "predictions": predictions,
         }), 200
 

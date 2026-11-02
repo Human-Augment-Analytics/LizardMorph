@@ -23,3 +23,5 @@ pyobjc-framework-Vision; sys_platform == "darwin"  # macOS /extract_id OCR via t
 pyobjc-framework-Quartz; sys_platform == "darwin"
 onnxruntime  # Use onnxruntime-silicon on Apple Silicon; onnxruntime-openvino on Intel for OpenVINO EP
 openvino
+
+requests>=2.32.3,<3  # MLflow pipeline bundle import

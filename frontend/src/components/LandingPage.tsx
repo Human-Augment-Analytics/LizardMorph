@@ -273,6 +273,7 @@ export const LandingPage: React.FC = () => {
         </button>
       </div>
       <h1 style={LandingPageStyles.title}>AutoMorph</h1>
+      <button onClick={() => navigate("/models")} style={{ marginBottom: 20, padding: "10px 18px", cursor: "pointer" }}>Research models</button>
       <p style={LandingPageStyles.subtitle}>
         Select a preinstalled lizard model or one of your custom built models to analyze
       </p>

@@ -15,6 +15,7 @@ export interface BoundingBox {
 
 export interface AnnotationsData {
   name: string;
+  model_provenance?: Record<string, unknown>;
   coords: Point[];
   bounding_boxes?: BoundingBox[];
   view_type?: string;

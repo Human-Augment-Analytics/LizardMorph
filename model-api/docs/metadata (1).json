@@ -1,0 +1,39 @@
+{
+  "version": "v1.0.0-obb",
+  "trained": "2026-03-13",
+  "author": "JunlingZhuang <jz3545@columbia.edu>",
+  "architecture": "models/base_models/yolo11m-obb.pt",
+  "task": "obb",
+  "config": "H11_obb",
+  "dataset": {
+    "nc": 4,
+    "names": [
+      "finger",
+      "toe",
+      "ruler",
+      "id"
+    ],
+    "path": "data/obb/dataset_4class_split",
+    "train_images": 679,
+    "val_images": 170
+  },
+  "training": {
+    "epochs": 300,
+    "batch": 32,
+    "imgsz": 1280,
+    "patience": 50
+  },
+  "metrics": {
+    "best_epoch": 175,
+    "epochs_completed": 225,
+    "mAP50": 0.97239,
+    "mAP50-95": 0.94211,
+    "precision": 0.96586,
+    "recall": 0.95882
+  },
+  "assets": {
+    "pt": "best.pt",
+    "fp16": "best_fp16.onnx",
+    "fp32": "best_fp32.onnx"
+  }
+}

@@ -1,0 +1,2 @@
+FROM lizard-mlflow-pilot-20261102-app
+RUN pip install --no-cache-dir torch==2.5.1 torchvision==0.20.1 ultralytics==8.3.0 onnx==1.17.0 pytest==8.3.5
