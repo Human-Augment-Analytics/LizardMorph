@@ -1,11 +1,22 @@
-# Two-model MLflow research pilot
+# MLflow research integration
 
-This isolated, loopback-only stack imports complete **named, versioned pipeline
+The repository includes this isolated, loopback-only stack imports complete **named, versioned pipeline
 bundles** into AutoMorph's existing model catalog. It does not replace the default
 YOLO file. Choose a version in Research models → Import → Use this version.
 Existing analyses retain their model ID. Export ZIPs include an image-specific
 `.model.json` with the exact registry version, bundle SHA256, input image hash,
 manifest and provenance. Registration/import never moves an alias or default.
+
+The directory and Compose project retain their original `mlflow-pilot` names to
+preserve existing persistent volumes. The code is part of the repository; the
+runtime is still a private research deployment. See the
+[team guide](https://github.com/Human-Augment-Analytics/Lizard_Toepads/blob/main/docs/MLFLOW_TEAM_GUIDE.md)
+for PACE handoff and the newly trained dlib candidate.
+
+A newly registered version appears in **Research models** after refresh. Import
+it explicitly, then select **Use this version**. It creates an installed model
+entry inside the same app, not a new app/deployment. Registration does not rebuild
+services, move aliases/defaults or alter existing analyses.
 
 ## Scope
 
@@ -86,7 +97,7 @@ accuracy-based promotion is implemented. Alias/default policy remains manual.
 
 ## Checks and backup
 
-All database-backed tests must run in Docker on the Mac mini against the reviewed
+All database-backed tests must run in Docker on the configured integration test host against the reviewed
 checkout. `Dockerfile.tests` adds training dependencies to the inference image;
 run `python -m pytest backend/tests` with repository root and backend on PYTHONPATH.
 Model-api tests need pytest in its locked Python environment. Frontend checks are

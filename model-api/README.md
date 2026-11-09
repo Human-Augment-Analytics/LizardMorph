@@ -11,4 +11,4 @@ Downloads verify the stored digest and never resolve an unscoped global champion
 
 See [the two-model pilot runbook](../deploy/mlflow-pilot/README.md) for operation,
 registration, validation, switching and limitations. Run tests inside Docker on
-the Mac mini with pytest and this directory as PYTHONPATH.
+the configured integration test host with pytest and this directory as PYTHONPATH.

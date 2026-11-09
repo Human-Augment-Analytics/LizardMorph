@@ -14,6 +14,22 @@ limits, provenance, and the publication checklist. The [training tutorial](tutor
 describes the current seven-step wizard. Passing software tests does not establish
 accuracy on a new species, imaging protocol, or specimen population.
 
+## MLflow model versions
+
+Use the [MLflow team guide](https://github.com/Human-Augment-Analytics/Lizard_Toepads/blob/main/docs/MLFLOW_TEAM_GUIDE.md)
+for the complete training → PACE handoff → registration → app workflow and the
+[local Docker runbook](deploy/mlflow-pilot/README.md) to start the integrated stack.
+The [HTML guide and document map](https://github.com/Human-Augment-Analytics/Lizard_Toepads/blob/main/docs/mlflow-guide.html)
+can be downloaded and opened in a browser.
+
+A new MLflow model version is a selectable model inside this app. After explicit
+registration, refresh **Research models**, choose **Import this version**, then
+**Use this version**. Existing analyses keep their selected model identity. This
+does not create a separate app, change the default or deploy code automatically.
+New model architectures need a compatible inference adapter before import.
+The supplied stack is private and loopback-only; shared access and scientific
+promotion are separate operating and research decisions.
+
 ## Structure
 
 - **Frontend**: Located in `frontend/`, built with React.
