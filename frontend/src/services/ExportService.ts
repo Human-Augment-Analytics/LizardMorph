@@ -24,9 +24,9 @@ export class ExportService {
   static createCsvContent(
     measurements: Measurement[],
     scaleSettings: ScaleSettings,
-    images: Array<{ name: string; coords: Point[] }>
+    images: Array<{ name: string; coords: Point[]; reviewStatus?: string }>
   ): string {
-    let csvContent = "Measurement,Image,Point A,Point B,Distance,Units\n";
+    let csvContent = "Measurement,Image,Review Status,Point A,Point B,Distance,Units\n";
 
     images.forEach((image) => {
       // Generate all pairwise combinations of landmarks
@@ -48,7 +48,8 @@ export class ExportService {
               (m) => m.pointAId === pointA.id && m.pointBId === pointB.id
             );
             const label = customMeasurement?.label || `Landmark ${pointA.id + 1}-${pointB.id + 1}`;
-            csvContent += `${label},${image.name},${pointA.id + 1},${pointB.id + 1},${distance ? distance.toFixed(3) : "N/A"},${scaleSettings.units}\n`;
+            const status = image.reviewStatus || "unreviewed";
+            csvContent += `${label},${image.name},${status},${pointA.id + 1},${pointB.id + 1},${distance ? distance.toFixed(3) : "N/A"},${scaleSettings.units}\n`;
           }
         }
       }
@@ -216,7 +217,7 @@ export class ExportService {
         }
       });
       const allOriginalCoords = images.map((image, i) => i === currentIndex ? originalScatterData : image.originalCoords || image.coords);
-      const csvContent = this.createCsvContent(measurements, scaleSettings, images.map((img, i) => ({ name: img.name, coords: allOriginalCoords[i] })));
+      const csvContent = this.createCsvContent(measurements, scaleSettings, images.map((img, i) => ({ name: img.name, coords: allOriginalCoords[i], reviewStatus: (img as { reviewStatus?: string }).reviewStatus })));
       zip.file("measurements.csv", csvContent);
       const zipBlob = await zip.generateAsync({ type: 'blob' });
       await this.downloadFile(zipBlob, `lizard_analysis_${new Date().toISOString().split('T')[0]}.zip`);

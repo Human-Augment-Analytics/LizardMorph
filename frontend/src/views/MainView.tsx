@@ -27,6 +27,8 @@ import { ExportService } from "../services/ExportService";
 import { FreePredictorPanel } from "../components/FreePredictorPanel";
 import { ToepadPanels } from "../components/ToepadPanels";
 import type { PredictorMeta } from "../services/ApiService";
+import type { ReviewStatus } from "../models/UploadHistoryItem";
+import { determineInitialReviewStatus } from "../services/ReviewStatusService";
 
 interface MainState {
   currentImageIndex: number;
@@ -144,10 +146,16 @@ export class MainView extends Component<MainProps, MainState> {
     isHistoryCollapsed: false,
   };
   componentDidMount(): void {
+    if (typeof window !== "undefined") {
+      window.addEventListener("keydown", this.handleGlobalKeyDown);
+    }
     this.initializeApp();
   }
 
   componentWillUnmount(): void {
+    if (typeof window !== "undefined") {
+      window.removeEventListener("keydown", this.handleGlobalKeyDown);
+    }
     if (this.intervalId) {
       clearInterval(this.intervalId);
     }
@@ -425,13 +433,19 @@ export class MainView extends Component<MainProps, MainState> {
             id: coord.id !== undefined ? coord.id : index + 1,
           }));
 
-          const processedImage = {
+          const initialStatus = determineInitialReviewStatus(
+            this.props.selectedViewType,
+            result.bounding_boxes
+          );
+
+          const processedImage: ProcessedImage = {
             name: result.name,
             coords: coords,
             originalCoords: JSON.parse(JSON.stringify(coords)),
             imageSets,
             timestamp: new Date().toLocaleString(),
             boundingBoxes: result.bounding_boxes || [],
+            reviewStatus: initialStatus,
           };
           
           console.log("Processed image with bounding boxes:", {
@@ -460,6 +474,7 @@ export class MainView extends Component<MainProps, MainState> {
                     timestamp: processedImage.timestamp,
                     index: updatedImages.length - 1,
                     viewType: this.props.selectedViewType,
+                    reviewStatus: processedImage.reviewStatus,
                   }
                 : item
             );
@@ -1075,6 +1090,11 @@ export class MainView extends Component<MainProps, MainState> {
         id: coord.id !== undefined ? coord.id : index + 1,
       }));
 
+      const initialStatus = determineInitialReviewStatus(
+        this.props.selectedViewType,
+        result.bounding_boxes
+      );
+
       const newImage: ProcessedImage = {
         name: filename,
         coords: coords,
@@ -1082,6 +1102,7 @@ export class MainView extends Component<MainProps, MainState> {
         imageSets,
         timestamp: "From uploads folder",
         boundingBoxes: result.bounding_boxes || [],
+        reviewStatus: initialStatus,
       };
 
       this.setState((prevState) => {
@@ -1094,6 +1115,7 @@ export class MainView extends Component<MainProps, MainState> {
           timestamp: "From uploads folder",
           index: updatedImages.length - 1,
           viewType: this.props.selectedViewType,
+          reviewStatus: initialStatus,
         };
 
         const updatedHistory = prevState.uploadHistory.map((item) =>
@@ -1130,12 +1152,62 @@ export class MainView extends Component<MainProps, MainState> {
     scatterData: Point[],
     originalScatterData: Point[]
   ): void => {
-    this.setState({ scatterData, originalScatterData });
+    this.setState((prevState) => {
+      const currentImg = prevState.images[prevState.currentImageIndex];
+      if (currentImg && currentImg.reviewStatus === "verified") {
+        const updatedImages = prevState.images.map((img, i) =>
+          i === prevState.currentImageIndex
+            ? { ...img, reviewStatus: "needs_review" as ReviewStatus }
+            : img
+        );
+        const updatedHistory = prevState.uploadHistory.map((item) =>
+          item.name === currentImg.name
+            ? { ...item, reviewStatus: "needs_review" as ReviewStatus }
+            : item
+        );
+        return {
+          ...prevState,
+          scatterData,
+          originalScatterData,
+          images: updatedImages,
+          uploadHistory: updatedHistory,
+        };
+      }
+      return {
+        ...prevState,
+        scatterData,
+        originalScatterData,
+      };
+    });
   };
 
   // Edits from the toepad close-ups arrive in image space; SVGViewer re-derives display coords.
   private readonly handleToepadPointsChange = (originalScatterData: Point[]): void => {
-    this.setState({ originalScatterData });
+    this.setState((prevState) => {
+      const currentImg = prevState.images[prevState.currentImageIndex];
+      if (currentImg && currentImg.reviewStatus === "verified") {
+        const updatedImages = prevState.images.map((img, i) =>
+          i === prevState.currentImageIndex
+            ? { ...img, reviewStatus: "needs_review" as ReviewStatus }
+            : img
+        );
+        const updatedHistory = prevState.uploadHistory.map((item) =>
+          item.name === currentImg.name
+            ? { ...item, reviewStatus: "needs_review" as ReviewStatus }
+            : item
+        );
+        return {
+          ...prevState,
+          originalScatterData,
+          images: updatedImages,
+          uploadHistory: updatedHistory,
+        };
+      }
+      return {
+        ...prevState,
+        originalScatterData,
+      };
+    });
   };
 
   private readonly handleScalingComplete = (): void => {
@@ -1206,6 +1278,115 @@ export class MainView extends Component<MainProps, MainState> {
       activeToepadSlotLabel: region.slot.label,
       zoomTransform: transform,
     });
+  };
+
+  public readonly handleApproveAndNext = (): void => {
+    if (this.state.images.length === 0 || this.state.loading) return;
+
+    this.setState((prevState) => {
+      const { currentImageIndex, images, uploadHistory } = prevState;
+      const currentImg = images[currentImageIndex];
+      if (!currentImg) return prevState;
+
+      const updatedImages = images.map((img, i) =>
+        i === currentImageIndex ? { ...img, reviewStatus: "verified" as ReviewStatus } : img
+      );
+      const updatedHistory = uploadHistory.map((item) =>
+        item.name === currentImg.name
+          ? { ...item, reviewStatus: "verified" as ReviewStatus }
+          : item
+      );
+
+      const filtered = updatedImages.filter((img) => {
+        const historyItem = updatedHistory.find((h) => h.name === img.name);
+        return historyItem?.viewType === this.props.selectedViewType;
+      });
+
+      const filteredIdx = filtered.findIndex((img) => img.name === currentImg.name);
+      let nextIndex = currentImageIndex;
+
+      if (filteredIdx >= 0 && filteredIdx < filtered.length - 1) {
+        const nextImg = filtered[filteredIdx + 1];
+        const absoluteIdx = updatedImages.findIndex((img) => img.name === nextImg.name);
+        if (absoluteIdx >= 0) {
+          nextIndex = absoluteIdx;
+        }
+      }
+
+      const nextImage = updatedImages[nextIndex];
+
+      return {
+        ...prevState,
+        images: updatedImages,
+        uploadHistory: updatedHistory,
+        currentImageIndex: nextIndex,
+        imageFilename: nextImage.name,
+        scatterData: nextImage.coords,
+        originalScatterData: nextImage.originalCoords,
+        imageSet: nextImage.imageSets,
+        currentImageURL:
+          nextImage.imageSets[prevState.selectedImageVersion] ||
+          nextImage.imageSets.original,
+        needsScaling: true,
+        selectedPoint: null,
+        activeToepadSlotLabel: null,
+        currentBoundingBoxes: nextImage.boundingBoxes || [],
+      };
+    });
+  };
+
+  public readonly handleChangeReviewStatus = (status: ReviewStatus): void => {
+    if (this.state.images.length === 0) return;
+    this.setState((prevState) => {
+      const { currentImageIndex, images, uploadHistory } = prevState;
+      const currentImg = images[currentImageIndex];
+      if (!currentImg) return prevState;
+
+      const updatedImages = images.map((img, i) =>
+        i === currentImageIndex ? { ...img, reviewStatus: status } : img
+      );
+      const updatedHistory = uploadHistory.map((item) =>
+        item.name === currentImg.name ? { ...item, reviewStatus: status } : item
+      );
+
+      return {
+        ...prevState,
+        images: updatedImages,
+        uploadHistory: updatedHistory,
+      };
+    });
+  };
+
+  public readonly handleGlobalKeyDown = (e: KeyboardEvent): void => {
+    const target = e.target as HTMLElement | null;
+    if (target) {
+      const tagName = target.tagName ? target.tagName.toLowerCase() : "";
+      if (
+        tagName === "input" ||
+        tagName === "textarea" ||
+        tagName === "select" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+    }
+
+    if (
+      this.state.isMeasurementsAndScaleModalOpen ||
+      this.state.isClearHistoryModalOpen ||
+      this.state.isDeletePredictorModalOpen ||
+      this.state.isFreePredictorPanelOpen ||
+      this.state.isEditMode
+    ) {
+      return;
+    }
+
+    if (e.key === "Enter" || e.key === " ") {
+      if (this.state.images.length > 0 && !this.state.loading) {
+        e.preventDefault();
+        this.handleApproveAndNext();
+      }
+    }
   };
 
   private readonly handleResetZoom = (): void => {
@@ -1284,6 +1465,9 @@ export class MainView extends Component<MainProps, MainState> {
                 return historyItem?.viewType === this.props.selectedViewType;
               }).length}
               loading={this.state.loading}
+              currentReviewStatus={this.state.images[this.state.currentImageIndex]?.reviewStatus}
+              onApproveAndNext={this.handleApproveAndNext}
+              onChangeReviewStatus={this.handleChangeReviewStatus}
               onPrevious={() => {
                 const filtered = this.state.images.filter((img) => {
                   const historyItem = this.state.uploadHistory.find(h => h.name === img.name);

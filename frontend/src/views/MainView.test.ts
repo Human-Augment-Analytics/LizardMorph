@@ -336,3 +336,129 @@ describe("MainView toepad zoom feature", () => {
     expect(view.state.zoomTransform).toEqual(d3.zoomIdentity);
   });
 });
+
+describe("MainView Specimen Review & Verification Status", () => {
+  const createMockView = () => {
+    const view = new MainView({ selectedViewType: "toepads" });
+    const img1 = {
+      name: "specimen_1.jpg",
+      coords: [{ id: 0, x: 10, y: 10 }],
+      originalCoords: [{ id: 0, x: 10, y: 10 }],
+      imageSets: { original: "img1.png", inverted: "", color_contrasted: "" },
+      timestamp: "12:00",
+      reviewStatus: "unreviewed" as const,
+    };
+    const img2 = {
+      name: "specimen_2.jpg",
+      coords: [{ id: 0, x: 20, y: 20 }],
+      originalCoords: [{ id: 0, x: 20, y: 20 }],
+      imageSets: { original: "img2.png", inverted: "", color_contrasted: "" },
+      timestamp: "12:05",
+      reviewStatus: "needs_review" as const,
+    };
+
+    view.state.images = [img1, img2];
+    view.state.uploadHistory = [
+      { name: "specimen_1.jpg", timestamp: "12:00", index: 0, viewType: "toepads", reviewStatus: "unreviewed" },
+      { name: "specimen_2.jpg", timestamp: "12:05", index: 1, viewType: "toepads", reviewStatus: "needs_review" },
+    ];
+    view.state.currentImageIndex = 0;
+    view.state.imageFilename = "specimen_1.jpg";
+    view.state.currentImageURL = "img1.png";
+
+    view.setState = ((update: unknown) => {
+      const nextState =
+        typeof update === "function"
+          ? update(view.state, view.props)
+          : update;
+      view.state = {
+        ...view.state,
+        ...(nextState as Partial<typeof view.state>),
+      };
+    }) as typeof view.setState;
+
+    return view;
+  };
+
+  it("handleApproveAndNext marks current image as verified and advances to next image", () => {
+    const view = createMockView();
+    expect(view.state.images[0].reviewStatus).toBe("unreviewed");
+
+    view.handleApproveAndNext();
+
+    expect(view.state.images[0].reviewStatus).toBe("verified");
+    expect(view.state.uploadHistory[0].reviewStatus).toBe("verified");
+    // Advanced to next image (specimen_2)
+    expect(view.state.currentImageIndex).toBe(1);
+    expect(view.state.imageFilename).toBe("specimen_2.jpg");
+  });
+
+  it("handleApproveAndNext marks the last image as verified and stays on it", () => {
+    const view = createMockView();
+    view.state.currentImageIndex = 1;
+    view.state.imageFilename = "specimen_2.jpg";
+
+    view.handleApproveAndNext();
+
+    expect(view.state.images[1].reviewStatus).toBe("verified");
+    expect(view.state.uploadHistory[1].reviewStatus).toBe("verified");
+    expect(view.state.currentImageIndex).toBe(1);
+  });
+
+  it("handleChangeReviewStatus updates review status for current image and upload history", () => {
+    const view = createMockView();
+    view.handleChangeReviewStatus("needs_review");
+
+    expect(view.state.images[0].reviewStatus).toBe("needs_review");
+    expect(view.state.uploadHistory[0].reviewStatus).toBe("needs_review");
+  });
+
+  it("handleScatterDataUpdate transitions verified image back to needs_review when landmarks change", () => {
+    const view = createMockView();
+    view.state.images[0].reviewStatus = "verified";
+
+    // Landmark edited
+    (view as any).handleScatterDataUpdate([{ id: 0, x: 99, y: 99 }], [{ id: 0, x: 99, y: 99 }]);
+
+    expect(view.state.images[0].reviewStatus).toBe("needs_review");
+    expect(view.state.uploadHistory[0].reviewStatus).toBe("needs_review");
+  });
+
+  it("handleToepadPointsChange transitions verified image back to needs_review when toepad points change", () => {
+    const view = createMockView();
+    view.state.images[0].reviewStatus = "verified";
+
+    (view as any).handleToepadPointsChange([{ id: 0, x: 55, y: 55 }]);
+
+    expect(view.state.images[0].reviewStatus).toBe("needs_review");
+    expect(view.state.uploadHistory[0].reviewStatus).toBe("needs_review");
+  });
+
+  it("handleGlobalKeyDown triggers handleApproveAndNext on Space or Enter", () => {
+    const view = createMockView();
+    const spy = vi.spyOn(view, "handleApproveAndNext");
+
+    const preventDefault = vi.fn();
+    view.handleGlobalKeyDown({ key: " ", preventDefault, target: { tagName: "div" } } as any);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(preventDefault).toHaveBeenCalled();
+
+    view.handleGlobalKeyDown({ key: "Enter", preventDefault, target: { tagName: "div" } } as any);
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it("handleGlobalKeyDown ignores shortcut when in edit mode or inside an input", () => {
+    const view = createMockView();
+    const spy = vi.spyOn(view, "handleApproveAndNext");
+
+    // In edit mode
+    view.state.isEditMode = true;
+    view.handleGlobalKeyDown({ key: " ", preventDefault: vi.fn(), target: { tagName: "div" } } as any);
+    expect(spy).not.toHaveBeenCalled();
+
+    // Inside an input element
+    view.state.isEditMode = false;
+    view.handleGlobalKeyDown({ key: "Enter", preventDefault: vi.fn(), target: { tagName: "input" } } as any);
+    expect(spy).not.toHaveBeenCalled();
+  });
+});

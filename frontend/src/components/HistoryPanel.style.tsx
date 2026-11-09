@@ -4,6 +4,8 @@ import { getTokens } from "../contexts/themeTokens";
 
 export function getHistoryPanelStyles(theme: ResolvedTheme) {
   const t = getTokens(theme);
+  const isDark = theme === "dark";
+
   return {
     historyContainer: {
       width: "27vw",
@@ -31,7 +33,7 @@ export function getHistoryPanelStyles(theme: ResolvedTheme) {
     } as CSSProperties,
 
     collapseButton: {
-      backgroundColor: theme === "dark" ? t.surface : t.bgSecondary,
+      backgroundColor: isDark ? t.surface : t.bgSecondary,
       color: t.textMuted,
       border: `1px solid ${t.borderLight}`,
       borderRadius: "4px",
@@ -60,7 +62,7 @@ export function getHistoryPanelStyles(theme: ResolvedTheme) {
       minWidth: "36px",
       flex: "0 0 36px",
       borderRight: `1px solid ${t.border}`,
-      backgroundColor: theme === "dark" ? t.surface : t.bgSecondary,
+      backgroundColor: isDark ? t.surface : t.bgSecondary,
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
@@ -110,6 +112,35 @@ export function getHistoryPanelStyles(theme: ResolvedTheme) {
       marginTop: "6px",
     } as CSSProperties,
 
+    filterToolbar: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: "4px",
+      marginBottom: "8px",
+    } as CSSProperties,
+
+    filterButton: {
+      backgroundColor: isDark ? t.surface : t.bgSecondary,
+      color: t.textMuted,
+      border: `1px solid ${t.borderLight}`,
+      borderRadius: "12px",
+      padding: "2px 8px",
+      fontSize: "11px",
+      fontWeight: 500,
+      cursor: "pointer",
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "4px",
+      transition: "all 0.15s ease",
+    } as CSSProperties,
+
+    filterButtonActive: {
+      backgroundColor: isDark ? "#1e3a5f" : "#e3f2fd",
+      color: isDark ? "#90caf9" : "#1976d2",
+      borderColor: isDark ? "#42a5f5" : "#90caf9",
+      fontWeight: 600,
+    } as CSSProperties,
+
     historyTableContainer: {
       maxHeight: "calc(100vh - 350px)",
       overflowY: "auto",
@@ -131,6 +162,7 @@ export function getHistoryPanelStyles(theme: ResolvedTheme) {
       textAlign: "left",
       borderBottom: `1px solid ${t.borderLight}`,
       color: t.text,
+      fontSize: "12px",
     } as CSSProperties,
 
     historyTableRow: {
@@ -145,9 +177,6 @@ export function getHistoryPanelStyles(theme: ResolvedTheme) {
     historyTableCell: {
       padding: "8px",
       borderBottom: `1px solid ${t.borderLight}`,
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
       color: t.text,
     } as CSSProperties,
 
@@ -156,9 +185,56 @@ export function getHistoryPanelStyles(theme: ResolvedTheme) {
       color: t.text,
     } as CSSProperties,
 
+    historyItemNameRow: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "6px",
+    } as CSSProperties,
+
+    historyItemName: {
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+      flex: 1,
+      minWidth: 0,
+      fontSize: "13px",
+    } as CSSProperties,
+
+    statusBadge: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "3px",
+      fontSize: "11px",
+      fontWeight: 600,
+      padding: "1px 6px",
+      borderRadius: "10px",
+      whiteSpace: "nowrap",
+      flexShrink: 0,
+    } as CSSProperties,
+
+    statusBadgeUnreviewed: {
+      backgroundColor: isDark ? "#2a2d32" : "#f1f3f5",
+      color: t.textMuted,
+      border: `1px solid ${t.borderLight}`,
+    } as CSSProperties,
+
+    statusBadgeNeedsReview: {
+      backgroundColor: isDark ? "#3e2700" : "#fff3cd",
+      color: isDark ? "#ffc107" : "#856404",
+      border: `1px solid ${isDark ? "#b28900" : "#ffeeba"}`,
+    } as CSSProperties,
+
+    statusBadgeVerified: {
+      backgroundColor: isDark ? "#0d3315" : "#d4edda",
+      color: isDark ? "#4caf50" : "#155724",
+      border: `1px solid ${isDark ? "#1b5e20" : "#c3e6cb"}`,
+    } as CSSProperties,
+
     historyItemTimestamp: {
       fontSize: "0.8em",
       color: t.textMuted,
+      marginTop: "2px",
     } as CSSProperties,
 
     historyTableEmptyCell: {
@@ -177,7 +253,7 @@ export function getHistoryPanelStyles(theme: ResolvedTheme) {
     progressBar: {
       flex: 1,
       height: "6px",
-      backgroundColor: theme === "dark" ? t.border : t.borderLight,
+      backgroundColor: isDark ? t.border : t.borderLight,
       borderRadius: "3px",
       overflow: "hidden",
     } as CSSProperties,

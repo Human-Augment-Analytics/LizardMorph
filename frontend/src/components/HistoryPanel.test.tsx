@@ -171,4 +171,62 @@ describe("HistoryPanel", () => {
 
     expect(markup).toContain("No images in history");
   });
+
+  it("renders review status badges for unreviewed, needs_review, and verified specimens", () => {
+    const historyWithStatuses: UploadHistoryItem[] = [
+      { name: "specimen_a.jpg", timestamp: "12:00", index: 0, viewType: "toepads", reviewStatus: "unreviewed" },
+      { name: "specimen_b.jpg", timestamp: "12:01", index: 1, viewType: "toepads", reviewStatus: "needs_review" },
+      { name: "specimen_c.jpg", timestamp: "12:02", index: 2, viewType: "toepads", reviewStatus: "verified" },
+    ];
+
+    const markup = render({ uploadHistory: historyWithStatuses });
+    expect(markup).toContain('data-testid="status-badge-unreviewed"');
+    expect(markup).toContain('data-testid="status-badge-needs_review"');
+    expect(markup).toContain('data-testid="status-badge-verified"');
+    expect(markup).toContain("Unreviewed");
+    expect(markup).toContain("Needs Review");
+    expect(markup).toContain("Verified");
+  });
+
+  it("renders filter toolbar and filters specimens by review status", () => {
+    const historyWithStatuses: UploadHistoryItem[] = [
+      { name: "specimen_a.jpg", timestamp: "12:00", index: 0, viewType: "toepads", reviewStatus: "unreviewed" },
+      { name: "specimen_b.jpg", timestamp: "12:01", index: 1, viewType: "toepads", reviewStatus: "needs_review" },
+      { name: "specimen_c.jpg", timestamp: "12:02", index: 2, viewType: "toepads", reviewStatus: "verified" },
+    ];
+
+    const panel = new HistoryPanel({
+      uploadHistory: historyWithStatuses,
+      currentImageIndex: 0,
+      uploadProgress: {},
+      onSelectImage: () => {},
+      onLoadFromUploads: () => {},
+      theme: "light",
+    });
+
+    // Default: 'all' filter shows all specimens
+    let markup = renderToStaticMarkup(panel.render() as React.ReactElement);
+    expect(markup).toContain("All (3)");
+    expect(markup).toContain("Needs Review (1)");
+    expect(markup).toContain("Verified (1)");
+    expect(markup).toContain("Unreviewed (1)");
+    expect(markup).toContain("specimen_a.jpg");
+    expect(markup).toContain("specimen_b.jpg");
+    expect(markup).toContain("specimen_c.jpg");
+
+    // Switch filter to 'verified'
+    panel.state.statusFilter = "verified";
+    markup = renderToStaticMarkup(panel.render() as React.ReactElement);
+    expect(markup).toContain("specimen_c.jpg");
+    expect(markup).not.toContain("specimen_a.jpg");
+    expect(markup).not.toContain("specimen_b.jpg");
+
+    // Switch filter to 'needs_review'
+    panel.state.statusFilter = "needs_review";
+    markup = renderToStaticMarkup(panel.render() as React.ReactElement);
+    expect(markup).toContain("specimen_b.jpg");
+    expect(markup).not.toContain("specimen_a.jpg");
+    expect(markup).not.toContain("specimen_c.jpg");
+  });
 });
+

@@ -383,6 +383,11 @@ export class ToepadPanels extends Component<ToepadPanelsProps, ToepadPanelsState
                 </thead>
                 <tbody>
                   <tr>
+                    <td style={styles.legendTd}><kbd style={styles.kbd}>Space</kbd> / <kbd style={styles.kbd}>Enter</kbd></td>
+                    <td style={styles.legendTd}>Approve</td>
+                    <td style={styles.legendTd}>Mark Verified &amp; advance to next specimen</td>
+                  </tr>
+                  <tr>
                     <td style={styles.legendTd}><kbd style={styles.kbd}>Ctrl+Z</kbd></td>
                     <td style={styles.legendTd}>Undo</td>
                     <td style={styles.legendTd}>Revert last landmark move</td>
