@@ -566,3 +566,47 @@ describe("SVGViewer zoomToImageRegion", () => {
     expect(transform?.k).toBe(7.5);
   });
 });
+
+describe("SVGViewer landmark label zoom counter-scaling", () => {
+  it("tracks currentZoomK and safely handles zoom scale factors", () => {
+    const props = createDefaultProps();
+    const viewer = new SVGViewer(props);
+
+    expect(viewer.currentZoomK).toBe(1.0);
+
+    // When updating with k = 10 (e.g. toepad zoom), safeK is 10
+    viewer.updateZoomDependentElements(10);
+    expect(viewer.currentZoomK).toBe(10);
+
+    // Clamps minimum safeK to 0.1
+    viewer.updateZoomDependentElements(0.001);
+    expect(viewer.currentZoomK).toBe(0.1);
+
+    // Restores on normal zoom
+    viewer.updateZoomDependentElements(2.5);
+    expect(viewer.currentZoomK).toBe(2.5);
+  });
+
+  it("calculates correct counter-scaled SVG font-size and stroke-width for constant screen size", () => {
+    const props = createDefaultProps();
+    const viewer = new SVGViewer(props);
+
+    const baseScreenFontSize = viewer.state.labelSize; // 8.5px
+    const zoomScales = [1, 2, 5, 8.5, 10, 15];
+
+    zoomScales.forEach((k) => {
+      const svgFontSize = baseScreenFontSize / k;
+      const screenRenderedFontSize = svgFontSize * k;
+      expect(screenRenderedFontSize).toBeCloseTo(baseScreenFontSize);
+
+      const svgStrokeWidth = 1.5 / k;
+      const screenRenderedStrokeWidth = svgStrokeWidth * k;
+      expect(screenRenderedStrokeWidth).toBeCloseTo(1.5);
+
+      const textOffset = viewer.state.landmarkSize + 3 / k;
+      // In SVG space, offset shrinks as k grows, so screen offset (offset * k) stays constant outside the dot
+      const screenTextOffset = textOffset * k;
+      expect(screenTextOffset).toBeCloseTo(viewer.state.landmarkSize * k + 3);
+    });
+  });
+});

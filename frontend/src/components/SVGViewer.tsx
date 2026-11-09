@@ -129,8 +129,48 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
 
     const svg = d3.select(this.svgRef.current);
     svg.call(this.zoomRef.current.transform, transform);
+    this.updateZoomDependentElements(transform.k);
     this.props.onZoomChange(transform);
     return transform;
+  };
+
+  /** Current zoom scale factor k, tracked for counter-scaling labels */
+  public currentZoomK = 1.0;
+
+  /**
+   * Dynamically counter-scales landmark labels and outlines according to the current
+   * D3 zoom scale factor k, so the text remains sharp, compact, and never obscures points.
+   */
+  public readonly updateZoomDependentElements = (k: number): void => {
+    const safeK = Math.max(0.1, k || 1.0);
+    this.currentZoomK = safeK;
+    if (!this.svgRef.current || typeof this.svgRef.current.querySelector !== "function") return;
+
+    const svg = d3.select(this.svgRef.current);
+    const scatterPlotGroup = svg.select<SVGGElement>(".scatter-points");
+    if (!scatterPlotGroup.empty()) {
+      const effectiveFontSize = this.state.labelSize / safeK;
+      const strokeWidth = 1.5 / safeK;
+      const textOffset = this.state.landmarkSize + 3 / safeK;
+
+      scatterPlotGroup
+        .selectAll<SVGTextElement, Point>("text")
+        .attr("font-size", `${effectiveFontSize}px`)
+        .attr("stroke-width", `${strokeWidth}px`)
+        .attr("x", (d: Point) => d.x + textOffset)
+        .attr("y", (d: Point) => d.y - textOffset);
+    }
+
+    const bboxGroup = svg.select<SVGGElement>(".bounding-boxes");
+    if (!bboxGroup.empty()) {
+      bboxGroup
+        .selectAll<SVGTextElement, unknown>("text")
+        .attr("font-size", `${11 / safeK}px`)
+        .attr("stroke-width", `${0.5 / safeK}px`);
+      bboxGroup
+        .selectAll<SVGGraphicsElement, unknown>("rect, polygon")
+        .attr("stroke-width", `${3 / safeK}px`);
+    }
   };
 
   /** Dismiss the edit mode zoom hint badge */
@@ -169,7 +209,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     this.state = {
       hintDismissed: false,
       landmarkSize: props.selectedViewType === 'toepads' ? 1.0 : 2.0,
-      labelSize: 8,
+      labelSize: props.selectedViewType === 'toepads' ? 8.5 : 9.5,
       labelColor: '#ffffff',
       showLabels: true,
       showBoundingBoxes: false,
@@ -286,6 +326,11 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
 
     if (prevProps.selectedPoint !== this.props.selectedPoint) {
       this.updatePointSelection();
+    }
+
+    // Re-sync zoom dependent elements when zoom transform prop changes
+    if (this.props.zoomTransform?.k && this.props.zoomTransform.k !== this.currentZoomK) {
+      this.updateZoomDependentElements(this.props.zoomTransform.k);
     }
 
     // Apply zoom transform if it changed in either mode
@@ -641,17 +686,29 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
 
         // Add the number label
         if (this.state.showLabels) {
-          const textOffset = size + 1;
+          const k = Math.max(0.1, this.currentZoomK || this.props.zoomTransform?.k || 1.0);
+          const effectiveFontSize = this.state.labelSize / k;
+          const strokeWidth = 1.5 / k;
+          const textOffset = size + 3 / k;
+
           g.append("text")
             .attr("x", d.x + textOffset)
             .attr("y", d.y - textOffset)
             .text(d.id + 1)
-            .attr("font-size", `${this.state.labelSize}px`)
+            .attr("font-size", `${effectiveFontSize}px`)
+            .attr("font-weight", "700")
+            .attr("font-family", "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif")
             .attr("fill", this.state.labelColor)
-            .attr("stroke", "none")
+            .attr("stroke", "rgba(0, 0, 0, 0.85)")
+            .attr("stroke-width", `${strokeWidth}px`)
+            .attr("paint-order", "stroke fill")
             .attr("filter", "url(#label-shadow)")
             .attr("opacity", this.isTransparentMode ? 0.6 : 1.0)
-            .style("pointer-events", "none");
+            .style("pointer-events", "none")
+            .style("user-select", "none");
+
+          g.append("title")
+            .text(`Landmark ${d.id + 1}${typeof d.box_idx === "number" ? ` (Toe #${d.box_idx + 1})` : ""}`);
         }
       });
 
@@ -686,6 +743,7 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
         })
         .on("zoom", (event) => {
           zoomContainer.attr("transform", event.transform.toString());
+          this.updateZoomDependentElements(event.transform.k);
           this.props.onZoomChange(event.transform);
         })
         .filter(this.zoomFilter);
@@ -921,8 +979,10 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
 
       // Performance optimization: Only update the visual position immediately
       // Don't update parent component on every drag event
+      const currentK = Math.max(0.1, transform.k || this.currentZoomK || 1.0);
+      const textOffset = this.state.landmarkSize + 3 / currentK;
       clickedGroup.select("circle").attr("cx", x).attr("cy", y);
-      clickedGroup.select("text").attr("x", x + 5).attr("y", y - 5);
+      clickedGroup.select("text").attr("x", x + textOffset).attr("y", y - textOffset);
 
       // Performance optimization: Throttle parent component updates
       if (this.dragUpdateTimeout) {
@@ -1093,10 +1153,12 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       .attr("cy", (d: Point) => d.y);
     
     // Update text positions
+    const k = Math.max(0.1, this.currentZoomK || 1.0);
+    const textOffset = this.state.landmarkSize + 3 / k;
     scatterPlotGroup.selectAll<SVGTextElement, Point>("text")
       .data(scatterData, (d: Point) => d.id)
-      .attr("x", (d: Point) => d.x + 5)
-      .attr("y", (d: Point) => d.y - 5);
+      .attr("x", (d: Point) => d.x + textOffset)
+      .attr("y", (d: Point) => d.y - textOffset);
   };
 
   // Move rendered landmarks to match originalScatterData; returns the display-space points
@@ -1114,7 +1176,8 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
       x: scaleXDisplay(p.x),
       y: scaleYDisplay(p.y),
     }));
-    const textOffset = this.state.landmarkSize + 1;
+    const k = Math.max(0.1, this.currentZoomK || 1.0);
+    const textOffset = this.state.landmarkSize + 3 / k;
 
     svg
       .select<SVGGElement>(".scatter-points")
@@ -1137,16 +1200,23 @@ export class SVGViewer extends Component<SVGViewerProps, SVGViewerState> {
     const scatterPlotGroup = svg.select<SVGGElement>(".scatter-points");
     if (scatterPlotGroup.empty()) return;
 
+    const k = Math.max(0.1, this.currentZoomK || 1.0);
     const size = this.state.landmarkSize;
-    const textOffset = size + 1;
+    const textOffset = size + 3 / k;
+    const effectiveFontSize = this.state.labelSize / k;
+    const strokeWidth = 1.5 / k;
 
     // Update circle sizes
     scatterPlotGroup.selectAll<SVGCircleElement, Point>("circle")
       .attr("r", size);
 
-    // Update text sizes, positions, and color
+    // Update text sizes, positions, and color with counter-scaling and dark outline
     scatterPlotGroup.selectAll<SVGTextElement, Point>("text")
-      .attr("font-size", `${this.state.labelSize}px`)
+      .attr("font-size", `${effectiveFontSize}px`)
+      .attr("stroke-width", `${strokeWidth}px`)
+      .attr("stroke", "rgba(0, 0, 0, 0.85)")
+      .attr("paint-order", "stroke fill")
+      .attr("font-weight", "700")
       .attr("fill", this.state.labelColor)
       .attr("x", (d: Point) => d.x + textOffset)
       .attr("y", (d: Point) => d.y - textOffset);
