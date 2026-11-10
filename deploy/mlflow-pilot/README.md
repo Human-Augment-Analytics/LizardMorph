@@ -2,7 +2,7 @@
 
 The repository includes an isolated, loopback-only stack that imports complete **named, versioned pipeline
 bundles** into AutoMorph's existing model catalog. It does not replace the default
-YOLO file. Choose a version in Research models → Import → Use this version.
+YOLO file. Choose a version in Research models → Import this version → Use this version.
 Existing analyses retain their model ID. Export ZIPs include an image-specific
 `.model.json` with the exact registry version, bundle SHA256, input image hash,
 manifest and provenance. Registration/import never moves an alias or default.
@@ -41,9 +41,9 @@ Albert source: Lizard_Toepads `493ea405e3214a992fcf79c406e6fe1a3d7f6d97`,
 The ViT checkpoint SHA256 is
 `62d78f637cf429ad83392732404b51ec68873c3caa85e1fac399d912f5d6d28d`.
 Its contract is preserved explicitly: unrotated AABB, longest side 224, centered
-black letterbox, **BGR** ImageNet normalization, nine coordinates normalized by224.
+black letterbox, **BGR** ImageNet normalization, nine coordinates normalized by 224.
 Production inference uses CPU ONNX/dlib, with no torch/timm download or executable
-checkpoint loading. Export uses pinned torch2.5.1/timm1.0.12 and weights_only=True.
+checkpoint loading. Export uses pinned torch 2.5.1/timm 1.0.12 and weights_only=True.
 
 ## Start and stop
 
@@ -57,14 +57,14 @@ docker compose -f deploy/mlflow-pilot/compose.yaml logs --tail=100
 docker compose -f deploy/mlflow-pilot/compose.yaml stop
 ```
 
-Private endpoints: app http://127.0.0.1:18603/#/models; MLflow18600; model-api18601;
-Flask18602. They are local to the Docker host; use SSH forwarding from your laptop.
+Private endpoints: app http://127.0.0.1:18603/#/models; MLflow 18600; model-api 18601;
+Flask 18602. They are local to the Docker host; use SSH forwarding from your laptop.
 This is a single-worker research demo. Its inference caches retain at most one detector and two landmark predictors to fit model switching into the host memory budget. Restrict access to the local machine/SSH;
 there is no authentication layer for public serving. Restart policies recover
 services after Docker restarts; stopping a service intentionally keeps it stopped.
 
 The MLflow server serves artifacts from its persistent volume. The older
-metadata-only demo on18500–18503 is independent and remains unchanged.
+metadata-only demo on 18500–18503 is independent and remains unchanged.
 
 ## Prepare and register actual model bundles
 
@@ -78,7 +78,7 @@ In a Lizard_Toepads checkout containing `scripts/deployment/` pilot scripts:
    parity receipt alongside the exported file.
 3. Run `prepare_switching_pilot.py --fixtures DIR --output BUNDLES` to produce
    `ml-morph` and `albert-vit` bundle directories.
-4. With MLflow2.22.4 installed, run:
+4. With MLflow 2.22.4 installed, run:
 
 ```sh
 python scripts/deployment/register_bundle.py --bundle-dir BUNDLES/ml-morph \
