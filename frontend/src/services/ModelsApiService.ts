@@ -1,6 +1,9 @@
 import { getApiUrl } from "./config";
 
-const MODEL_API_URL = import.meta.env.VITE_MODEL_API_URL || "/model-api";
+export function getModelApiUrl(): string | null {
+  const url = (import.meta.env.VITE_MODEL_API_URL ?? "").trim().replace(/\/+$/, "");
+  return url || null;
+}
 export interface ModelVersionItem {
   name: string;
   version: string;
@@ -17,7 +20,11 @@ async function read<T>(response: Response): Promise<T> {
   return response.json();
 }
 export const ModelsApiService = {
-  listModels: async () => read<{ models: ModelVersionItem[] }>(await fetch(`${MODEL_API_URL}/models`)),
+  listModels: async () => {
+    const url = getModelApiUrl();
+    if (!url) throw new Error("Research models are not configured (VITE_MODEL_API_URL)");
+    return read<{ models: ModelVersionItem[] }>(await fetch(`${url}/models`));
+  },
   importBundle: async (name: string, version: string) => {
     const base = (await getApiUrl()).replace(/\/+$/, "");
     const path = base.endsWith("/api") ? "/registry/import" : "/api/registry/import";

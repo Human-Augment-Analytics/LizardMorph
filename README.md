@@ -118,6 +118,8 @@ The `.env` file must live at the **repo root** (`AutoMorph/.env`), not inside `b
 |----------|-------------|
 | `VITE_API_URL` | Frontend API base URL (default: `/api`) |
 | `VITE_BASE_URL` | Frontend base path (default: empty) |
+| `VITE_MODEL_API_URL` | Opt-in MLflow model API base URL; enables Research models (default: unset, hidden) |
+| `MODEL_API_URL` | Backend URL of the MLflow model API used by registry import (default: `http://127.0.0.1:8000`) |
 | `VITE_ALLOWED_HOSTS` | Comma-separated allowed ngrok/proxy hosts |
 | `WEBHOOK_SECRET` | GitHub webhook secret for auto-deploy |
 | `AUTOMORPH_HOSTED` | Set to `true` to enforce strict safety size/count limits on training uploads in shared public servers (default: `false`). `LIZARDMORPH_HOSTED` is supported for backward compatibility. |

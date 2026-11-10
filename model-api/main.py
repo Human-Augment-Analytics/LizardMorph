@@ -14,12 +14,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="LizardMorph MLflow API", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
-)
+if config.CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=config.CORS_ORIGINS,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
+    )
 
 from routers import experiments, models, bundles  # noqa: E402
 app.include_router(experiments.router)

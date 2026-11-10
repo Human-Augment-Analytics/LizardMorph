@@ -4,6 +4,7 @@ import { useTheme } from "../contexts/theme";
 import { getTokens } from "../contexts/themeTokens";
 import { ApiService } from "../services/ApiService";
 import type { ModelVersionItem } from "../services/ApiService";
+import { getModelApiUrl } from "../services/ModelsApiService";
 import lizard_logo from "../assets/lizard.svg";
 
 export type LizardViewType = "dorsal" | "lateral" | "toepads" | "custom" | "free";
@@ -273,7 +274,7 @@ export const LandingPage: React.FC = () => {
         </button>
       </div>
       <h1 style={LandingPageStyles.title}>AutoMorph</h1>
-      <button onClick={() => navigate("/models")} style={{ marginBottom: 20, padding: "10px 18px", cursor: "pointer" }}>Research models</button>
+      {getModelApiUrl() && <button onClick={() => navigate("/models")} style={{ marginBottom: 20, padding: "10px 18px", cursor: "pointer" }}>Research models</button>}
       <p style={LandingPageStyles.subtitle}>
         Select a preinstalled lizard model or one of your custom built models to analyze
       </p>

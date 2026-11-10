@@ -134,14 +134,16 @@ def get_model_by_tag(tag: str):
 def promote_model_version(
     model_name: str,
     version: str,
-    request: PromoteModelRequest | None = None,
+    request: PromoteModelRequest,
 ):
     """Promote a model version for app consumption.
 
     MLflow aliases are the forward-compatible deployment pointer. We also set the
     legacy Production stage by default so existing MLflow UI workflows keep working.
+    Disabled unless MODEL_API_ENABLE_PROMOTION is set.
     """
-    request = request or PromoteModelRequest()
+    if not config.PROMOTION_ENABLED:
+        raise HTTPException(status_code=403, detail="model promotion is disabled")
     alias = request.alias.strip()
     if not alias:
         raise HTTPException(status_code=400, detail="alias must not be empty")

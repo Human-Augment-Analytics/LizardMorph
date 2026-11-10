@@ -1,6 +1,6 @@
 # MLflow research integration
 
-The repository includes this isolated, loopback-only stack imports complete **named, versioned pipeline
+The repository includes an isolated, loopback-only stack that imports complete **named, versioned pipeline
 bundles** into AutoMorph's existing model catalog. It does not replace the default
 YOLO file. Choose a version in Research models → Import → Use this version.
 Existing analyses retain their model ID. Export ZIPs include an image-specific
@@ -17,6 +17,14 @@ A newly registered version appears in **Research models** after refresh. Import
 it explicitly, then select **Use this version**. It creates an installed model
 entry inside the same app, not a new app/deployment. Registration does not rebuild
 services, move aliases/defaults or alter existing analyses.
+
+Research models is opt-in. The frontend shows it only when built with
+`VITE_MODEL_API_URL` (this stack's `Dockerfile.web` sets `/model-api`, proxied by
+nginx). The backend reaches the model API through `MODEL_API_URL` (Compose sets
+`http://model-api:8000`). Builds without `VITE_MODEL_API_URL` keep the prior
+catalog. The model API's legacy promote route is disabled unless
+`MODEL_API_ENABLE_PROMOTION=true`; this stack leaves it disabled. Cross-origin
+access is off unless `MODEL_API_CORS_ORIGINS` lists origins (comma-separated).
 
 ## Scope
 

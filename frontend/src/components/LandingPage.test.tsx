@@ -26,6 +26,7 @@ describe("LandingPage Component", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
 
@@ -53,5 +54,19 @@ describe("LandingPage Component", () => {
 
     expect(markup).toContain("Want to create a custom project model for your species?");
     expect(markup).toContain("Train Custom Model Wizard");
+  });
+
+  it.each([
+    ["", false],
+    ["/model-api", true],
+  ])("shows Research models only when VITE_MODEL_API_URL=%j", (url, shown) => {
+    vi.stubEnv("VITE_MODEL_API_URL", url);
+    const markup = renderToStaticMarkup(
+      <MemoryRouter>
+        <LandingPage />
+      </MemoryRouter>
+    );
+
+    expect(markup.includes("Research models")).toBe(shown);
   });
 });

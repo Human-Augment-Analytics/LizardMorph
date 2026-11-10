@@ -1,7 +1,7 @@
 {
   "version": "v1.0.0-obb",
   "trained": "2026-03-13",
-  "author": "JunlingZhuang <jz3545@columbia.edu>",
+  "author": "Example Author <author@example.com>",
   "architecture": "models/base_models/yolo11m-obb.pt",
   "task": "obb",
   "config": "H11_obb",

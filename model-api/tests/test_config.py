@@ -27,3 +27,23 @@ def test_valid_config(monkeypatch):
     assert config.GITHUB_REPO == "org/repo"
     assert config.GITHUB_TOKEN == "ghp_test"
     assert config.MLFLOW_TRACKING_URI == "http://mlflow:5000"
+
+
+def test_promotion_and_cors_are_off_unless_configured(monkeypatch):
+    monkeypatch.setenv("GITHUB_REPO", "org/repo")
+    monkeypatch.delenv("MODEL_API_ENABLE_PROMOTION", raising=False)
+    monkeypatch.delenv("MODEL_API_CORS_ORIGINS", raising=False)
+    import config
+    importlib.reload(config)
+    assert config.PROMOTION_ENABLED is False
+    assert config.CORS_ORIGINS == []
+    monkeypatch.setenv("MODEL_API_ENABLE_PROMOTION", "true")
+    monkeypatch.setenv("MODEL_API_CORS_ORIGINS", "http://localhost:5173, http://127.0.0.1:5173")
+    try:
+        importlib.reload(config)
+        assert config.PROMOTION_ENABLED is True
+        assert config.CORS_ORIGINS == ["http://localhost:5173", "http://127.0.0.1:5173"]
+    finally:
+        monkeypatch.delenv("MODEL_API_ENABLE_PROMOTION")
+        monkeypatch.delenv("MODEL_API_CORS_ORIGINS")
+        importlib.reload(config)

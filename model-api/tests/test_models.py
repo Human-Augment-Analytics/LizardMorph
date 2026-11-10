@@ -2,6 +2,7 @@ import os
 os.environ["GITHUB_REPO"] = "org/repo"
 os.environ["GITHUB_TOKEN"] = "ghp_test"
 
+import pytest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from main import app
@@ -178,7 +179,9 @@ def test_latest_model_picks_most_recent_promoted_alias():
     MockClient.return_value.get_run.assert_called_once_with("run-new")
 
 
-def test_promote_model_version_sets_alias_stage_and_tags():
+def test_promote_model_version_sets_alias_stage_and_tags(monkeypatch):
+    import config
+    monkeypatch.setattr(config, "PROMOTION_ENABLED", True)
     mv = make_model_version("H8_obb_botonly", "3", "Production", run_id="run-abc123")
     mv.aliases = ["champion"]
     with patch("mlflow.MlflowClient") as MockClient:
@@ -217,3 +220,30 @@ def test_private_release_keeps_optional_authorization(monkeypatch):
         response = client.get("/model/by-tag/model/v1.1.0-obb")
     assert response.status_code == 200
     assert get.call_args_list[0].kwargs["headers"]["Authorization"] == "Bearer test-optional-token"
+
+
+def test_promotion_is_disabled_by_default():
+    with patch("mlflow.MlflowClient") as MockClient:
+        response = client.post(
+            "/models/H8_obb_botonly/versions/3/promote",
+            json={"alias": "champion"},
+        )
+    assert response.status_code == 403
+    MockClient.return_value.set_registered_model_alias.assert_not_called()
+    MockClient.return_value.transition_model_version_stage.assert_not_called()
+
+
+@pytest.mark.parametrize("kwargs", [{}, {"content": "", "headers": {"Content-Type": "text/plain"}}])
+def test_enabled_promotion_rejects_simple_cross_origin_post(monkeypatch, kwargs):
+    import config
+    monkeypatch.setattr(config, "PROMOTION_ENABLED", True)
+    with patch("mlflow.MlflowClient") as MockClient:
+        response = client.post(
+            "/models/H8_obb_botonly/versions/3/promote",
+            headers={"Origin": "https://attacker.example", **kwargs.pop("headers", {})},
+            **kwargs,
+        )
+    assert response.status_code == 422
+    assert "access-control-allow-origin" not in response.headers
+    MockClient.return_value.set_registered_model_alias.assert_not_called()
+    MockClient.return_value.transition_model_version_stage.assert_not_called()

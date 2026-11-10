@@ -8,6 +8,7 @@ from main import app
 
 
 def test_promote_and_rollback_real_registry(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "PROMOTION_ENABLED", True)
     monkeypatch.chdir(tmp_path)
     uri = f"sqlite:///{tmp_path}/registry.db"
     monkeypatch.setattr(config, "MLFLOW_TRACKING_URI", uri)
@@ -42,8 +43,9 @@ def test_latest_prioritizes_alias_before_legacy_production(monkeypatch, tmp_path
     from pathlib import Path
     from routers import models
 
-    metadata = json.loads((Path(__file__).parents[1] / "docs/metadata (1).json").read_text())
+    metadata = json.loads((Path(__file__).parent / "fixtures/release_metadata.json").read_text())
     monkeypatch.setattr(models, "_build_model_response", lambda tag: {**metadata, "version": tag})
+    monkeypatch.setattr(config, "PROMOTION_ENABLED", True)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(config, "MLFLOW_TRACKING_URI", f"sqlite:///{tmp_path}/registry.db")
     previous = mlflow.get_tracking_uri()
