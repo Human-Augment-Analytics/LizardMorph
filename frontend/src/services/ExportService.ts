@@ -123,6 +123,7 @@ export class ExportService {
       name: string;
       coords: Point[];
       originalCoords?: Point[];
+      model_provenance?: Record<string, unknown>;
       imageSets: { original: string };
     }>,
     currentIndex: number,
@@ -211,6 +212,10 @@ export class ExportService {
         const baseName = this.baseName(result.name);
         
         zip.file(`${baseName}.tps`, result.tpsContent);
+        const image = images.find(image => image.name === result.name);
+        if (image?.model_provenance) {
+          zip.file(`${baseName}.model.json`, JSON.stringify(image.model_provenance, null, 2));
+        }
         if (result.imageBlob) {
           zip.file(`annotated_${baseName}.png`, result.imageBlob);
         }

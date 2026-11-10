@@ -6,6 +6,8 @@ import { LandingPage } from "./components/LandingPage";
 import type { LizardViewType } from "./components/LandingPage";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useTheme } from "./contexts/theme";
+import { ModelsView } from "./views/ModelsView";
+import { getModelApiUrl } from "./services/ModelsApiService";
 import { TrainView } from "./views/TrainView";
 
 // Wrapper component to provide navigation to MainView
@@ -80,6 +82,7 @@ function App() {
         <Route path="/custom-model" element={<MainViewWrapper selectedViewType="custom" />} />
         <Route path="/custom-model/:modelId" element={<MainViewWrapper selectedViewType="custom" />} />
         <Route path="/custom" element={<TrainViewWrapper />} />
+        {getModelApiUrl() && <Route path="/models" element={<ModelsView />} />}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <VersionInfo />

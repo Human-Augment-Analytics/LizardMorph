@@ -418,6 +418,7 @@ export class MainView extends Component<MainProps, MainState> {
 
           const processedImage = {
             name: result.name,
+            model_provenance: result.model_provenance,
             coords: coords,
             originalCoords: JSON.parse(JSON.stringify(coords)),
             imageSets,
@@ -1065,6 +1066,7 @@ export class MainView extends Component<MainProps, MainState> {
 
       const newImage: ProcessedImage = {
         name: filename,
+        model_provenance: result.model_provenance,
         coords: coords,
         originalCoords: JSON.parse(JSON.stringify(coords)),
         imageSets,

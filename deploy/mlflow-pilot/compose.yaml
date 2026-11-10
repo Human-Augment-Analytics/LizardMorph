@@ -1,0 +1,71 @@
+name: lizard-mlflow-pilot-20261102
+services:
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.22.4
+    command: mlflow server --backend-store-uri sqlite:////data/mlflow.db --serve-artifacts --artifacts-destination /data/artifacts --host 0.0.0.0 --port 5000 --workers 1
+    ports: ["127.0.0.1:18600:5000"]
+    volumes: ["registry:/data"]
+    mem_limit: 768m
+    cpus: 1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+  model-api:
+    build: ../../model-api
+    image: lizard-mlflow-pilot-20261102-model-api
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      GITHUB_REPO: Human-Augment-Analytics/Lizard_Toepads
+    ports: ["127.0.0.1:18601:8000"]
+    mem_limit: 768m
+    cpus: 1
+    restart: unless-stopped
+    depends_on:
+      mlflow: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,json; assert json.load(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5))['mlflow_reachable']"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+  app:
+    build: {context: ../.., dockerfile: deploy/mlflow-pilot/Dockerfile.app}
+    image: lizard-mlflow-pilot-20261102-app
+    environment:
+      MODEL_API_URL: http://model-api:8000
+      MODELS_DIR: /models
+      DB_PATH: /work/app.db
+      RUNS_DIR: /work/runs
+      SESSION_DIR: /sessions
+      PREDICTOR_LIBRARY_DIR: /models/custom_predictors
+      ENABLE_ID_OCR: "false"
+      MODEL_DETECTOR_CACHE_LIMIT: "1"
+      MODEL_PREDICTOR_CACHE_LIMIT: "2"
+    ports: ["127.0.0.1:18602:3000"]
+    volumes: ["models:/models", "work:/work", "sessions:/sessions"]
+    mem_limit: 2g
+    cpus: 2
+    restart: unless-stopped
+    depends_on:
+      model-api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/health', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+  frontend:
+    build: {context: ../.., dockerfile: deploy/mlflow-pilot/Dockerfile.web}
+    image: lizard-mlflow-pilot-20261102-web
+    ports: ["127.0.0.1:18603:80"]
+    mem_limit: 128m
+    cpus: 0.5
+    restart: unless-stopped
+    depends_on:
+      app: {condition: service_healthy}
+volumes:
+  registry:
+  models:
+  work:
+  sessions:

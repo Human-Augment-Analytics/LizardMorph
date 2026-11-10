@@ -1,0 +1,13 @@
+.git
+**/node_modules
+**/.venv
+**/__pycache__
+**/.env
+**/.env.*
+models
+runs
+backend/sessions
+backend/uploads
+frontend/dist
+output
+outputs

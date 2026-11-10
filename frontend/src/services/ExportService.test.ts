@@ -127,3 +127,20 @@ describe("ExportService archive layout", () => {
     ).resolves.toBe("/api/images/01234567/annotated_LIZ.002.png");
   });
 });
+
+it("includes per-image immutable model provenance in the exported archive", async () => {
+  const { ApiService } = await import("./ApiService");
+  const { ExportService } = await import("./ExportService");
+  const { default: JSZip } = await import("jszip");
+  vi.spyOn(ApiService, "exportScatterData").mockResolvedValue({ image_urls: [] });
+  let output: Blob | undefined;
+  vi.spyOn(ExportService, "downloadFile").mockImplementation(async blob => { output = blob; });
+  const provenance = { model_id: "registry-immutable", registry: { name: "toepad-vit", version: "2", bundle_sha256: "abc" } };
+  await ExportService.exportAllData(
+    [{ name: "sample.png", coords: [{ id: 0, x: 1, y: 2 }], imageSets: { original: "sample" }, model_provenance: provenance }],
+    0, [{ id: 0, x: 1, y: 2 }], [{ id: 0, x: 1, y: 2 }], async () => new Uint8Array([0]) as unknown as Blob, [], SCALE_SETTINGS,
+  );
+  const archive = await JSZip.loadAsync(await output!.arrayBuffer());
+  expect(JSON.parse(await archive.file("sample.model.json")!.async("string"))).toEqual(provenance);
+  vi.restoreAllMocks();
+});
