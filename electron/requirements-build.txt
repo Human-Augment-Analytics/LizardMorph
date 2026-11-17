@@ -1,0 +1,21 @@
+# Core native/build versions from the last successful desktop release (v1.1.1).
+# Upgrade together and require the frozen export smoke check on every platform.
+pyinstaller==6.22.2
+pyinstaller-hooks-contrib==2026.7
+numpy==2.5.2
+onnxruntime==1.29.0
+opencv-python==5.0.0.93
+pandas==3.0.5
+pillow==12.3.0
+dlib==20.0.1
+flask==2.2.3
+flask-cors==3.0.10
+werkzeug==2.2.2
+pydicom==3.0.2
+python-dotenv==1.2.3
+prometheus-client==0.26.0
+psutil==7.2.2
+requests>=2.32.3,<3
+pyobjc-framework-Vision; sys_platform == 'darwin'
+pyobjc-framework-Quartz; sys_platform == 'darwin'
+winocr==0.0.15; sys_platform == 'win32'

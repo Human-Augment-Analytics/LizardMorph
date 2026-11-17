@@ -144,3 +144,74 @@ it("includes per-image immutable model provenance in the exported archive", asyn
   expect(JSON.parse(await archive.file("sample.model.json")!.async("string"))).toEqual(provenance);
   vi.restoreAllMocks();
 });
+
+describe("ExportService measurement CSV", () => {
+  const coords = [
+    { id: 0, x: 0, y: 0 },
+    { id: 1, x: 3, y: 4 },
+  ];
+  const scale: ScaleSettings = {
+    pointAId: 0,
+    pointBId: 1,
+    value: 10,
+    units: "mm",
+  };
+
+  it.each([
+    ["specimen", "specimen"],
+    ["specimen, left", '"specimen, left"'],
+    ['specimen "left"', '"specimen ""left"""'],
+    ["specimen\nleft", '"specimen\nleft"'],
+    ["specimen\rleft", '"specimen\rleft"'],
+  ])("preserves text fields containing %j", async (text, encoded) => {
+    const { ExportService } = await import("./ExportService");
+
+    const csv = ExportService.createCsvContent(
+      [{ id: "m1", label: text, pointAId: 0, pointBId: 1, calculatedDistance: null }],
+      { ...scale, units: text },
+      [{ name: text, coords }],
+    );
+
+    expect(csv).toBe(
+      `Measurement,Image,Point A,Point B,Distance,Units\n${encoded},${encoded},1,2,10.000,${encoded}\n`,
+    );
+  });
+
+  it("exports coincident measured landmarks as zero with a valid scale", async () => {
+    const { ExportService } = await import("./ExportService");
+
+    const csv = ExportService.createCsvContent([], scale, [{
+      name: "a.png",
+      coords: [...coords, { id: 2, x: 0, y: 0 }],
+    }]);
+
+    expect(csv).toBe(
+      "Measurement,Image,Point A,Point B,Distance,Units\n" +
+      "Landmark 1-2,a.png,1,2,10.000,mm\n" +
+      "Landmark 1-3,a.png,1,3,0.000,mm\n" +
+      "Landmark 2-3,a.png,2,3,10.000,mm\n",
+    );
+  });
+
+  it("retains N/A when no scale is configured", async () => {
+    const { ExportService } = await import("./ExportService");
+
+    expect(ExportService.createCsvContent([], SCALE_SETTINGS, [{ name: "a.png", coords }]))
+      .toBe(
+        "Measurement,Image,Point A,Point B,Distance,Units\n" +
+        "Landmark 1-2,a.png,1,2,N/A,pixels\n",
+      );
+  });
+
+  it("retains N/A when a coordinate produces an undefined numerical distance", async () => {
+    const { ExportService } = await import("./ExportService");
+
+    expect(ExportService.createCsvContent([], scale, [{
+      name: "a.png",
+      coords: [coords[0], { ...coords[1], x: NaN }],
+    }])).toBe(
+      "Measurement,Image,Point A,Point B,Distance,Units\n" +
+      "Landmark 1-2,a.png,1,2,N/A,mm\n",
+    );
+  });
+});

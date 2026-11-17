@@ -1,6 +1,6 @@
 {
   "name": "automorph",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "AutoMorph - Automated lizard morphology analysis",
   "author": "Human Augment Analytics <info@humanaugmentanalytics.com>",
   "homepage": "https://github.com/Human-Augment-Analytics/LizardMorph",
@@ -50,7 +50,8 @@
         }
       ],
       "icon": "icons/icon.png",
-      "minimumSystemVersion": "11.0"
+      "minimumSystemVersion": "11.0",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "win": {
       "target": [
