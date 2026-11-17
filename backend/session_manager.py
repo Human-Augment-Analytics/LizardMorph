@@ -4,6 +4,7 @@ import uuid
 import time
 import json
 import logging
+import threading
 from datetime import datetime
 from typing import Optional, Dict, List
 
@@ -17,7 +18,7 @@ class SessionManager:
     and handling cleanup of session-specific files.
     """
 
-    def __init__(self, base_sessions_dir="sessions", runtime_root=None):
+    def __init__(self, base_sessions_dir="sessions", runtime_root=None, production_pin_factory=None):
         """
         Initialize the session manager.
 
@@ -27,11 +28,13 @@ class SessionManager:
                 Defaults to the parent of base_sessions_dir.
         """
         self.base_sessions_dir = base_sessions_dir
+        self.production_pin_factory = production_pin_factory
         if runtime_root:
             self.runtime_root = os.path.abspath(runtime_root)
         else:
             self.runtime_root = os.path.dirname(os.path.abspath(base_sessions_dir))
         self.active_sessions = {}
+        self._session_lock = threading.RLock()
         self.ensure_directory_exists(self.base_sessions_dir)
 
     def ensure_directory_exists(self, directory):
@@ -113,6 +116,12 @@ class SessionManager:
         return None
 
     def create_session(self, session_id: str = None) -> str:
+        # Flask may serve concurrent requests in one worker. Do not expose a
+        # session directory before its immutable production pin is durable.
+        with self._session_lock:
+            return self._create_session(session_id)
+
+    def _create_session(self, session_id: str = None) -> str:
         """
         Create a new session with a unique session ID.
 
@@ -126,6 +135,10 @@ class SessionManager:
                 raise ValueError("Invalid session identifier.")
             session_id = str(session_id).strip()
 
+        # Starting the same session twice must not refresh a mutable default.
+        if self.get_session(session_id) is not None:
+            return session_id
+        production_pin = self.production_pin_factory() if self.production_pin_factory else None
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         session_data = {
@@ -173,6 +186,17 @@ class SessionManager:
         ]:
             self.ensure_directory_exists(folder)
 
+        if production_pin is not None:
+            try:
+                from backend.production_selection import save_session_pin
+            except ImportError:
+                from production_selection import save_session_pin
+            try:
+                save_session_pin(session_data["session_folder"], production_pin)
+            except Exception:
+                # A partial new session must not reload as an unpinned legacy one.
+                shutil.rmtree(session_data["session_folder"])
+                raise
         self.active_sessions[session_id] = session_data
         logger.info(
             f"Created new session: {session_id} at {session_data['session_folder']}"
@@ -181,6 +205,10 @@ class SessionManager:
         return session_id
 
     def get_session(self, session_id: str) -> Optional[Dict]:
+        with self._session_lock:
+            return self._get_session(session_id)
+
+    def _get_session(self, session_id: str) -> Optional[Dict]:
         """
         Get session data by session ID.
 
@@ -270,6 +298,8 @@ class SessionManager:
                     # Clear all files in the session folder but keep the folder structure
                     for root, dirs, files in os.walk(session_folder):
                         for file in files:
+                            if root == session_folder and file == "production-model.json":
+                                continue  # Clearing images never repins the session default.
                             file_path = os.path.join(root, file)
                             try:
                                 os.unlink(file_path)
