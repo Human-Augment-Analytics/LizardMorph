@@ -19,3 +19,5 @@ requests>=2.32.3,<3
 pyobjc-framework-Vision; sys_platform == 'darwin'
 pyobjc-framework-Quartz; sys_platform == 'darwin'
 winocr==0.0.15; sys_platform == 'win32'
+# winrt 3 ships an old msvcp140.dll that breaks onnxruntime
+winrt-runtime>=4.0.0; sys_platform == 'win32'
