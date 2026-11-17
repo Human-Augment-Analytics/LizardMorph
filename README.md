@@ -379,3 +379,31 @@ it is set.
 1. **Predictor File**: Models are required but not included in the repository due to their size. They must be downloaded separately.
 2. **Cold Start Issues**: Containers or processes may experience cold start delays. The initial load of the application might take up to a minute due to the size of the ML models being loaded.
 3. **Processing Large Files**: Your server tier/instance size should have sufficient RAM for processing multiple or large X-ray images. Up to 8 GB of RAM is recommended.
+
+
+### Desktop releases
+
+Desktop downloads are published on the [GitHub releases page](https://github.com/Human-Augment-Analytics/LizardMorph/releases)
+under the current application name **AutoMorph** (formerly LizardMorph).
+
+Before tagging a stable release, update the root, frontend and Electron package
+versions and their lockfiles, plus `src-tauri/tauri.conf.json`, `Cargo.toml` and
+`Cargo.lock`. Run `python3 scripts/check-release-version.py vX.Y.Z` with Python
+3.11 or newer. CI rejects a tag or manual release version that disagrees with
+any of those versions. Manual builds use the selected workflow ref and attach
+the draft release to that exact commit.
+
+The Electron workflow installs the native dependency versions in
+`electron/requirements-build.txt`, checks their imports, builds the backend,
+and runs `scripts/smoke-desktop-export.py` against the frozen executable on each
+platform before packaging an installer. This check uploads two specimens,
+exercises prediction and CSV generation, exports edited TPS landmarks and
+annotated PNGs, and verifies the downloaded ZIP. All test data lives in a
+temporary directory. To run it against source, use
+`python scripts/smoke-desktop-export.py --source` in an environment with the
+backend dependencies and the published model bundle installed.
+
+A successful workflow creates a **draft** with all platform installers. Check
+the exact build run, installer versions and export checks before publishing the
+draft as the latest release. A draft is not visible to public downloaders.
+Do not relabel old installers or replace an existing version tag.

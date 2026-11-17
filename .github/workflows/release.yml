@@ -19,11 +19,28 @@ on:
 #   models/lizard-toe-pad/finger_predictor_obb.dat
 #   models/lizard-toe-pad/lizard_scale.dat
 
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+
 permissions:
   contents: write
 
 jobs:
+  validate-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test version mismatch rejection
+        run: python -m unittest discover -s scripts/tests -v
+      - name: Verify tag and all package versions
+        run: python scripts/check-release-version.py "$RELEASE_TAG"
+
   build-mac:
+    needs: validate-release
+    timeout-minutes: 45
     strategy:
       matrix:
         include:
@@ -54,15 +71,10 @@ jobs:
 
       - name: Install Python dependencies for PyInstaller
         run: |
-          pip install pyinstaller
-          pip install flask==2.2.3 flask-cors==3.0.10 werkzeug==2.2.2
-          pip install numpy pandas opencv-python pillow
-          pip install dlib
-          pip install onnxruntime
-          pip install pydicom python-dotenv
-          pip install prometheus-client psutil
-          pip install matplotlib
-          pip install pyobjc-framework-Vision pyobjc-framework-Quartz pyobjc
+          python -m pip install "cmake>=3.28,<4" setuptools wheel
+          python -m pip install -r electron/requirements-build.txt
+          python -m pip check
+          python -c "import cv2, dlib, numpy, onnxruntime, pandas; print('Native imports OK:', numpy.__version__, onnxruntime.__version__)"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -71,7 +83,7 @@ jobs:
 
       - name: Build frontend
         env:
-          VITE_RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
+          VITE_RELEASE_VERSION: ${{ env.RELEASE_TAG }}
         run: |
           cd frontend
           npm ci
@@ -92,6 +104,9 @@ jobs:
         env:
           PYTHON_PATH: python
 
+      - name: Test packaged export
+        run: python scripts/smoke-desktop-export.py electron/dist/backend/app
+
       - name: Package Electron app
         run: |
           cd electron
@@ -102,9 +117,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dmg-${{ matrix.arch }}
+          if-no-files-found: error
           path: electron/release/*.dmg
 
   build-win:
+    needs: validate-release
+    timeout-minutes: 45
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -125,16 +143,10 @@ jobs:
 
       - name: Install Python dependencies for PyInstaller
         run: |
-          pip install pyinstaller
-          pip install flask==2.2.3 flask-cors==3.0.10 werkzeug==2.2.2
-          pip install numpy pandas opencv-python pillow
-          pip install cmake
-          pip install dlib
-          pip install onnxruntime
-          pip install pydicom python-dotenv
-          pip install prometheus-client psutil
-          pip install matplotlib
-          pip install winocr
+          python -m pip install "cmake>=3.28,<4" setuptools wheel
+          python -m pip install -r electron/requirements-build.txt
+          python -m pip check
+          python -c "import cv2, dlib, numpy, onnxruntime, pandas; print('Native imports OK:', numpy.__version__, onnxruntime.__version__)"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -143,7 +155,7 @@ jobs:
 
       - name: Build frontend
         env:
-          VITE_RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
+          VITE_RELEASE_VERSION: ${{ env.RELEASE_TAG }}
         run: |
           cd frontend
           npm ci
@@ -163,6 +175,9 @@ jobs:
             --workpath "$PWD\build-temp" `
             --clean -y
 
+      - name: Test packaged export
+        run: python scripts/smoke-desktop-export.py electron/dist/backend/app.exe
+
       - name: Package Electron app
         run: |
           cd electron
@@ -173,9 +188,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: exe-win
+          if-no-files-found: error
           path: electron/release/*.exe
 
   build-linux:
+    needs: validate-release
+    timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -200,14 +218,10 @@ jobs:
 
       - name: Install Python dependencies for PyInstaller
         run: |
-          pip install pyinstaller
-          pip install flask==2.2.3 flask-cors==3.0.10 werkzeug==2.2.2
-          pip install numpy pandas opencv-python pillow
-          pip install dlib
-          pip install onnxruntime
-          pip install pydicom python-dotenv
-          pip install prometheus-client psutil
-          pip install matplotlib
+          python -m pip install "cmake>=3.28,<4" setuptools wheel
+          python -m pip install -r electron/requirements-build.txt
+          python -m pip check
+          python -c "import cv2, dlib, numpy, onnxruntime, pandas; print('Native imports OK:', numpy.__version__, onnxruntime.__version__)"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -216,7 +230,7 @@ jobs:
 
       - name: Build frontend
         env:
-          VITE_RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
+          VITE_RELEASE_VERSION: ${{ env.RELEASE_TAG }}
         run: |
           cd frontend
           npm ci
@@ -237,6 +251,9 @@ jobs:
         env:
           PYTHON_PATH: python
 
+      - name: Test packaged export
+        run: python scripts/smoke-desktop-export.py electron/dist/backend/app
+
       - name: Package Electron app
         run: |
           cd electron
@@ -247,6 +264,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linux-binaries
+          if-no-files-found: error
           path: |
             electron/release/*.AppImage
             electron/release/*.deb
@@ -266,9 +284,11 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name || github.event.inputs.version }}
-          name: AutoMorph ${{ github.ref_name || github.event.inputs.version }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
+          name: AutoMorph ${{ env.RELEASE_TAG }}
           draft: true
+          fail_on_unmatched_files: true
           files: |
             artifacts/dmg-arm64/*.dmg
             artifacts/dmg-x64/*.dmg
