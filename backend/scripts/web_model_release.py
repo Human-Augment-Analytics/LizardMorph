@@ -74,9 +74,10 @@ def sync_mlflow(uri, state):
             continue
         if tags.get('web_deployment_owner') != owner:
             continue  # Never erase aliases belonging to another deployment tool.
-        alias = call('GET', 'registered-models/alias', params={
-            'name': registry['name'], 'alias': 'web-production'})
-        if alias and alias['model_version']['version'] == registry['version']:
+        model = call('GET', 'registered-models/get', params={'name': registry['name']})
+        aliases = {item['alias']: item['version'] for item in
+                   (model or {}).get('registered_model', {}).get('aliases', [])}
+        if aliases.get('web-production') == registry['version']:
             call('DELETE', 'registered-models/alias', json={
                 'name': registry['name'], 'alias': 'web-production'})
         set_tag(registry, 'web_deployment_state', 'retired')

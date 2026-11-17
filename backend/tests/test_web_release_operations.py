@@ -24,8 +24,8 @@ def test_legacy_rollback_retires_only_owned_alias(monkeypatch):
             data = {'model_version': {'run_id': 'c' * 32, 'version': '1', 'tags': [
                 {'key': 'bundle_sha256', 'value': 'b' * 64},
                 {'key': 'web_deployment_owner', 'value': 'lizard-web-updater'}]}}
-        elif method == 'GET' and url.endswith('/registered-models/alias'):
-            data = {'model_version': {'version': '1'}}
+        elif method == 'GET' and url.endswith('/registered-models/get'):
+            data = {'registered_model': {'aliases': [{'alias': 'web-production', 'version': '1'}]}}
         else:
             data = {}
         return SimpleNamespace(status_code=200, raise_for_status=lambda: None, json=lambda: data)
@@ -44,8 +44,8 @@ def test_cross_model_switch_removes_old_alias_and_sets_new(monkeypatch):
             data = {'model_version': {'run_id': 'c' * 32, 'tags': [
                 {'key': 'bundle_sha256', 'value': 'b' * 64},
                 {'key': 'web_deployment_owner', 'value': 'lizard-web-updater'}]}}
-        elif method == 'GET' and url.endswith('/registered-models/alias'):
-            data = {'model_version': {'version': '1'}}
+        elif method == 'GET' and url.endswith('/registered-models/get'):
+            data = {'registered_model': {'aliases': [{'alias': 'web-production', 'version': '1'}]}}
         else:
             data = {}
         return SimpleNamespace(status_code=200, raise_for_status=lambda: None, json=lambda: data)
@@ -69,18 +69,18 @@ def test_alias_is_not_changed_when_registry_identity_does_not_match(monkeypatch)
     assert methods == ['GET']
 
 
-def test_mlflow_2x_missing_history_alias_http400_does_not_block_sync(monkeypatch):
+def test_mlflow_2x_missing_history_version_http400_does_not_block_sync(monkeypatch):
     calls = []
     def request(method, url, **kwargs):
         calls.append((method, url))
+        if url.endswith('/model-versions/get') and kwargs.get('params', {}).get('name') == 'old':
+            return SimpleNamespace(status_code=400, json=lambda: {
+                'error_code': 'RESOURCE_DOES_NOT_EXIST'},
+                raise_for_status=lambda: pytest.fail('known absent MLflow version should be ignored'))
         if url.endswith('/model-versions/get'):
             data = {'model_version': {'run_id': 'c' * 32, 'tags': [
                 {'key': 'bundle_sha256', 'value': 'b' * 64},
                 {'key': 'web_deployment_owner', 'value': 'lizard-web-updater'}]}}
-        elif method == 'GET' and url.endswith('/registered-models/alias'):
-            return SimpleNamespace(status_code=400, json=lambda: {
-                'error_code': 'RESOURCE_DOES_NOT_EXIST'},
-                raise_for_status=lambda: pytest.fail('known absent MLflow alias should be ignored'))
         else:
             data = {}
         return SimpleNamespace(status_code=200, raise_for_status=lambda: None, json=lambda: data)
