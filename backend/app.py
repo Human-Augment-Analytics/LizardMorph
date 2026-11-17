@@ -57,6 +57,10 @@ import shutil
 import psutil
 import threading
 import uuid
+try:
+    from backend.production_selection import ProductionSelectionError, new_session_pin, select_model
+except ImportError:
+    from production_selection import ProductionSelectionError, new_session_pin, select_model
 from urllib.parse import quote
 
 def cleanup_frozen_temp_dir():
@@ -322,6 +326,11 @@ else:
 model_registry_repo = ModelRegistryRepository(
     db_mgr, models_dir=MODELS_DIR, runs_dir=RUNS_DIR
 )
+if os.getenv("WEB_MODEL_STATE_PATH"):
+    # Old sessions retain old releases on disk; do not retain every release's
+    # ONNX/dlib objects indefinitely in the long-lived hosted process.
+    os.environ.setdefault("MODEL_DETECTOR_CACHE_LIMIT", "1")
+    os.environ.setdefault("MODEL_PREDICTOR_CACHE_LIMIT", "4")
 generic_pipeline_engine = GenericPipelineEngine(model_registry_repo, models_dir=MODELS_DIR)
 project_repo = ProjectRepository(db_mgr)
 training_orchestrator = (
@@ -870,7 +879,7 @@ for folder in [
 
 # Initialize the export handler and session manager
 export_handler = ExportHandler(OUTPUTS_FOLDER)
-session_manager = SessionManager(SESSIONS_FOLDER, runtime_root=RUNTIME_ROOT)
+session_manager = SessionManager(SESSIONS_FOLDER, runtime_root=RUNTIME_ROOT, production_pin_factory=new_session_pin)
 
 # Initialize Prometheus metrics (no-op if prometheus_client missing)
 if Counter and Histogram and Gauge:
@@ -1488,8 +1497,16 @@ def cleanup_on_startup():
 def start_session():
     """Start a new session and return the session ID."""
     try:
-        session_id = get_session_id()
-        session_id = session_manager.create_session(session_id)
+        # SessionService.startNewSession deliberately omits X-Session-ID, but
+        # the browser may still send Flask's cookie. That is a new-analysis
+        # request, not permission to reuse the cookie's old production pin.
+        requested_id = request.headers.get("X-Session-ID")
+        if requested_id:
+            try:
+                requested_id = str(uuid.UUID(requested_id))
+            except (ValueError, TypeError, AttributeError):
+                return jsonify({"success": False, "error": "Invalid session identifier"}), 400
+        session_id = session_manager.create_session(requested_id or None)
         session["session_id"] = session_id
 
         logger.info(f"Started new session: {session_id}")
@@ -1606,7 +1623,8 @@ def upload():
         skip_prediction = request.form.get("skip_prediction", "false").lower() == "true"
 
         # Check for generic pipeline model_id (custom trained models)
-        model_id = request.form.get("model_id")
+        model_id = select_model(view_type, request.form.get("model_id"),
+                                session_data["session_folder"], predictor_type=toepad_predictor_type)
         generic_manifest = None
         generic_bundle_dir = None
         if model_id:
@@ -1841,6 +1859,9 @@ def upload():
                     continue
 
         return jsonify(all_data)
+
+    except ProductionSelectionError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 503
 
     except Exception as e:
         logger.error(f"Error in upload: {str(e)}", exc_info=True)
@@ -2192,6 +2213,8 @@ def process_existing():
         # Get session-specific folders
         session_id = get_session_id()
         session_data = get_session_folders(session_id)
+        model_id = select_model(view_type, model_id, session_data["session_folder"],
+                                predictor_type=toepad_predictor_type, filename=filename)
 
         image_path = os.path.join(session_data["upload_folder"], filename)
         
@@ -2348,6 +2371,9 @@ def process_existing():
             f"Processed existing image: {filename} for session: {session_id[:8]} with view type: {view_type}"
         )
         return jsonify(data)
+
+    except ProductionSelectionError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 503
 
     except Exception as e:
         logger.error(f"Error processing existing image: {str(e)}", exc_info=True)
@@ -2979,7 +3005,9 @@ def api_predict():
                 or "dorsal"
             ).lower()
             if view_type in ("toepad", "toepads"):
-                model_version_id = "lizard-toepad-v1"
+                session_data = get_session_folders(get_session_id())
+                model_version_id = select_model(view_type, None, session_data["session_folder"],
+                    predictor_type=request.form.get("toepad_predictor_type") or req_data.get("toepad_predictor_type", "toe")) or "lizard-toepad-v1"
             elif view_type == "lateral":
                 model_version_id = "lizard-lateral-v1"
             else:
@@ -3006,6 +3034,9 @@ def api_predict():
             "model_provenance": manifest.evaluation.get("registry"),
             "predictions": predictions,
         }), 200
+
+    except ProductionSelectionError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 503
 
     except Exception as e:
         logger.error(f"Error in /api/predict: {e}", exc_info=True)
