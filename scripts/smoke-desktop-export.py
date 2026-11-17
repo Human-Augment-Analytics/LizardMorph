@@ -93,7 +93,7 @@ def main():
         env = dict(os.environ)
         env.update(API_PORT=str(port), AUTOMORPH_DATA_DIR=str(work), DB_PATH=str(work / "test.db"), SESSION_DIR=str(work / "sessions"), RUNS_DIR=str(work / "runs"), PREDICTOR_LIBRARY_DIR=str(work / "predictors"), PYTHONUNBUFFERED="1")
         # Never inherit hosted production selections or a local dotenv file.
-        env.pop("WEB_MODEL_STATE_PATH", None)
+        env.update(WEB_MODEL_STATE_PATH="", PYTHON_DOTENV_DISABLED="1")
         with (work / "backend.log").open("w+") as log:
             proc = subprocess.Popen(command, cwd=work, env=env, stdout=log, stderr=log)
             try:
