@@ -358,7 +358,7 @@ export class MainView extends Component<MainProps, MainState> {
       uploadHistory: [...prevState.uploadHistory, ...newHistoryItems],
     }));
 
-    Promise.all(
+    Promise.allSettled(
       Array.from(files).map(async (file) => {
         try {
           // Update progress to 25% when starting upload
@@ -447,6 +447,7 @@ export class MainView extends Component<MainProps, MainState> {
 
           // Update state for each processed image as it finishes
           this.setState((prevState) => {
+            if (prevState.images.some((image) => image.name === processedImage.name)) return null;
             const updatedImages = [...prevState.images, processedImage];
             
             // Update the history item for this file
@@ -545,24 +546,22 @@ export class MainView extends Component<MainProps, MainState> {
               [file.name]: -1, // Use -1 to indicate error state
             },
           }));
-          // Re-throw the error so Promise.all can handle it
           throw err;
         }
       })
-    ).then(() => {
-      this.setState({
+    ).then((outcomes) => {
+      const failure = outcomes.find(
+        (outcome): outcome is PromiseRejectedResult => outcome.status === "rejected"
+      );
+      if (failure) console.error("Upload error:", failure.reason);
+      this.setState((prevState) => ({
+        dataError: !failure
+          ? prevState.dataError
+          : failure.reason instanceof Error ? failure.reason : new Error("Upload failed"),
         loading: false,
         dataLoading: false,
-        uploadProgress: {}, // Clear progress after completion
-      });
-    }).catch((err) => {
-      console.error("Upload error:", err);
-      this.setState({
-        dataError: err instanceof Error ? err : new Error("Upload failed"),
-        uploadProgress: {}, // Clear progress on error
-        loading: false,
-        dataLoading: false,
-      });
+        uploadProgress: {},
+      }));
     });
   };
   // This loads the image when the currentImageURL changes

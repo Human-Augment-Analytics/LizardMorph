@@ -102,4 +102,85 @@ describe("MainView upload history", () => {
     expect(view.state.images.map((image) => image.name)).toEqual([file.name]);
     expect(view.state.uploadHistory.map((image) => image.name)).toEqual([file.name]);
   });
+
+  function createEditor() {
+    const view = new MainView({ selectedViewType: "free" });
+    view.setState = ((update: unknown, callback?: () => void) => {
+      const nextState = typeof update === "function" ? update(view.state, view.props) : update;
+      view.state = { ...view.state, ...nextState };
+      callback?.();
+    }) as typeof view.setState;
+    const editor = view as unknown as {
+      handleUpload: (event: { target: { files: File[] } }) => Promise<void>;
+      loadImageFromUploads: (filename: string) => Promise<void>;
+    };
+    return { view, editor };
+  }
+
+  it("keeps a batch busy until every upload settles after an early failure", async () => {
+    const failed = new File(["a"], "failed.jpg", { type: "image/jpeg" });
+    const pending = new File(["b"], "pending.jpg", { type: "image/jpeg" });
+    let finishPending!: (images: { name: string; coords: [] }[]) => void;
+    vi.spyOn(ApiService, "uploadMultipleImages").mockImplementation((files) =>
+      files[0].name === failed.name
+        ? Promise.reject(new Error("failed.jpg rejected"))
+        : new Promise((resolve) => { finishPending = resolve; })
+    );
+    vi.spyOn(ApiService, "fetchImageSet").mockResolvedValue({
+      original: "/pending.jpg",
+      inverted: "/inverted.jpg",
+      color_contrasted: "/contrast.jpg",
+    });
+    const processExisting = vi.spyOn(ApiService, "processExistingImage").mockResolvedValue({
+      name: pending.name,
+      coords: [],
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { view, editor } = createEditor();
+
+    await editor.handleUpload({ target: { files: [failed, pending] } });
+    await vi.waitFor(() => expect(view.state.uploadProgress[failed.name]).toBe(-1));
+
+    expect(view.state.loading).toBe(true);
+    expect(view.state.uploadProgress[pending.name]).toBeDefined();
+    await editor.loadImageFromUploads(pending.name);
+    expect(processExisting).not.toHaveBeenCalled();
+
+    finishPending([{ name: pending.name, coords: [] }]);
+    await vi.waitFor(() => expect(view.state.loading).toBe(false));
+
+    expect(view.state.dataError?.message).toBe("failed.jpg rejected");
+    expect(view.state.uploadProgress).toEqual({});
+    expect(view.state.images.map((image) => image.name)).toEqual([pending.name]);
+  });
+
+  it("does not replace an already loaded image when its upload finishes later", async () => {
+    const file = new File(["image"], "specimen.jpg", { type: "image/jpeg" });
+    const edited = [{ id: 1, x: 40, y: 50 }];
+    vi.spyOn(ApiService, "uploadMultipleImages").mockResolvedValue([
+      { name: file.name, coords: [{ id: 1, x: 1, y: 2 }] },
+    ]);
+    vi.spyOn(ApiService, "fetchImageSet").mockResolvedValue({
+      original: "/specimen.jpg",
+      inverted: "/inverted.jpg",
+      color_contrasted: "/contrast.jpg",
+    });
+    const { view, editor } = createEditor();
+    view.state = {
+      ...view.state,
+      images: [{
+        name: file.name,
+        coords: edited,
+        originalCoords: edited,
+        imageSets: { original: "/specimen.jpg", inverted: "", color_contrasted: "" },
+        timestamp: "From uploads folder",
+      }],
+    };
+
+    await editor.handleUpload({ target: { files: [file] } });
+    await vi.waitFor(() => expect(view.state.loading).toBe(false));
+
+    expect(view.state.images).toHaveLength(1);
+    expect(view.state.images[0].coords).toEqual(edited);
+  });
 });
