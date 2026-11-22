@@ -104,6 +104,11 @@ jobs:
         env:
           PYTHON_PATH: python
 
+      - name: Verify frozen backend architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch == 'x64' && 'x86_64' || 'arm64' }}
+        run: test "$(lipo -archs electron/dist/backend/app)" = "$EXPECTED_ARCH"
+
       - name: Test packaged export
         run: python scripts/smoke-desktop-export.py electron/dist/backend/app
 
@@ -118,7 +123,7 @@ jobs:
         with:
           name: dmg-${{ matrix.arch }}
           if-no-files-found: error
-          path: electron/release/*.dmg
+          path: electron/release/*-${{ matrix.arch }}.dmg
 
   build-win:
     needs: validate-release
@@ -290,8 +295,8 @@ jobs:
           draft: true
           fail_on_unmatched_files: true
           files: |
-            artifacts/dmg-arm64/*.dmg
-            artifacts/dmg-x64/*.dmg
+            artifacts/dmg-arm64/*-arm64.dmg
+            artifacts/dmg-x64/*-x64.dmg
             artifacts/exe-win/*.exe
             artifacts/linux-binaries/*.AppImage
             artifacts/linux-binaries/*.deb
