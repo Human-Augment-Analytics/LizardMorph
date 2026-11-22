@@ -9,10 +9,14 @@ on:
       version:
         description: 'Version tag (e.g. v1.0.1)'
         required: true
-      intel_only:
-        description: 'Build and upload only the Intel Mac installer'
-        type: boolean
-        default: false
+      platform:
+        description: 'Build all installers or rebuild one platform without changing the release'
+        type: choice
+        options:
+          - all
+          - mac-intel
+          - linux
+        default: all
 
 # Upload models as a GitHub release asset named "models.tar.gz" on a release
 # tagged "models" before running this workflow. The archive should contain:
@@ -43,11 +47,12 @@ jobs:
         run: python scripts/check-release-version.py "$RELEASE_TAG"
 
   build-mac:
+    if: ${{ inputs.platform != 'linux' }}
     needs: validate-release
     timeout-minutes: 45
     strategy:
       matrix:
-        include: ${{ fromJSON(inputs.intel_only
+        include: ${{ fromJSON(inputs.platform == 'mac-intel'
           && '[{"arch":"x64","runner":"macos-15-intel"}]'
           || '[{"arch":"arm64","runner":"macos-15"},{"arch":"x64","runner":"macos-15-intel"}]') }}
     runs-on: ${{ matrix.runner }}
@@ -128,7 +133,7 @@ jobs:
           path: electron/release/*-${{ matrix.arch }}.dmg
 
   build-win:
-    if: ${{ !inputs.intel_only }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' }}
     needs: validate-release
     timeout-minutes: 45
     runs-on: windows-latest
@@ -200,10 +205,11 @@ jobs:
           path: electron/release/*.exe
 
   build-linux:
-    if: ${{ !inputs.intel_only }}
+    if: ${{ inputs.platform != 'mac-intel' }}
     needs: validate-release
     timeout-minutes: 45
-    runs-on: ubuntu-latest
+    # Keep the frozen app compatible with glibc on Ubuntu 22.04 and newer.
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -279,7 +285,7 @@ jobs:
             electron/release/*.deb
 
   create-release:
-    if: ${{ !inputs.intel_only }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' }}
     needs: [build-mac, build-win, build-linux]
     runs-on: ubuntu-latest
     steps:
