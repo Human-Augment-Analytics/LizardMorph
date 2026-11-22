@@ -335,7 +335,7 @@ export class MainView extends Component<MainProps, MainState> {
     e: React.ChangeEvent<HTMLInputElement>
   ): Promise<void> => {
     const files = e.target.files;
-    if (!files || files.length === 0) return;
+    if (!files || files.length === 0 || this.state.loading) return;
 
     this.setState({ loading: true, dataLoading: true, dataError: null });
     
@@ -447,7 +447,6 @@ export class MainView extends Component<MainProps, MainState> {
 
           // Update state for each processed image as it finishes
           this.setState((prevState) => {
-            if (prevState.images.some((image) => image.name === processedImage.name)) return null;
             const updatedImages = [...prevState.images, processedImage];
             
             // Update the history item for this file

@@ -154,33 +154,27 @@ describe("MainView upload history", () => {
     expect(view.state.images.map((image) => image.name)).toEqual([pending.name]);
   });
 
-  it("does not replace an already loaded image when its upload finishes later", async () => {
+  it("ignores a new upload while a history image is still processing", async () => {
     const file = new File(["image"], "specimen.jpg", { type: "image/jpeg" });
-    const edited = [{ id: 1, x: 40, y: 50 }];
-    vi.spyOn(ApiService, "uploadMultipleImages").mockResolvedValue([
-      { name: file.name, coords: [{ id: 1, x: 1, y: 2 }] },
-    ]);
+    let finishProcessing!: (image: { name: string; coords: [] }) => void;
+    vi.spyOn(ApiService, "processExistingImage").mockImplementation(
+      () => new Promise((resolve) => { finishProcessing = resolve; })
+    );
     vi.spyOn(ApiService, "fetchImageSet").mockResolvedValue({
-      original: "/specimen.jpg",
+      original: "/history.jpg",
       inverted: "/inverted.jpg",
       color_contrasted: "/contrast.jpg",
     });
+    const upload = vi.spyOn(ApiService, "uploadMultipleImages");
     const { view, editor } = createEditor();
-    view.state = {
-      ...view.state,
-      images: [{
-        name: file.name,
-        coords: edited,
-        originalCoords: edited,
-        imageSets: { original: "/specimen.jpg", inverted: "", color_contrasted: "" },
-        timestamp: "From uploads folder",
-      }],
-    };
 
+    const historyLoad = editor.loadImageFromUploads("history.jpg");
     await editor.handleUpload({ target: { files: [file] } });
-    await vi.waitFor(() => expect(view.state.loading).toBe(false));
+    finishProcessing({ name: "history.jpg", coords: [] });
+    await historyLoad;
 
-    expect(view.state.images).toHaveLength(1);
-    expect(view.state.images[0].coords).toEqual(edited);
+    expect(upload).not.toHaveBeenCalled();
+    expect(view.state.uploadHistory.map((item) => item.name)).not.toContain(file.name);
+    expect(view.state.images.map((image) => image.name)).toEqual(["history.jpg"]);
   });
 });
