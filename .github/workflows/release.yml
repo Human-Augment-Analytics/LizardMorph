@@ -10,7 +10,7 @@ on:
         description: 'Version tag (e.g. v1.0.1)'
         required: true
       intel_only:
-        description: 'Build only the Intel Mac installer from the version tag'
+        description: 'Build and upload only the Intel Mac installer'
         type: boolean
         default: false
 
@@ -34,8 +34,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.intel_only && format('refs/tags/{0}', inputs.version) || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -56,8 +54,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.intel_only && format('refs/tags/{0}', inputs.version) || github.sha }}
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5

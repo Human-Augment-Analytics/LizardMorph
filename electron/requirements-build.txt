@@ -3,7 +3,9 @@
 pyinstaller==6.22.2
 pyinstaller-hooks-contrib==2026.7
 numpy==2.5.2
-onnxruntime==1.29.0
+# 1.23.2 supplies the last macOS Intel wheel.
+onnxruntime==1.23.2; sys_platform == 'darwin' and platform_machine == 'x86_64'
+onnxruntime==1.29.0; sys_platform != 'darwin' or platform_machine != 'x86_64'
 opencv-python==5.0.0.93
 pandas==3.0.5
 pillow==12.3.0
