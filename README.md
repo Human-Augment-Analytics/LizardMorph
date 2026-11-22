@@ -293,7 +293,7 @@ tail -n 200 /var/log/automorph/deploy.log
 1. Open a terminal and run `make dev`.
 2. Navigate to http://localhost:5173 (or your specific port)
 3. Hit upload on the webpage and select the picture from the folder `sample_image` in the project directory.
-4. Use the export controls to download annotations. Keep the raw predictions and manually corrected exports separately; outputs are associated with the active session.
+4. Use the export controls to download annotations. Keep the raw predictions and manually corrected exports separately; outputs are associated with the active session. After you edit landmarks, refreshing or leaving the page asks you to confirm until **Export All Data** succeeds; staying on the page keeps your edits.
 5. Image should appear in the web browser. Landmarks on image can be moved to fix predictions.
 6. Image can be viewed in three ways: original upload, color contrasted or inverted color.
 7. Image can be downloaded for records.
