@@ -9,6 +9,10 @@ on:
       version:
         description: 'Version tag (e.g. v1.0.1)'
         required: true
+      intel_only:
+        description: 'Build only the Intel Mac installer from the version tag'
+        type: boolean
+        default: false
 
 # Upload models as a GitHub release asset named "models.tar.gz" on a release
 # tagged "models" before running this workflow. The archive should contain:
@@ -30,6 +34,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.intel_only && format('refs/tags/{0}', inputs.version) || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -43,21 +49,21 @@ jobs:
     timeout-minutes: 45
     strategy:
       matrix:
-        include:
-          - arch: arm64
-            python-arch: arm64
-          - arch: x64
-            python-arch: x64
-    runs-on: macos-15
+        include: ${{ fromJSON(inputs.intel_only
+          && '[{"arch":"x64","runner":"macos-15-intel"}]'
+          || '[{"arch":"arm64","runner":"macos-15"},{"arch":"x64","runner":"macos-15-intel"}]') }}
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.intel_only && format('refs/tags/{0}', inputs.version) || github.sha }}
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          architecture: ${{ matrix.python-arch }}
+          architecture: ${{ matrix.arch }}
 
       - name: Install system dependencies
         run: brew install cmake
@@ -126,6 +132,7 @@ jobs:
           path: electron/release/*-${{ matrix.arch }}.dmg
 
   build-win:
+    if: ${{ !inputs.intel_only }}
     needs: validate-release
     timeout-minutes: 45
     runs-on: windows-latest
@@ -197,6 +204,7 @@ jobs:
           path: electron/release/*.exe
 
   build-linux:
+    if: ${{ !inputs.intel_only }}
     needs: validate-release
     timeout-minutes: 45
     runs-on: ubuntu-latest
@@ -275,6 +283,7 @@ jobs:
             electron/release/*.deb
 
   create-release:
+    if: ${{ !inputs.intel_only }}
     needs: [build-mac, build-win, build-linux]
     runs-on: ubuntu-latest
     steps:
