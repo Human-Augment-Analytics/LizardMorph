@@ -54,3 +54,52 @@ describe("MainView free predictor panel", () => {
     expect(view.state.availablePredictors[0]?.id).toBe("predictor-1");
   });
 });
+
+describe("MainView upload history", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("does not auto-load an image that an active upload is already processing", async () => {
+    const file = new File(["image"], "specimen.jpg", { type: "image/jpeg" });
+    let finishList!: (files: { filename: string; view_type: string }[]) => void;
+    vi.spyOn(ApiService, "fetchUploadedFiles").mockImplementation(
+      () => new Promise((resolve) => { finishList = resolve; })
+    );
+    let finishUpload!: (images: { name: string; coords: [] }[]) => void;
+    vi.spyOn(ApiService, "uploadMultipleImages").mockImplementation(
+      () => new Promise((resolve) => { finishUpload = resolve; })
+    );
+    vi.spyOn(ApiService, "fetchImageSet").mockResolvedValue({
+      original: "/specimen.jpg",
+      inverted: "/inverted.jpg",
+      color_contrasted: "/contrast.jpg",
+    });
+    const processExisting = vi.spyOn(ApiService, "processExistingImage").mockResolvedValue({
+      name: file.name,
+      coords: [],
+    });
+
+    const view = new MainView({ selectedViewType: "free" });
+    view.setState = ((update: unknown, callback?: () => void) => {
+      const nextState = typeof update === "function" ? update(view.state, view.props) : update;
+      view.state = { ...view.state, ...nextState };
+      callback?.();
+    }) as typeof view.setState;
+    const editor = view as unknown as {
+      fetchUploadedFiles: () => Promise<void>;
+      handleUpload: (event: { target: { files: File[] } }) => Promise<void>;
+      loadImageFromUploads: (filename: string) => Promise<void>;
+    };
+
+    const history = editor.fetchUploadedFiles();
+    await editor.handleUpload({ target: { files: [file] } });
+    finishList([{ filename: file.name, view_type: "free" }]);
+    await history;
+    await editor.loadImageFromUploads(file.name);
+    finishUpload([{ name: file.name, coords: [] }]);
+    await vi.waitFor(() => expect(view.state.loading).toBe(false));
+
+    expect(processExisting).not.toHaveBeenCalled();
+    expect(view.state.images.map((image) => image.name)).toEqual([file.name]);
+    expect(view.state.uploadHistory.map((image) => image.name)).toEqual([file.name]);
+  });
+});

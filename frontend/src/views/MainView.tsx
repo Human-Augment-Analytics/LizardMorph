@@ -1002,39 +1002,35 @@ export class MainView extends Component<MainProps, MainState> {
       const files = await ApiService.fetchUploadedFiles();
 
       const validFileNames = new Set(files.map((fileObj) => fileObj.filename));
-      const filteredHistory = this.state.uploadHistory.filter((item) =>
-        validFileNames.has(item.name)
-      );
+      this.setState((prevState) => {
+        const uploadHistory = prevState.uploadHistory.filter((item) =>
+          validFileNames.has(item.name) || prevState.uploadProgress[item.name] !== undefined
+        );
+        const knownNames = new Set(uploadHistory.map((item) => item.name));
 
-      const currentFileNames = new Set(
-        filteredHistory.map((item) => item.name)
-      );
-      const newHistory = [...filteredHistory];
-
-      files.forEach((fileObj) => {
-        if (!currentFileNames.has(fileObj.filename)) {
-          newHistory.push({
-            name: fileObj.filename,
+        for (const { filename, view_type } of files) {
+          if (knownNames.has(filename)) continue;
+          uploadHistory.push({
+            name: filename,
             timestamp: "From uploads folder",
             index: -1, // Will be set when loaded
-            viewType: fileObj.view_type === "toepad" ? "toepads" : fileObj.view_type,
+            viewType: view_type === "toepad" ? "toepads" : view_type,
           });
+          knownNames.add(filename);
         }
-      });
+        return { uploadHistory, lizardCount: files.length };
+      }, () => {
+        // An upload can appear on the server before its response reaches the editor.
+        if (this.state.loading || this.state.imageFilename) return;
 
-      this.setState({ uploadHistory: newHistory });
-
-      // Update lizard count
-      this.setState({ lizardCount: files.length });
-
-      // AUTO-LOAD: If no image is currently selected, try to load the first image for the CURRENT view
-      if (!this.state.imageFilename && newHistory.length > 0) {
-        const firstInView = newHistory.find(h => h.viewType === this.props.selectedViewType);
+        const firstInView = this.state.uploadHistory.find(
+          (item) => item.viewType === this.props.selectedViewType
+        );
         if (firstInView) {
           console.log("Auto-loading first image for current view:", firstInView.name);
           this.loadImageFromUploads(firstInView.name);
         }
-      }
+      });
     } catch (error) {
       console.log("Error fetching upload directory files:", error);
       this.countUniqueImages();
@@ -1043,6 +1039,8 @@ export class MainView extends Component<MainProps, MainState> {
   private readonly loadImageFromUploads = async (
     filename: string
   ): Promise<void> => {
+    if (this.state.loading) return;
+
     try {
       this.setState({ loading: true, dataLoading: true });
 
@@ -1083,6 +1081,8 @@ export class MainView extends Component<MainProps, MainState> {
       };
 
       this.setState((prevState) => {
+        // Keep edits if another request loaded this image while processing was pending.
+        if (prevState.images.some((image) => image.name === filename)) return null;
         // Add to images array
         const updatedImages = [...prevState.images, newImage];
 
