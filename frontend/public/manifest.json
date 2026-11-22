@@ -1,6 +1,6 @@
 {
-  "short_name": "AutoMorph",
-  "name": "AutoMorph Analysis App",
+  "short_name": "ML-Morph Web",
+  "name": "ML-Morph Web",
   "icons": [
     {
       "src": "favicon.ico",

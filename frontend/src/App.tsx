@@ -1,5 +1,5 @@
 import React from "react";
-import { HashRouter as Router, Routes, Route, Navigate, useNavigate, useLocation, useParams } from "react-router-dom";
+import { createHashRouter, RouterProvider, Outlet, Navigate, useNavigate, useLocation, useParams } from "react-router-dom";
 import "./App.css";
 import { MainView } from "./views/MainView";
 import { LandingPage } from "./components/LandingPage";
@@ -17,7 +17,7 @@ const MainViewWrapper: React.FC<{ selectedViewType: LizardViewType }> = ({ selec
   const { modelId: routeModelId } = useParams<{ modelId?: string }>();
   const navigationState = location.state as { selectedModelId?: string } | null;
   const modelId = routeModelId ?? navigationState?.selectedModelId;
-  return <MainView selectedViewType={selectedViewType} modelId={modelId} onNavigateHome={() => navigate("/")} />;
+  return <MainView key={JSON.stringify([selectedViewType, modelId])} selectedViewType={selectedViewType} modelId={modelId} onNavigateHome={() => navigate("/")} />;
 };
 
 // Wrapper component for TrainView custom mode routing
@@ -68,27 +68,32 @@ const VersionInfo: React.FC = () => {
   );
 };
 
+const router = createHashRouter([
+  {
+    element: (
+      <ThemeProvider>
+        <Outlet />
+        <VersionInfo />
+      </ThemeProvider>
+    ),
+    children: [
+      { path: "/", element: <LandingPage /> },
+      { path: "/dorsal", element: <MainViewWrapper selectedViewType="dorsal" /> },
+      { path: "/lateral", element: <MainViewWrapper selectedViewType="lateral" /> },
+      { path: "/toepads", element: <MainViewWrapper selectedViewType="toepads" /> },
+      { path: "/toepad", element: <MainViewWrapper selectedViewType="toepads" /> },
+      { path: "/free", element: <MainViewWrapper selectedViewType="free" /> },
+      { path: "/custom-model", element: <MainViewWrapper selectedViewType="custom" /> },
+      { path: "/custom-model/:modelId", element: <MainViewWrapper selectedViewType="custom" /> },
+      { path: "/custom", element: <TrainViewWrapper /> },
+      ...(getModelApiUrl() ? [{ path: "/models", element: <ModelsView /> }] : []),
+      { path: "*", element: <Navigate to="/" replace /> },
+    ],
+  },
+]);
+
 function App() {
-  return (
-    <ThemeProvider>
-    <Router>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/dorsal" element={<MainViewWrapper selectedViewType="dorsal" />} />
-        <Route path="/lateral" element={<MainViewWrapper selectedViewType="lateral" />} />
-        <Route path="/toepads" element={<MainViewWrapper selectedViewType="toepads" />} />
-        <Route path="/toepad" element={<MainViewWrapper selectedViewType="toepads" />} />
-        <Route path="/free" element={<MainViewWrapper selectedViewType="free" />} />
-        <Route path="/custom-model" element={<MainViewWrapper selectedViewType="custom" />} />
-        <Route path="/custom-model/:modelId" element={<MainViewWrapper selectedViewType="custom" />} />
-        <Route path="/custom" element={<TrainViewWrapper />} />
-        {getModelApiUrl() && <Route path="/models" element={<ModelsView />} />}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-      <VersionInfo />
-    </Router>
-    </ThemeProvider>
-  );
+  return <RouterProvider router={router} />;
 }
 
 export default App;

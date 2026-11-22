@@ -26,12 +26,12 @@ const PROBE_TOTAL_TIMEOUT: Duration = Duration::from_millis(2000);
 const PROBE_INTERVAL: Duration = Duration::from_millis(250);
 const PROBE_RESPONSE_LIMIT: usize = 4096;
 
-const BACKEND_PORT_IN_USE_MESSAGE: &str = "AutoMorph could not start its analysis backend because another program is already using port 3005. Quit that program — including any earlier copy of AutoMorph — and open AutoMorph again.";
+const BACKEND_PORT_IN_USE_MESSAGE: &str = "ML-Morph Web could not start its analysis backend because another program is already using port 3005. Quit that program — including any earlier copy of this app — and open ML-Morph Web again.";
 const BACKEND_START_FAILED_MESSAGE: &str =
-    "AutoMorph could not start its analysis backend. Restart AutoMorph; if this keeps happening, reinstall it.";
+    "ML-Morph Web could not start its analysis backend. Restart ML-Morph Web; if this keeps happening, reinstall it.";
 const BACKEND_STOPPED_MESSAGE: &str =
-    "AutoMorph's analysis backend stopped unexpectedly. Restart AutoMorph to continue.";
-const BACKEND_NOT_RUNNING_MESSAGE: &str = "AutoMorph's analysis backend is not answering on 127.0.0.1:3005. Start it with 'make dev' (or 'make dev-backend') and reload this window.";
+    "ML-Morph Web's analysis backend stopped unexpectedly. Restart ML-Morph Web to continue.";
+const BACKEND_NOT_RUNNING_MESSAGE: &str = "ML-Morph Web's analysis backend is not answering on 127.0.0.1:3005. Start it with 'make dev' (or 'make dev-backend') and reload this window.";
 
 #[derive(Default)]
 struct BackendProcess {
@@ -44,7 +44,7 @@ struct BackendProcess {
 
 fn overlay_script(message: &str) -> String {
     let message = serde_json::to_string(message)
-        .unwrap_or_else(|_| String::from("\"AutoMorph's analysis backend is unavailable.\""));
+        .unwrap_or_else(|_| String::from("\"ML-Morph Web's analysis backend is unavailable.\""));
     format!(
         "(function(){{var m={message};function render(){{var e=document.getElementById('automorph-backend-error');if(!e){{e=document.createElement('div');e.id='automorph-backend-error';e.setAttribute('role','alert');e.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:32px;background:#1b1b1f;color:#f5f5f5;font:16px/1.5 system-ui,sans-serif;text-align:center';(document.body||document.documentElement).appendChild(e);}}e.textContent=m;}}if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded',render);}}else{{render();}}}})()"
     )
@@ -61,7 +61,7 @@ fn open_startup_window(app_handle: &tauri::AppHandle) {
         SPLASH_WINDOW_LABEL,
         WebviewUrl::App("splash.html".into()),
     )
-    .title("Starting AutoMorph")
+    .title("Starting ML-Morph Web")
     .inner_size(460.0, 240.0)
     .resizable(false)
     .center()
@@ -281,7 +281,7 @@ fn supervise_backend(app_handle: tauri::AppHandle, supervisor: Option<String>) {
 
         if !ready {
             eprintln!(
-                "AutoMorph backend never answered /health on 127.0.0.1:{BACKEND_PORT} within {} seconds",
+                "ML-Morph Web backend never answered /health on 127.0.0.1:{BACKEND_PORT} within {} seconds",
                 ready_timeout.as_secs()
             );
         }
@@ -350,7 +350,7 @@ fn spawn_backend(
                 CommandEvent::Error(error) => eprintln!("[backend] {error}"),
                 CommandEvent::Terminated(payload) => {
                     eprintln!(
-                        "AutoMorph backend process {pid} exited (code: {:?}, signal: {:?})",
+                        "ML-Morph Web backend process {pid} exited (code: {:?}, signal: {:?})",
                         payload.code, payload.signal
                     );
                     let lost_while_running = {

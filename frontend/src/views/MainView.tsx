@@ -10,6 +10,7 @@ import type { Measurement } from "../models/Measurement";
 import type { LizardViewType } from "../components/LandingPage";
 import type { BoundingBox } from "../models/AnnotationsData";
 
+import { LandmarkLeaveWarning } from "../components/LandmarkLeaveWarning";
 import { Header } from "../components/Header";
 import { NavigationControls } from "../components/NavigationControls";
 import { ImageVersionControls } from "../components/ImageVersionControls";
@@ -27,6 +28,8 @@ import { FreePredictorPanel } from "../components/FreePredictorPanel";
 import type { PredictorMeta } from "../services/ApiService";
 
 interface MainState {
+  editRevision: number;
+  exportedRevision: number;
   currentImageIndex: number;
   images: ProcessedImage[];
   needsScaling: boolean;
@@ -84,6 +87,8 @@ export class MainView extends Component<MainProps, MainState> {
   readonly svgRef = createRef<SVGSVGElement>();
   readonly zoomRef = createRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
   state: MainState = {
+    editRevision: 0,
+    exportedRevision: 0,
     currentImageIndex: 0,
     images: [],
     needsScaling: true,
@@ -145,7 +150,7 @@ export class MainView extends Component<MainProps, MainState> {
   }
   private async initializeApp(): Promise<void> {
     try {
-      console.log("Initializing AutoMorph app...");
+      console.log("Initializing ML-Morph Web app...");
 
       // Initialize session management (will reuse existing session if available)
       await ApiService.initialize();
@@ -172,7 +177,6 @@ export class MainView extends Component<MainProps, MainState> {
 
       console.log("Initialized view type:", this.props.selectedViewType);
       
-      // Removed setupBeforeUnloadHandler(); to ensure session persists across refreshes
       this.fetchUploadedFiles();
       this.countUniqueImages();
     } catch (error) {
@@ -304,13 +308,14 @@ export class MainView extends Component<MainProps, MainState> {
       this.setState({ dataLoading: true, dataError: null });
       const result = await ApiService.freeAutoplace(filename, predictorId);
       const coords = (result.coords ?? []) as Point[];
-      this.setState({
+      this.setState((prevState) => ({
+        editRevision: prevState.editRevision + 1,
         scatterData: coords,
         originalScatterData: JSON.parse(JSON.stringify(coords)),
         needsScaling: true,
         selectedPoint: null,
         currentBoundingBoxes: result.bounding_boxes || [],
-      });
+      }));
     } catch (e) {
       this.setState({
         dataError: e instanceof Error ? e : new Error("Auto-place failed"),
@@ -780,6 +785,7 @@ export class MainView extends Component<MainProps, MainState> {
     try {
       this.setState({ loading: true });
 
+      const { editRevision } = this.state;
       const result = await ExportService.exportAllData(
         this.state.images,
         this.state.currentImageIndex,
@@ -795,6 +801,7 @@ export class MainView extends Component<MainProps, MainState> {
           `Some files failed to download: ${result.failedFiles} of ${result.totalFiles}`
         );
       } else {
+        this.setState({ exportedRevision: editRevision });
         alert(
           `Successfully downloaded ${result.successfulFiles} TPS file(s) and annotated image(s)`
         );
@@ -830,7 +837,8 @@ export class MainView extends Component<MainProps, MainState> {
       SessionService.clearSession();
       
       // Reset all frontend state completely
-      this.setState({
+      this.setState((prevState) => ({
+        exportedRevision: prevState.editRevision,
         uploadHistory: [],
         images: [],
         uploadProgress: {},
@@ -856,7 +864,7 @@ export class MainView extends Component<MainProps, MainState> {
         downloadData: [],
         selectedImageVersion: "original",
         dataError: null,
-      });
+      }));
 
       // Start fresh session
       try {
@@ -1120,7 +1128,21 @@ export class MainView extends Component<MainProps, MainState> {
     scatterData: Point[],
     originalScatterData: Point[]
   ): void => {
-    this.setState({ scatterData, originalScatterData });
+    this.setState((prevState) => {
+      // Display scaling changes the rendered points while keeping image coordinates intact.
+      const previousPoints = prevState.originalScatterData;
+      const landmarksChanged = previousPoints !== originalScatterData &&
+        (previousPoints.length !== originalScatterData.length ||
+          originalScatterData.some((point, index) => {
+            const previous = previousPoints[index];
+            return point.id !== previous.id || point.x !== previous.x || point.y !== previous.y;
+          }));
+      return {
+        scatterData,
+        originalScatterData,
+        editRevision: prevState.editRevision + Number(landmarksChanged),
+      };
+    });
   };
 
   private readonly handleScalingComplete = (): void => {
@@ -1132,11 +1154,11 @@ export class MainView extends Component<MainProps, MainState> {
   };
 
   private readonly handleScaleSettingsChange = (scaleSettings: ScaleSettings): void => {
-    this.setState({ scaleSettings });
+    this.setState((prevState) => ({ scaleSettings, editRevision: prevState.editRevision + 1 }));
   };
 
   private readonly handleMeasurementsChange = (measurements: Measurement[]): void => {
-    this.setState({ measurements });
+    this.setState((prevState) => ({ measurements, editRevision: prevState.editRevision + 1 }));
   };
 
   private readonly handleToggleEditMode = (): void => {
@@ -1164,6 +1186,7 @@ export class MainView extends Component<MainProps, MainState> {
     const mainStyles = getMainViewStyles(theme);
     return (
       <div style={mainStyles.container}>
+        {this.state.editRevision !== this.state.exportedRevision && <LandmarkLeaveWarning />}
         {this.state.sessionReady && <SessionInfo onNavigateHome={this.props.onNavigateHome} theme={theme} themePreference={themePreference} onThemeChange={setThemePref} />}
         <Header
           lizardCount={this.state.lizardCount}

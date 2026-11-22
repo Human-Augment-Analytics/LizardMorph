@@ -196,7 +196,7 @@ export class Header extends Component<HeaderProps, HeaderState> {
               >
                 <img
                   src={lizard_logo}
-                  alt="AutoMorph Logo"
+                  alt="ML-Morph Web Logo"
                   style={{
                     height: "40px",
                     width: "40px",
@@ -209,7 +209,7 @@ export class Header extends Component<HeaderProps, HeaderState> {
                   ? "Free Mode — Manual Landmarking"
                   : isCustom && modelName
                     ? modelName
-                    : "AutoMorph"}
+                    : "ML-Morph Web"}
               </h2>
             </div>
             <p style={styles.viewType}>

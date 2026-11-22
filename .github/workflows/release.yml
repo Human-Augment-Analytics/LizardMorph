@@ -286,7 +286,7 @@ jobs:
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           target_commitish: ${{ github.sha }}
-          name: AutoMorph ${{ env.RELEASE_TAG }}
+          name: ML-Morph Web ${{ env.RELEASE_TAG }}
           draft: true
           fail_on_unmatched_files: true
           files: |
@@ -300,11 +300,11 @@ jobs:
 
             | Platform | File | Notes |
             |----------|------|-------|
-            | macOS (Apple Silicon) | `AutoMorph-*-arm64.dmg` | M1/M2/M3/M4 Macs |
-            | macOS (Intel) | `AutoMorph-*-x64.dmg` | 2015–2020 Intel Macs |
-            | Windows | `AutoMorph.Setup.*.exe` | Windows 10+ |
-            | Linux (AppImage) | `AutoMorph-*.AppImage` | Universal Linux (Ubuntu, Fedora, Arch, etc.) |
-            | Linux (Debian/Ubuntu) | `AutoMorph_*_amd64.deb` | Debian / Ubuntu / Mint |
+            | macOS (Apple Silicon) | `*-arm64.dmg` | M1/M2/M3/M4 Macs |
+            | macOS (Intel) | `*-x64.dmg` | 2015–2020 Intel Macs |
+            | Windows | `*.exe` | Windows 10+ |
+            | Linux (AppImage) | `*.AppImage` | Universal Linux (Ubuntu, Fedora, Arch, etc.) |
+            | Linux (Debian/Ubuntu) | `*_amd64.deb` | Debian / Ubuntu / Mint |
 
             ### macOS: Which download do I need?
             - Click  → **About This Mac**

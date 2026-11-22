@@ -30,14 +30,14 @@ describe("LandingPage Component", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the AutoMorph hero title and preinstalled modes", () => {
+  it("renders the ML-Morph Web hero title and preinstalled modes", () => {
     const markup = renderToStaticMarkup(
       <MemoryRouter>
         <LandingPage />
       </MemoryRouter>
     );
 
-    expect(markup).toContain("AutoMorph");
+    expect(markup).toContain("ML-Morph Web");
     expect(markup).toContain("Select a preinstalled lizard model");
     expect(markup).toContain("Dorsal View");
     expect(markup).toContain("Lateral View");

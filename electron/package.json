@@ -1,7 +1,7 @@
 {
   "name": "automorph",
-  "version": "1.2.1",
-  "description": "AutoMorph - Automated lizard morphology analysis",
+  "version": "1.2.2",
+  "description": "ML-Morph Web - Automated morphology analysis",
   "author": "Human Augment Analytics <info@humanaugmentanalytics.com>",
   "homepage": "https://github.com/Human-Augment-Analytics/LizardMorph",
   "main": "main.js",
@@ -20,7 +20,7 @@
   },
   "build": {
     "appId": "com.lizardmorph.desktop",
-    "productName": "AutoMorph",
+    "productName": "ML-Morph Web",
     "directories": {
       "output": "release"
     },

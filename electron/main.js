@@ -41,8 +41,20 @@ async function createWindow() {
     icon: path.join(__dirname, "icons", "icon.png"),
   });
 
+  mainWindow.webContents.on("will-prevent-unload", (event) => {
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: "warning",
+      title: "Leave this page?",
+      message: "Your unexported landmarking changes will be lost.",
+      buttons: ["Stay", "Leave"],
+      defaultId: 0,
+      cancelId: 0,
+    });
+    if (choice === 1) event.preventDefault();
+  });
+
   mainWindow.loadURL(
-    "data:text/html,<html><body style='display:flex;justify-content:center;align-items:center;height:100vh;font-family:system-ui;background:%23f5f5f5'><div style='text-align:center'><h1>AutoMorph</h1><p>Starting backend server...</p></div></body></html>"
+    "data:text/html,<html><body style='display:flex;justify-content:center;align-items:center;height:100vh;font-family:system-ui;background:%23f5f5f5'><div style='text-align:center'><h1>ML-Morph Web</h1><p>Starting backend server...</p></div></body></html>"
   );
 
   try {
@@ -59,7 +71,7 @@ async function createWindow() {
           `data:text/html,<html><body style='padding:40px;font-family:system-ui'>` +
           `<h1>Backend Crashed</h1>` +
           `<p>The backend process exited with code ${code}.</p>` +
-          `<p>Please restart AutoMorph.</p>` +
+          `<p>Please restart ML-Morph Web.</p>` +
           `</body></html>`
         );
       }
@@ -124,7 +136,7 @@ autoUpdater.on("update-downloaded", (info) => {
     .showMessageBox({
       type: "info",
       title: "Update Ready",
-      message: "A new version of AutoMorph has been downloaded. Restart the application to apply the updates.",
+      message: "A new version of ML-Morph Web has been downloaded. Restart the application to apply the updates.",
       buttons: ["Restart", "Later"],
     })
     .then((result) => {
@@ -145,6 +157,7 @@ app.on("window-all-closed", () => {
   app.quit();
 });
 
-app.on("before-quit", () => {
+// A window can cancel app.quit() while it has unexported edits.
+app.on("will-quit", () => {
   stopBackend(backendProc);
 });
